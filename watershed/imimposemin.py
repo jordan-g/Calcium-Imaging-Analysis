@@ -47,8 +47,12 @@ def imimposemin(I, BW, conn=None):
 
     fm = I.astype(float)
 
-    fm[BW]                 = -math.inf
-    fm[np.logical_not(BW)] = math.inf
+    try:
+        fm[BW]                 = -math.inf
+        fm[np.logical_not(BW)] = math.inf
+    except:
+        fm[BW]                 = -float("inf")
+        fm[np.logical_not(BW)] = float("inf")
 
     if I.dtype == float:
         I_range = np.amax(I) - np.amin(I)
@@ -72,6 +76,9 @@ def imimposemin(I, BW, conn=None):
         J = reconstruction(255 - fm, 255 - g, method='dilation', selem=selem)
         J = 255 - J
 
-    J[BW] = 0
+    try:
+        J[BW]                 = -math.inf
+    except:
+        J[BW]                 = -float("inf")
 
     return J

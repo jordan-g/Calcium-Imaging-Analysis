@@ -4,8 +4,21 @@ import scipy.ndimage as ndi
 import scipy.stats
 from skimage.feature import peak_local_max
 
-from skimage.morphology import watershed, disk
+from skimage.morphology import *
 from skimage.filters import rank
+
+import caiman as cm
+from caiman.motion_correction import tile_and_correct, motion_correction_piecewise
+from caiman.source_extraction.cnmf import cnmf as cnmf
+from caiman.motion_correction import MotionCorrect
+from caiman.components_evaluation import evaluate_components
+from caiman.utils.visualization import plot_contours, view_patches_bar
+from caiman.base.rois import extract_binary_masks_blob
+from caiman.utils.utils import download_demo
+from mahotas.labeled import bwperim
+
+import os
+import glob
 
 def play_movie(movie):
     t = movie.shape[-1]
@@ -64,26 +77,30 @@ def rescale_0_1(image):
     return (image - S[0, min_percentile])/denominator
 
 def calculate_local_correlations(movie):
-    (h, w, t) = movie.shape
+    # (t, h, w) = movie.shape
 
-    cross_correlations = np.zeros((h, w, 2, 2))
+    # cross_correlations = np.zeros((h, w, 2, 2))
 
-    index_range = [-1, 1]
+    # index_range = [-1, 1]
 
-    for i in range(h):
-        for j in range(w):
-            for k in range(2):
-                for l in range(2):
-                    ind_1 = index_range[k]
-                    ind_2 = index_range[l]
-                    cross_correlations[i, j, ind_1, ind_2] = scipy.stats.pearsonr(movie[i, j], movie[min(max(i+ind_1, 0), h-1), min(max(j+ind_2, 0), w-1)])[0]
+    # for i in range(h):
+    #     for j in range(w):
+    #         for k in range(2):
+    #             for l in range(2):
+    #                 ind_1 = index_range[k]
+    #                 ind_2 = index_range[l]
+    #                 cross_correlations[i, j, ind_1, ind_2] = scipy.stats.pearsonr(movie[:, i, j], movie[:, min(max(i+ind_1, 0), h-1), min(max(j+ind_2, 0), w-1)])[0]
     
-    correlations = np.mean(np.mean(cross_correlations, axis=-1), axis=-1)
+    # correlations = np.mean(np.mean(cross_correlations, axis=-1), axis=-1)
 
-    return correlations
+    # return correlations
+    return cm.local_correlations(movie, swap_dim=False)
 
 def mean(movie):
-    return np.mean(movie, axis=-1)
+    return np.mean(movie, axis=0)
+
+def std(movie):
+    return np.median(movie, axis=0)
 
 def adjust_contrast(image, contrast):
     return np.minimum(contrast*image, 255)
@@ -93,83 +110,218 @@ def adjust_gamma(image, gamma):
     new_image = new_image**(1.0/gamma)
     return np.minimum(255*new_image, 255)
 
-def apply_watershed(original_image, cells_mask, starting_image, soma_threshold, compactness, centers_list):
-    if len(original_image.shape) == 2:
-        rgb_image = cv2.cvtColor(original_image.astype(np.uint8), cv2.COLOR_GRAY2RGB)
+def motion_correct(video_path, max_shift, patch_stride, patch_overlap):
+    # --- PARAMETERS --- #
+
+    params_movie = {'fname': video_path,
+                     'max_shifts': (max_shift, max_shift),  # maximum allow rigid shift (2,2)
+                     'niter_rig': 2,
+                     'splits_rig': 20,  # for parallelization split the movies in  num_splits chuncks across time
+                     'num_splits_to_process_rig': [10, None],  # if none all the splits are processed and the movie is saved
+                     'strides': (patch_stride, patch_stride),  # intervals at which patches are laid out for motion correction
+                     'overlaps': (patch_overlap, patch_overlap),  # overlap between pathes (size of patch strides+overlaps)
+                     'splits_els': 20,  # for parallelization split the movies in  num_splits chuncks across time
+                     'num_splits_to_process_els': [None],  # if none all the splits are processed and the movie is saved
+                     'upsample_factor_grid': 4,  # upsample factor to avoid smearing when merging patches
+                     'max_deviation_rigid': 10,  # maximum deviation allowed for patch with respect to rigid shift         
+                     }
+
+    # load movie (in memory!)
+    fname = params_movie['fname']
+    niter_rig = params_movie['niter_rig']
+    # maximum allow rigid shift
+    max_shifts = params_movie['max_shifts']  
+    # for parallelization split the movies in  num_splits chuncks across time
+    splits_rig = params_movie['splits_rig']  
+    # if none all the splits are processed and the movie is saved
+    num_splits_to_process_rig = params_movie['num_splits_to_process_rig']
+    # intervals at which patches are laid out for motion correction
+    strides = params_movie['strides']
+    # overlap between pathes (size of patch strides+overlaps)
+    overlaps = params_movie['overlaps']
+    # for parallelization split the movies in  num_splits chuncks across time
+    splits_els = params_movie['splits_els'] 
+    # if none all the splits are processed and the movie is saved
+    num_splits_to_process_els = params_movie['num_splits_to_process_els']
+    # upsample factor to avoid smearing when merging patches
+    upsample_factor_grid = params_movie['upsample_factor_grid'] 
+    # maximum deviation allowed for patch with respect to rigid
+    # shift
+    max_deviation_rigid = params_movie['max_deviation_rigid']
+
+    # --- RIGID MOTION CORRECTION --- #
+
+    # Load the original movie
+    m_orig = cm.load(fname)
+    min_mov = np.min(m_orig) # movie must be mostly positive for this to work
+
+    offset_mov = -min_mov
+
+    # Create the cluster
+    c, dview, n_processes = cm.cluster.setup_cluster(
+        backend='local', n_processes=None, single_thread=False)
+
+    # Create motion correction object
+    mc = MotionCorrect(fname, min_mov,
+                       dview=dview, max_shifts=max_shifts, niter_rig=niter_rig, splits_rig=splits_rig, 
+                       num_splits_to_process_rig=num_splits_to_process_rig, 
+                    strides= strides, overlaps= overlaps, splits_els=splits_els,
+                    num_splits_to_process_els=num_splits_to_process_els, 
+                    upsample_factor_grid=upsample_factor_grid, max_deviation_rigid=max_deviation_rigid, 
+                    shifts_opencv = True, nonneg_movie = True)
+
+    # Do rigid motion correction
+    mc.motion_correct_rigid(save_movie=True)
+
+    # Load rigid motion corrected movie
+    m_rig = cm.load(mc.fname_tot_rig)
+
+    # --- ELASTIC MOTION CORRECTION --- #
+
+    # Do elastic motion correction
+    mc.motion_correct_pwrigid(save_movie=True, template=mc.total_template_rig, show_template=False)
+
+    # Save elastic shift border
+    bord_px_els = np.ceil(np.maximum(np.max(np.abs(mc.x_shifts_els)),
+                                     np.max(np.abs(mc.y_shifts_els)))).astype(np.int)
+    np.savez(mc.fname_tot_els + "_bord_px_els.npz", bord_px_els)
+
+    # Load elastic motion corrected movie
+    m_els = cm.load(mc.fname_tot_els)
+
+    # downsample_factor = 1
+    # cm.concatenate([m_orig.resize(1, 1, downsample_factor)+offset_mov, m_rig.resize(1, 1, downsample_factor), m_els.resize(
+    #     1, 1, downsample_factor)], axis=2).play(fr=60, gain=5, magnification=0.75, offset=0)
+
+    # Crop elastic shifts out of the movie and save
+    fnames = [mc.fname_tot_els]
+    border_to_0 = bord_px_els
+    idx_x=slice(border_to_0,-border_to_0,None)
+    idx_y=slice(border_to_0,-border_to_0,None)
+    idx_xy=(idx_x,idx_y)
+    # idx_xy = None
+    add_to_movie = -np.nanmin(m_els) + 1  # movie must be positive
+    remove_init = 0 # if you need to remove frames from the beginning of each file
+    downsample_factor = 1 
+    base_name = fname.split('/')[-1][:-4]
+    name_new = cm.save_memmap_each(fnames, dview=dview, base_name=base_name, resize_fact=(
+        1, 1, downsample_factor), remove_init=remove_init, idx_xy=idx_xy, add_to_movie=add_to_movie, border_to_0=0)
+    name_new.sort()
+
+    # If multiple files were saved in C format, put them together in a single large file 
+    if len(name_new) > 1:
+        fname_new = cm.save_memmap_join(
+            name_new, base_name='Yr', n_chunks=20, dview=dview)
     else:
-        rgb_image = original_image.copy()
+        print('One file only, not saving!')
+        fname_new = name_new[0]
 
-    (h, w) = starting_image.shape
+    print("Final movie saved in: {}.".format(fname_new))
 
-    threshold_image = starting_image.copy()
+    Yr, dims, T = cm.load_memmap(fname_new)
+    d1, d2 = dims
+    images = np.reshape(Yr.T, [T] + list(dims), order='F')
+    Y = np.reshape(Yr, dims + (T,), order='F')
 
-    # threshold_image[threshold_image < soma_threshold] = 0
-    # threshold_image[threshold_image > 0] = 255
-    threshold_image[cells_mask == 0] = 0
+    motion_corrected_video_path = os.path.splitext(os.path.basename(video_path))[0] + "_mc.npy"
+    np.save(motion_corrected_video_path, images)
 
-    # rgb_image = cv2.cvtColor(threshold_image.astype(np.uint8), cv2.COLOR_GRAY2RGB)
+    log_files = glob.glob('Yr*_LOG_*')
+    for log_file in log_files:
+        os.remove(log_file)
 
-    D = ndi.distance_transform_edt(threshold_image)
+    out = np.zeros(m_els.shape)
+    out[:] = m_els[:]
 
-    localMax = peak_local_max(D, indices=False, min_distance=0, labels=threshold_image)
+    out = np.nan_to_num(out)
 
-    L = D.astype(np.uint8)
-    _, markers = cv2.connectedComponents(L)
+    return out, motion_corrected_video_path
 
-    labels = watershed(L, markers.astype(np.int32), watershed_line=True, compactness=compactness)
-    # labels = cv2.watershed(cv2.cvtColor(L, cv2.COLOR_GRAY2RGB), markers.astype(np.int32))
+def apply_watershed(original_image, cells_mask, starting_image):
+    if len(original_image.shape) == 2:
+        rgb_image = cv2.cvtColor((original_image*255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
+    else:
+        rgb_image = (original_image*255).copy()
 
-    for label in np.unique(labels):
-        if label <= 0:
+    labels = watershed(starting_image, label(cells_mask))
+
+    unique_labels = np.unique(labels)
+
+    n = len(unique_labels)
+
+    roi_areas = np.zeros(n)
+
+    for l in unique_labels:
+        if l <= 1:
             continue
 
-        # otherwise, allocate memory for the label region and draw
-        # it on the mask
-        mask = np.zeros(threshold_image.shape, dtype="uint8")
-        mask[labels == label] = 255
-        # mask[label > 0] = 255
+        mask = np.zeros(original_image.shape, dtype="uint8")
+        mask[labels == l] = 255
 
         # detect contours in the mask and grab the largest one
-        cnts = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL,
-            cv2.CHAIN_APPROX_SIMPLE)[-2]
+        cnts = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
         c = max(cnts, key=cv2.contourArea)
 
-        M = cv2.moments(c)
         area = cv2.contourArea(c)
 
-        if len(c) >= 5:
-            (x, y), (MA, ma), angle = cv2.fitEllipse(c)
+        roi_areas[l-1] = area
 
-            if centers_list != []:
-                min_distance = min([ np.sqrt((x - pos[0])**2 + (y - pos[1])**2) for pos in centers_list ])
+    return labels, roi_areas
 
-            n_pixels = len(c)
-            region_size = np.sqrt(n_pixels)
+def prune_rois(labels, min_area, max_area, roi_areas):
+    pruned_labels = labels.copy()
+    pruned_rois = []
 
-            # print(len(c[0][0]))
-            mean_dispersion = np.sqrt(np.mean([ (c[i][0][0] - x)**2 + (c[i][0][1] - y)**2 for i in range(n_pixels) ]))/region_size
+    for l in np.unique(labels):
+        mask = labels == l
 
-            # mean_intensity = np.mean([ starting_image[k, l] for k in np.arange(max(0, int(x) - 5), min(h, int(x) + 6)) for l in np.arange(max(0, int(y) - 5), min(w, int(y) + 6)) ])
-            # print(mean_intensity)
+        if (not (min_area <= roi_areas[l-1] <= max_area)) or l <= 1:
+            pruned_labels[mask] = 0
+            pruned_rois.append(l)
 
-            if M["m00"] != 0 and (7 < area < 100 and 0.2 < MA/ma < 1.9) and (centers_list == [] or min_distance >= 3) and mean_dispersion <= 1:
-            # if M["m00"] != 0:
-                cX = int(M["m10"] / M["m00"])
-                cY = int(M["m01"] / M["m00"])
-                color = np.random.uniform(0.2, 255, size=(3,))
-                cv2.circle(rgb_image, (int(x), int(y)), 1, color, -1)
+    return pruned_labels, pruned_rois
 
-                overlay = rgb_image.copy()
-                overlay[mask > 0] = color.astype(np.uint8)
+def get_roi_containing_point(labels, roi_point):
+    roi = labels[roi_point[1], roi_point[0]]
 
-                # cells_mask[labels == label] = 0
+    if roi <= 1:
+        return None
 
-                cv2.addWeighted(overlay, 0.4, rgb_image, 0.6, 0, rgb_image)
+    return roi
 
-                centers_list.append([x, y])
+def calc_activity_of_roi(labels, video, roi):
+    mask = (labels == roi)[np.newaxis, :, :].repeat(video.shape[0], 0)
 
-    #     cv2.imshow("Contours", cv2.resize(rgb_image, (0, 0), fx=2, fy=2, interpolation=cv2.INTER_NEAREST))
-    #     cv2.waitKey(1)
-    # cv2.waitKey(0)
+    return np.mean(video*mask, axis=(1, 2))
 
-    return rgb_image, cells_mask, centers_list
+def draw_rois(rgb_image, labels, roi_overlay, final_overlay, selected_roi, removed_rois, create_initial_overlay=False, update_overlay=False):
+    image = rgb_image.copy()
+
+    if roi_overlay is None:
+        roi_overlay = np.zeros(image.shape).astype(np.uint8)
+
+        for l in np.unique(labels):
+            if l <= 1:
+                continue
+
+            perim = np.zeros(labels.shape, dtype="uint8")
+            perim[bwperim((labels == l).astype(int), n=4) == 1] = 1
+
+            roi_overlay[perim > 0] = np.array([255, 0, 0]).astype(np.uint8)
+
+    final_overlay = image.copy()
+
+    mask = np.sum(roi_overlay, axis=-1) > 0
+
+    final_overlay[mask] = roi_overlay[mask]
+
+    mask = np.isin(labels, removed_rois, assume_unique=False, invert=False)
+
+    final_overlay[mask] = rgb_image[mask]
+
+    if selected_roi is not None and selected_roi not in removed_rois:
+        final_overlay[labels == selected_roi] = np.array([255, 255, 0]).astype(np.uint8)
+
+    cv2.addWeighted(final_overlay, 0.5, image, 0.5, 0, image)
+
+    return image, roi_overlay, final_overlay

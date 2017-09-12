@@ -64,6 +64,8 @@ class Controller():
         elif base_name.endswith('.tif') or base_name.endswith('.tiff'):
             self.video = imread(video_path)
 
+        print(self.video.shape)
+
         # remove nan elements
         self.video = np.nan_to_num(self.video)
 

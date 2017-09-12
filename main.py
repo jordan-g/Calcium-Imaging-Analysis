@@ -20,7 +20,11 @@ class Controller():
         # self.image_path = "Michael July 28 (2) - z 5_mc.npy"
         # self.image_path = "Michael July 28 (3) - z 1_mc.npy"
         # self.image_path = "Michael July 28 - z 6.npy"
-        # self.image_path = "movie_3.npy"
+        self.image_path = "movie_3.npy"
+        # self.image_path = "../Aug.15.17/Aug.15.17_long_oom_0.1toBF_lv25_0001-1.tif"
+        self.image_path = "Aug.15.17_long_oom_0.1toBF_lv25_0001-1_mc.npy"
+        self.image_path = "../Aug.15.17/Aug.15.17_long_oom_0.1toBF_lv25_laser6.5pct-1.tif"
+        self.image_path = "Aug.15.17_long_oom_0.1toBF_lv25_laser6.5pct-1_mc.npy"
 
 
 
@@ -29,7 +33,7 @@ class Controller():
         # np.save("movie_3.npy", np.transpose(video, (1, 0, 2)))
         # print(video.shape)
 
-        self.run_motion_correction(self.image_path)
+        self.run_watershed()
 
     def run_motion_correction(self, image_path):
         self.app = QApplication(sys.argv)
@@ -37,10 +41,11 @@ class Controller():
         self.motion_correction_controller.open_video(image_path)
         self.app.exec_()
 
-    def run_watershed(self, image_path):
-        self.app = QCoreApplication.instance()
-        self.watershed_controller = WatershedController(self)
-        self.watershed_controller.open_image(image_path)
+    def run_watershed(self):
+        # self.app = QCoreApplication.instance()
+        self.app = QApplication(sys.argv)
+        self.watershed_controller = WatershedController()
+        self.watershed_controller.select_and_open_video()
         self.app.exec_()
 
     def run_cnmf(self, image_path):
