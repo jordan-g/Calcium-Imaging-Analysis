@@ -5,11 +5,11 @@ from cnmf.controller import Controller as CNMFController
 
 # import the Qt library
 try:
-    from PyQt4.QtCore import QCoreApplication
-    from PyQt4.QtGui import QApplication
+    from PyQt4.QtCore import *
+    from PyQt4.QtGui import *
 except:
-    from PyQt5.QtCore import QCoreApplication
-    from PyQt5.QtWidgets import QApplication
+    from PyQt5.QtCore import *
+    from PyQt5.QtWidgets import *
 
 import numpy as np
 
@@ -25,8 +25,6 @@ class Controller():
         self.image_path = "Aug.15.17_long_oom_0.1toBF_lv25_0001-1_mc.npy"
         self.image_path = "../Aug.15.17/Aug.15.17_long_oom_0.1toBF_lv25_laser6.5pct-1.tif"
         self.image_path = "Aug.15.17_long_oom_0.1toBF_lv25_laser6.5pct-1_mc.npy"
-
-
 
         # video = np.load("movie_3.npy")
         # print(np.amin(video))
@@ -44,6 +42,7 @@ class Controller():
     def run_watershed(self):
         # self.app = QCoreApplication.instance()
         self.app = QApplication(sys.argv)
+        self.app.setAttribute(Qt.AA_UseHighDpiPixmaps)
         self.watershed_controller = WatershedController()
         self.watershed_controller.select_and_open_video()
         self.app.exec_()

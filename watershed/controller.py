@@ -32,50 +32,64 @@ except:
     from PyQt5.QtWidgets import *
     pyqt_version = 5
 
-DEFAULT_WATERSHED_PARAMS = {'gamma': 1.0,
-                            'contrast': 1.0,
-                            'window_size': 5,
+DEFAULT_VIEWING_PARAMS = {'gamma': 1.0,
+                          'contrast': 1.0,
+                          'fps': 60,
+                          'z': 0}
+
+DEFAULT_WATERSHED_PARAMS = {'window_size': 5,
                             'neuropil_threshold': 50,
                             'soma_threshold': 10,
                             'background_threshold': 10,
                             'compactness': 10}
 
-DEFAULT_MOTION_CORRECTION_PARAMS = {'gamma': 1.0,
-                                    'contrast': 1.0,
-                                    'fps': 60,
-                                    'max_shift': 6,
+DEFAULT_MOTION_CORRECTION_PARAMS = {'max_shift': 6,
                                     'patch_stride': 24,
                                     'patch_overlap': 6}
 
-DEFAULT_ROI_PRUNING_PARAMS = {'gamma': 1.0,
-                              'contrast': 1.0,
-                              'min_area': 10,
-                              'max_area': 100}
+DEFAULT_ROI_FILTERING_PARAMS = {'min_area': 10,
+                                'max_area': 100,
+                                'min_circ': 0,
+                                'max_circ': 2}
 
+VIEWING_PARAMS_FILENAME           = "viewing_params.txt"
 WATERSHED_PARAMS_FILENAME         = "watershed_params.txt"
 MOTION_CORRECTION_PARAMS_FILENAME = "motion_correction_params.txt"
-ROI_PRUNING_PARAMS_FILENAME       = "roi_pruning_params.txt"
+ROI_filtering_PARAMS_FILENAME     = "roi_filtering_params.txt"
 
 class Controller():
     def __init__(self):
+        # set parameters
+        if os.path.exists(VIEWING_PARAMS_FILENAME):
+            try:
+                self.params = DEFAULT_VIEWING_PARAMS
+                params = json.load(open(VIEWING_PARAMS_FILENAME))
+                for key in params.keys():
+                    self.params[key] = params[key]
+            except:
+                self.params = DEFAULT_VIEWING_PARAMS
+        else:
+            self.params = DEFAULT_VIEWING_PARAMS
+
         # create controllers
         self.motion_correction_controller = MotionCorrectionController(self)
         self.watershed_controller         = WatershedController(self)
-        self.roi_pruning_controller       = ROIPruningController(self)
+        self.roi_filtering_controller     = ROIFilteringController(self)
 
         # create windows
         self.param_window   = ParamWindow(self)
         self.preview_window = PreviewWindow(self)
 
-        self.preview_window.mode = "motion_correct"
+        self.mode = "motion_correct"
 
+        self.param_widget                                = self.param_window.main_param_widget
         self.motion_correction_controller.param_widget   = self.param_window.motion_correction_widget
         self.motion_correction_controller.preview_window = self.preview_window
         self.watershed_controller.param_widget           = self.param_window.watershed_widget
         self.watershed_controller.preview_window         = self.preview_window
-        self.roi_pruning_controller.param_widget         = self.param_window.roi_pruning_widget
-        self.roi_pruning_controller.preview_window       = self.preview_window
-        self.watershed_controller.pruning_params         = self.roi_pruning_controller.params
+        self.roi_filtering_controller.param_widget       = self.param_window.roi_filtering_widget
+        self.roi_filtering_controller.preview_window     = self.preview_window
+        self.watershed_controller.filtering_params       = self.roi_filtering_controller.params
 
         self.closing = False
 
@@ -99,13 +113,29 @@ class Controller():
             self.video = np.load(video_path)
         elif base_name.endswith('.tif') or base_name.endswith('.tiff'):
             self.video = imread(video_path)
-        self.video = np.nan_to_num(self.video)
+
+        imsave("test.tif", self.video)
+
+        if len(self.video.shape) == 3:
+            # add z dimension
+            self.video = self.video[:, np.newaxis, :, :]
+
+        if self.params['z'] >= self.video.shape[1]:
+            self.params['z'] = 0
+
+        print("Loaded video with shape {}.".format(self.video.shape))
+
+        self.param_widget.param_sliders["z"].setMaximum(self.video.shape[1]-1)
+
+        self.video = np.nan_to_num(self.video).astype(np.float32)
+
+        self.normalized_video = utilities.normalize(self.video).astype(np.uint8)
 
         self.param_window.stacked_widget.setDisabled(False)
         self.param_window.statusBar().showMessage("")
 
         # update the motion correction controller
-        self.motion_correction_controller.video_opened(self.video, self.video_path, plot=True)
+        self.motion_correction_controller.video_opened(self.video, self.normalized_video, self.video_path, plot=True)
 
     def show_watershed_params(self, video=None, video_path=None):
         if video is None:
@@ -119,32 +149,66 @@ class Controller():
         self.param_window.statusBar().showMessage("")
 
         self.preview_window.setWindowTitle("Preview")
-        self.preview_window.mode = "watershed"
+        self.mode = "watershed"
 
     def show_motion_correction_params(self):
         self.param_window.stacked_widget.setCurrentIndex(0)
-        self.motion_correction_controller.video_opened(self.video, self.video_path, plot=True)
+        self.motion_correction_controller.video_opened(self.video, self.normalized_video, self.video_path, plot=True)
         self.preview_window.controller = self.motion_correction_controller
         self.param_window.statusBar().showMessage("")
 
-        self.preview_window.mode = "motion_correct"
+        self.mode = "motion_correct"
 
-    def show_roi_pruning_params(self, labels, roi_areas, roi_overlay):
+    def show_roi_filtering_params(self, labels, roi_areas, roi_circs, roi_overlay):
         self.param_window.stacked_widget.setCurrentIndex(2)
-        self.roi_pruning_controller.video_opened(self.video, self.video_path, labels, roi_areas, roi_overlay, plot=True)
-        self.preview_window.controller = self.roi_pruning_controller
+        self.roi_filtering_controller.video_opened(self.video, self.video_path, labels, roi_areas, roi_circs, roi_overlay, plot=True)
+        self.preview_window.controller = self.roi_filtering_controller
         self.param_window.statusBar().showMessage("")
 
-        self.preview_window.mode = "prune"
+        self.mode = "filter"
 
     def close_all(self):
         self.closing = True
         self.param_window.close()
         self.preview_window.close()
 
+        self.save_params()
         self.motion_correction_controller.save_params()
         self.watershed_controller.save_params()
-        self.roi_pruning_controller.save_params()
+        self.roi_filtering_controller.save_params()
+
+    def preview_contrast(self, contrast):
+        self.params['contrast'] = contrast
+
+        if self.mode == "motion_correct":
+            self.motion_correction_controller.preview_contrast(contrast)
+        elif self.mode == "watershed":
+            self.watershed_controller.update_param("contrast", contrast)
+        elif self.mode == "filter":
+            self.roi_filtering_controller.update_param("contrast", contrast)
+
+    def preview_gamma(self, gamma):
+        self.params['gamma'] = gamma
+
+        if self.mode == "motion_correct":
+            self.motion_correction_controller.preview_gamma(gamma)
+        elif self.mode == "watershed":
+            self.watershed_controller.update_param("gamma", gamma)
+        elif self.mode == "filter":
+            self.roi_filtering_controller.update_param("gamma", gamma)
+
+    def update_param(self, param, value):
+        self.params[param] = value
+
+        if self.mode == "motion_correct":
+            self.motion_correction_controller.update_param(param, value)
+        elif self.mode == "watershed":
+            self.watershed_controller.update_param(param, value)
+        elif self.mode == "filter":
+            self.roi_filtering_controller.update_param(param, value)
+
+    def save_params(self):
+        json.dump(self.params, open(VIEWING_PARAMS_FILENAME, "w"))
 
 class MotionCorrectionController():
     def __init__(self, main_controller):
@@ -162,21 +226,26 @@ class MotionCorrectionController():
         else:
             self.params = DEFAULT_MOTION_CORRECTION_PARAMS
 
-        self.video                           = None
-        self.adjusted_video                  = None
-        self.adjusted_frame                  = None
-        self.motion_corrected_video          = None
-        self.current_video                   = None
-        self.current_adjusted_video          = None
-        self.adjusted_motion_corrected_video = None
-        self.video_path                      = None
-        self.motion_corrected_video_path     = None
+        self.video                             = None
+        self.normalized_video                  = None
+        self.adjusted_video                    = None
+        self.adjusted_frame                    = None
+        self.motion_corrected_video            = None
+        self.normalized_motion_corrected_video = None
+        self.current_video                     = None
+        self.current_adjusted_video            = None
+        self.adjusted_motion_corrected_video   = None
+        self.video_path                        = None
+        self.motion_corrected_video_path       = None
 
-        self.showing_motion_corrected_video  = False
+        self.showing_motion_corrected_video = False
 
-    def video_opened(self, video, video_path, plot=False):
-        self.video      = video
-        self.video_path = video_path
+    def video_opened(self, video, normalized_video, video_path, plot=False):
+        self.video            = video
+        self.normalized_video = normalized_video
+        self.video_path       = video_path
+
+        self.preview_window.timer.stop()
 
         self.calculate_adjusted_video()
 
@@ -185,48 +254,51 @@ class MotionCorrectionController():
 
     def preview_contrast(self, contrast):
         self.preview_window.timer.stop()
-        
-        self.params['contrast'] = contrast
-        
+
         self.calculate_adjusted_frame()
           
         self.preview_window.show_frame(self.adjusted_frame)
 
     def preview_gamma(self, gamma):
         self.preview_window.timer.stop()
-        
-        self.params['gamma'] = gamma
 
         self.calculate_adjusted_frame()
 
         self.preview_window.show_frame(self.adjusted_frame)
 
     def update_param(self, param, value):
-        self.params[param] = value
+        if param in self.params.keys():
+            self.params[param] = value
 
         if param in ("contrast, gamma"):
             self.preview_window.timer.stop()
 
             self.calculate_adjusted_video()
 
-            self.preview_window.play_movie(self.adjusted_video, fps=self.params['fps'])
+            self.preview_window.play_movie(self.adjusted_video, fps=self.main_controller.params['fps'])
         elif param == "fps":
-            self.preview_window.set_fps(self.params['fps'])
+            self.preview_window.set_fps(self.main_controller.params['fps'])
+        elif param == "z":
+            self.preview_window.timer.stop()
+
+            self.preview_window.play_movie(self.adjusted_video, fps=self.main_controller.params['fps'])
 
     def calculate_adjusted_video(self):
         if self.showing_motion_corrected_video:
-            self.adjusted_video = utilities.adjust_gamma(utilities.adjust_contrast(self.motion_corrected_video, self.params['contrast']), self.params['gamma'])
+            self.adjusted_video = utilities.adjust_gamma(utilities.adjust_contrast(self.normalized_motion_corrected_video, self.main_controller.params['contrast']), self.main_controller.params['gamma'])
         else:
-            self.adjusted_video = utilities.adjust_gamma(utilities.adjust_contrast(self.video, self.params['contrast']), self.params['gamma'])
+            self.adjusted_video = utilities.adjust_gamma(utilities.adjust_contrast(self.normalized_video, self.main_controller.params['contrast']), self.main_controller.params['gamma'])
 
     def calculate_adjusted_frame(self):
         if self.showing_motion_corrected_video:
-            self.adjusted_frame = utilities.adjust_gamma(utilities.adjust_contrast(self.motion_corrected_video[self.preview_window.frame_num], self.params['contrast']), self.params['gamma'])
+            self.adjusted_frame = utilities.adjust_gamma(utilities.adjust_contrast(self.normalized_motion_corrected_video[self.preview_window.frame_num, self.main_controller.params['z']], self.main_controller.params['contrast']), self.main_controller.params['gamma'])
         else:
-            self.adjusted_frame = utilities.adjust_gamma(utilities.adjust_contrast(self.video[self.preview_window.frame_num], self.params['contrast']), self.params['gamma'])
+            self.adjusted_frame = utilities.adjust_gamma(utilities.adjust_contrast(self.normalized_video[self.preview_window.frame_num, self.main_controller.params['z']], self.main_controller.params['contrast']), self.main_controller.params['gamma'])
 
     def process_video(self):
         self.motion_corrected_video, self.motion_corrected_video_path = utilities.motion_correct(self.video_path, int(self.params["max_shift"]), int(self.params["patch_stride"]), int(self.params["patch_overlap"]))
+
+        self.normalized_motion_corrected_video = utilities.normalize(self.motion_corrected_video).astype(np.uint8)
 
         self.showing_motion_corrected_video = True
         self.calculate_adjusted_video()
@@ -237,19 +309,15 @@ class MotionCorrectionController():
 
         self.param_widget.accept_button.setEnabled(True)
 
-    def play_video(self):
-        if self.video is not None:
-            self.preview_window.play_movie(self.video, fps=self.params['fps'])
-
     def play_adjusted_video(self):
         if self.adjusted_video is not None:
-            self.preview_window.play_movie(self.adjusted_video, fps=self.params['fps'])
+            self.preview_window.play_movie(self.adjusted_video, fps=self.main_controller.params['fps'])
 
     def play_motion_corrected_video(self, show):
         self.showing_motion_corrected_video = show
 
         self.calculate_adjusted_video()
-        self.preview_window.play_movie(self.adjusted_video, fps=self.params['fps'])
+        self.preview_window.play_movie(self.adjusted_video, fps=self.main_controller.params['fps'])
 
     def skip(self):
         self.preview_window.timer.stop()
@@ -278,376 +346,360 @@ class WatershedController():
         else:
             self.params = DEFAULT_WATERSHED_PARAMS
 
-        self.image                = None
-        self.adjusted_image       = None
-        self.normalized_image     = None
-        self.soma_threshold_image = None
-        self.masks                = []
-        self.mask_points          = []
-        self.neuropil_mask        = None
-        self.background_mask      = None
+        self.mean_images           = None
+        self.normalized_images     = None
+        self.adjusted_images       = None
+        self.equalized_images      = None
+        self.soma_masks            = None
+        self.I_mods                = None
+        self.soma_threshold_images = None
+        self.masks                 = None
+        self.mask_points           = None
+        self.background_mask       = None
+        self.selected_mask         = None
+        self.labels                = None
+        self.roi_areas             = None
+        self.roi_circs             = None
+        self.watershed_images      = None
+        self.roi_overlays          = None
+        self.selected_mask_num     = -1
+        self.n_masks               = 0
 
     def video_opened(self, video, video_path, plot=False):
-        self.image = utilities.normalize(utilities.mean(video)).astype(np.float32)
-        
-        self.image = denoise_tv_chambolle(self.image, weight=0.01, multichannel=False)
-        self.image = ndi.median_filter(self.image, 3) #Added
+        self.video       = video
+        self.video_path  = video_path
+        self.mean_images = [ utilities.normalize(utilities.mean(video, i)).astype(np.float32) for i in range(video.shape[1]) ]
 
-        self.calculate_adjusted_image()
-        self.calculate_normalized_image()
-        self.calculate_background_mask()
-        self.calculate_neuropil_mask()
-        self.calculate_soma_threshold_image()
+        self.mean_images = [ denoise_tv_chambolle(mean_image, weight=0.01, multichannel=False) for mean_image in self.mean_images ]
+        self.mean_images = [ ndi.median_filter(mean_image, 3) for mean_image in self.mean_images ]
+
+        self.mean_images = [ utilities.normalize(mean_image, force=True).astype(np.uint8) for mean_image in self.mean_images ]
+        self.normalized_images = [ utilities.normalize(mean_image).astype(np.uint8) for mean_image in self.mean_images ]
+
+        self.adjusted_images       = [ [] for i in range(video.shape[1]) ]
+        self.background_masks      = [ [] for i in range(video.shape[1]) ]
+        self.equalized_images      = [ [] for i in range(video.shape[1]) ]
+        self.soma_masks            = [ [] for i in range(video.shape[1]) ]
+        self.I_mods                = [ [] for i in range(video.shape[1]) ]
+        self.soma_threshold_images = [ [] for i in range(video.shape[1]) ]
+        self.masks                 = [ [] for i in range(video.shape[1]) ]
+        self.mask_points           = [ [] for i in range(video.shape[1]) ]
+        self.labels                = [ [] for i in range(video.shape[1]) ]
+        self.roi_areas             = [ [] for i in range(video.shape[1]) ]
+        self.roi_circs             = [ [] for i in range(video.shape[1]) ]
+        self.watershed_images      = [ [] for i in range(video.shape[1]) ]
+        self.roi_overlays          = [ [] for i in range(video.shape[1]) ]
+        
+        self.calculate_adjusted_images(z_vals=range(self.video.shape[1]))
+        self.calculate_background_masks(z_vals=range(self.video.shape[1]))
+        self.calculate_equalized_images(z_vals=range(self.video.shape[1]))
+        self.calculate_soma_threshold_images(z_vals=range(self.video.shape[1]))
 
         if plot:
-            self.preview_window.plot_image(self.adjusted_image)
+            self.preview_window.plot_image(self.adjusted_images[self.main_controller.params['z']])
 
-    def calculate_background_mask(self):
-        mask = self.adjusted_image >= self.params['background_threshold']/255.0
+    def calculate_background_masks(self, z_vals=[0]):
+        for z in z_vals:
+            self.background_masks[z] = self.adjusted_images[z] < self.params['background_threshold']/255.0
 
-        self.background_mask = mask == 0
-
-    def calculate_neuropil_mask(self):
-        # print(np.amax(self.normalized_image))
-        mask_1 = self.normalized_image >= self.params['neuropil_threshold']/255.0
-
-        connected_components, n = ndi.label(mask_1, disk(1))
-
-        self.mask_2 = np.zeros(self.normalized_image.shape).astype(bool)
-        for i in range(n):
-            self.mask_2[connected_components == i+1] = True
-        self.mask_2 = binary_closing(self.mask_2, disk(1))
-        self.mask_2 = remove_small_objects(self.mask_2, 7, connectivity=2, in_place=True)
-        self.mask_2 = binary_dilation(self.mask_2, disk(1))
-        self.mask_2_perimeter = bwperim(self.mask_2, n=4)
-
-        self.neuropil_mask = self.mask_2 == 0
-
-    def calculate_adjusted_image(self):
-        self.adjusted_image = utilities.adjust_gamma(utilities.adjust_contrast(self.image, self.params['contrast']), self.params['gamma'])/255.0
-
-        if len(self.masks) > 0:
-            out = self.adjusted_image.copy()
-            masks = np.array(self.masks)
-            mask = np.sum(masks, axis=0).astype(bool)
-            out[mask == False] *= 0.5
-
-            self.adjusted_image = out.copy()
-
+    def calculate_adjusted_images(self, z_vals=[0]):
+        for z in z_vals:
+            self.adjusted_images[z] = utilities.adjust_gamma(utilities.adjust_contrast(self.normalized_images[z], self.main_controller.params['contrast']), self.main_controller.params['gamma'])/255.0
+    
     def draw_mask(self):
         if not self.preview_window.drawing_mask:
-            self.preview_window.plot_image(self.adjusted_image)
+            self.preview_window.plot_image(self.adjusted_images[self.main_controller.params['z']])
 
             self.preview_window.drawing_mask = True
 
-            self.param_widget.draw_mask_button.setText("\u2713 Done")
+            self.param_widget.draw_mask_button.setText("Done Drawing Mask")
             self.param_widget.draw_mask_button.previous_message = "Draw a mask on the image preview."
+            self.param_widget.param_widget.setEnabled(False)
+            self.param_widget.button_widget.setEnabled(False)
+            self.selected_mask = None
+            self.selected_mask_num = -1
+            self.param_widget.erase_selected_mask_button.setEnabled(False)
+            self.param_widget.draw_mask_button.setEnabled(True)
         else:
             if len(self.preview_window.mask_points) > 0:
                 mask_points = self.preview_window.mask_points
                 mask_points += [mask_points[0]]
-                self.mask_points.append(mask_points)
+                self.mask_points[self.main_controller.params['z']].append(mask_points)
                 mask_points = np.array(mask_points)
 
                 mask = np.zeros(self.image.shape)
                 cv2.fillConvexPoly(mask, mask_points, 1)
                 mask = mask.astype(np.bool)
-                self.masks.append(mask)
+                self.masks[self.main_controller.params['z']].append(mask)
 
-                self.calculate_adjusted_image()
-                self.calculate_normalized_image()
-                self.calculate_soma_threshold_image()
+                self.calculate_adjusted_images()
+                self.calculate_equalized_images()
+                self.calculate_soma_threshold_images()
+
+                self.n_masks += 1
 
             self.preview_window.end_drawing_mask()
-            self.preview_window.plot_image(self.adjusted_image)
+            self.preview_window.plot_image(self.adjusted_images[self.main_controller.params['z']])
 
             self.param_widget.draw_mask_button.setText("Draw Mask")
             self.param_widget.draw_mask_button.previous_message = ""
+            self.param_widget.param_widget.setEnabled(True)
+            self.param_widget.button_widget.setEnabled(True)
 
-    def calculate_normalized_image(self):
-        # image = self.adjusted_image.copy()
-        # image[self.background_mask] = 0
-        # print(np.amax(self.adjusted_image))
-        new_image_10 = utilities.order_statistic(self.adjusted_image, 0.1, int(self.params['window_size']))
-        new_image_90 = utilities.order_statistic(self.adjusted_image, 0.9, int(self.params['window_size']))
+    def calculate_equalized_images(self, z_vals=[0]):
+        for z in z_vals:
+            adjusted_image  = self.adjusted_images[z]
+            background_mask = self.background_masks[z]
 
-        image_difference = self.adjusted_image - new_image_10
-        image_difference[image_difference < 0] = 0
+            new_image_10 = utilities.order_statistic(adjusted_image, 0.1, int(self.params['window_size']))
+            new_image_90 = utilities.order_statistic(adjusted_image, 0.9, int(self.params['window_size']))
 
-        image_range = new_image_90 - new_image_10
-        image_range[image_range <= 0] = 1e-6
+            image_difference = adjusted_image - new_image_10
+            image_difference[image_difference < 0] = 0
 
-        normalized_image = utilities.rescale_0_1(image_difference/image_range)
+            image_range = new_image_90 - new_image_10
+            image_range[image_range <= 0] = 1e-6
 
-        normalized_image[normalized_image < 0] = 0
-        normalized_image[normalized_image > 1] = 1
+            equalized_image = utilities.rescale_0_1(image_difference/image_range)
 
-        normalized_image[self.background_mask] = 0
+            equalized_image[equalized_image < 0] = 0
+            equalized_image[equalized_image > 1] = 1
 
-        # normalized_image = 1.0 - normalized_image
+            equalized_image[background_mask] = 0
 
-        self.normalized_image = 1.0 - normalized_image
+            self.equalized_images[z] = 1.0 - equalized_image
 
-        # print(self.normalized_image)
+    def calculate_soma_threshold_images(self, z_vals=[0]):
+        for z in z_vals:
+            equalized_image  = self.equalized_images[z]
 
-        # self.normalized_image[self.neuropil_mask] = 0
+            nuclei_image = equalized_image.copy()
 
-        if len(self.masks) > 0:
-            out = self.normalized_image.copy()
-            masks = np.array(self.masks)
-            mask = np.sum(masks, axis=0).astype(bool)
-            out[mask == False] *= 0.5
+            self.soma_masks[z] = local_maxima(h_maxima(nuclei_image, self.params['soma_threshold']/255.0, selem=square(3)), selem=square(3))
+            # self.soma_masks[i] = remove_small_objects(self.soma_masks[i].astype(bool), 2, connectivity=2, in_place=True)
 
-            self.normalized_image = out.copy()
+            nuclei_image_c = 1 - nuclei_image
 
-    def calculate_soma_threshold_image(self):
-        nuclei_image = self.normalized_image.copy()
-        nuclei_image[self.neuropil_mask] = 0
-        self.soma_mask = local_maxima(h_maxima(nuclei_image, self.params['soma_threshold']/255.0, selem=square(3)), selem=square(3))
-        # self.soma_mask = remove_small_objects(self.soma_mask.astype(bool), 2, connectivity=2, in_place=True)
+            self.I_mods[z] = imimposemin(nuclei_image_c.astype(float), self.soma_masks[z])
 
-        nuclei_image_c = 1 - nuclei_image
-
-        # filter_blurred_f = ndi.gaussian_filter(nuclei_image_c, 1)
-        # alpha = 30
-        # nuclei_image_c = nuclei_image_c + alpha * (nuclei_image_c - filter_blurred_f)
-
-        a = np.logical_and((self.mask_2_perimeter == 0), (bwperim(erosion(self.mask_2, disk(1))) == 0))
-
-        L = label((a == 0), connectivity=2)
-        props = regionprops(L)
-
-        idxs = []
-        for i in range(len(props)):
-            if props[i]['area'] == props[i]['filled_area']:
-                idxs.append(i+1)
-                
-        mask_3 = np.in1d(L, idxs).reshape(L.shape)
-
-        self.I_mod = imimposemin(nuclei_image_c.astype(float), np.logical_or(self.neuropil_mask, np.logical_and(self.soma_mask, np.logical_or((a + mask_3) == 0, self.mask_2_perimeter) == 0)))
-
-        self.soma_threshold_image = self.I_mod/np.amax(self.I_mod)
-        self.soma_threshold_image[self.soma_threshold_image == -math.inf] = 0
-
-        # print(np.amax(self.soma_threshold_image), np.amin(self.soma_threshold_image))
-
-        if len(self.masks) > 0:
-            out = self.soma_threshold_image.copy()
-            masks = np.array(self.masks)
-            mask = np.sum(masks, axis=0).astype(bool)
-            out[mask == False] *= 0.5
-
-            self.soma_threshold_image = out.copy()
+            self.soma_threshold_images[z] = self.I_mods[z]/np.amax(self.I_mods[z])
+            self.soma_threshold_images[z][self.soma_threshold_images[z] == -math.inf] = 0
 
     def update_param(self, param, value):
-        self.params[param] = value
+        if param in self.params.keys():
+            self.params[param] = value
 
+        mask = None
         if param in ("contrast, gamma"):
-            self.calculate_adjusted_image()
+            self.calculate_adjusted_images(z_vals=[self.main_controller.params['z']])
 
-            image = self.adjusted_image
-        elif param == "neuropil_threshold":
-            self.calculate_neuropil_mask()
-            
-            image = self.normalized_image.copy()
-            image[self.neuropil_mask] = 0
+            image = self.adjusted_images[self.main_controller.params['z']]
         elif param == "background_threshold":
-            self.calculate_background_mask()
+            self.calculate_background_masks(z_vals=[self.main_controller.params['z']])
 
-            image = self.adjusted_image.copy()
-            image[self.background_mask] = 0
+            image = self.adjusted_images[self.main_controller.params['z']].copy()
+            # image[self.background_mask] = 0
+            mask = self.background_masks[self.main_controller.params['z']]
         elif param == "window_size":
-            self.calculate_normalized_image()
+            self.calculate_equalized_images(z_vals=[self.main_controller.params['z']])
 
-            image = self.normalized_image
-        elif param == "soma_threshold":
-            self.calculate_soma_threshold_image()
+            image = self.equalized_images[self.main_controller.params['z']]
+        elif param == "z":
+            self.calculate_adjusted_images(z_vals=[self.main_controller.params['z']])
+            # self.video_opened(self.video, self.video_path, plot=False)
+            image = self.adjusted_images[self.main_controller.params['z']]
 
-            image = self.soma_threshold_image
-        elif param == "compactness":
-            image = self.adjusted_image
-
-        self.preview_window.plot_image(image)
+        self.preview_window.plot_image(image, mask=mask)
 
     def show_background_mask(self):
-        if self.soma_threshold_image is None:
+        if self.soma_threshold_images[self.main_controller.params['z']] is None:
             self.update_background_threshold(self.params['background_threshold'])
 
-        image = self.adjusted_image.copy()
-        image[self.background_mask] = 0
+        image = self.adjusted_images[self.main_controller.params['z']].copy()
 
-        self.preview_window.plot_image(image)
+        self.preview_window.plot_image(image, mask=self.background_masks[self.main_controller.params['z']])
 
-    def show_neuropil_mask(self):
-        if self.soma_threshold_image is None:
-            self.update_neuropil_threshold(self.params['neuropil_threshold'])
-
-        image = self.normalized_image.copy()
-        image[self.neuropil_mask] = 0
-
-        self.preview_window.plot_image(image)
-
-    def show_normalized_image(self):
-        if self.normalized_image is None:
+    def show_equalized_image(self):
+        if self.equalized_images[self.main_controller.params['z']] is None:
             self.update_window_size(self.params['window_size'])
-        self.preview_window.plot_image(self.normalized_image)
+        self.preview_window.plot_image(self.equalized_images[self.main_controller.params['z']])
 
     def show_soma_threshold_image(self):
-        if self.soma_threshold_image is None:
-            self.update_soma_threshold(self.params['soma_threshold'])
-        self.preview_window.plot_image(self.soma_threshold_image)
-
-    def show_image(self):
-        if self.image is not None:
-            self.preview_window.plot_image(self.image)
+        self.preview_window.plot_image(self.soma_threshold_images[self.main_controller.params['z']])
 
     def show_adjusted_image(self):
-        if self.adjusted_image is not None:
-            self.preview_window.plot_image(self.adjusted_image)
+        if self.adjusted_images[self.main_controller.params['z']] is not None:
+            self.preview_window.plot_image(self.adjusted_images[self.main_controller.params['z']])
 
     def show_watershed_image(self, show):
         if show:
-            self.preview_window.plot_image(self.watershed_image)
+            self.preview_window.plot_image(self.watershed_images[self.main_controller.params['z']])
         else:
-            self.preview_window.plot_image(self.adjusted_image)
+            self.preview_window.plot_image(self.adjusted_images[self.main_controller.params['z']])
 
     def process_video(self):
         centers_list = []
 
-        self.adjusted_image = self.image.copy()
-        self.calculate_adjusted_image()
-        self.calculate_normalized_image()
-        self.calculate_neuropil_mask()
-        self.calculate_soma_threshold_image()
+        self.calculate_adjusted_images(z_vals=range(self.video.shape[1]))
+        self.calculate_background_masks(z_vals=range(self.video.shape[1]))
+        self.calculate_equalized_images(z_vals=range(self.video.shape[1]))
+        self.calculate_soma_threshold_images(z_vals=range(self.video.shape[1]))
 
-        if len(self.masks) > 0:
-            masks = np.array(self.masks)
-            mask = np.sum(masks, axis=0).astype(bool)
+        for i in range(self.video.shape[1]):
+            if len(self.masks[i]) > 0:
+                masks = np.array(self.masks[i])
+                mask = np.sum(masks, axis=0).astype(bool)
 
-            out = np.zeros(self.image.shape)
-            out[mask] = self.adjusted_image[mask]
-            adjusted_image = out.copy()
+                out = np.zeros(self.adjusted_images[i].shape)
+                out[mask] = self.adjusted_images[i][mask]
+                adjusted_image = out.copy()
 
-            out = np.zeros(self.image.shape)
-            out[mask] = self.soma_mask[mask]
-            soma_mask = out.copy()
+                out = np.zeros(self.soma_masks[i].shape)
+                out[mask] = self.soma_masks[i][mask]
+                soma_mask = out.copy()
 
-            out = np.zeros(self.image.shape)
-            out[mask] = self.I_mod[mask]
-            I_mod = out.copy()
-        else:
-            adjusted_image = self.adjusted_image
-            soma_mask      = self.soma_mask
-            I_mod          = self.I_mod
+                out = np.zeros(self.I_mods[i].shape)
+                out[mask] = self.I_mods[i][mask]
+                I_mod = out.copy()
+            else:
+                adjusted_image = self.adjusted_images[i]
+                soma_mask      = self.soma_masks[i]
+                I_mod          = self.soma_threshold_images[i]
 
-        self.rgb_image = cv2.cvtColor((adjusted_image*255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
+            rgb_image = cv2.cvtColor((adjusted_image*255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
 
-        self.labels, self.roi_areas = utilities.apply_watershed(adjusted_image, soma_mask, I_mod)
+            self.labels[i], self.roi_areas[i], self.roi_circs[i] = utilities.apply_watershed(adjusted_image, soma_mask, I_mod)
 
-        self.pruned_labels, _ = utilities.prune_rois(self.labels, self.pruning_params['min_area'], self.pruning_params['max_area'], self.roi_areas)
-        
-        if len(self.masks) > 0:
-            out = self.labels.copy().astype(np.float64)
-            masks = np.array(self.masks)
-            mask = np.sum(masks, axis=0).astype(bool)
-            out[mask == False] *= 0.5
+            # self.filtered_labels, _ = utilities.filter_rois(self.labels, self.filtering_params['min_area'], self.filtering_params['max_area'], self.roi_areas)
 
-            self.labels = out.copy()
-
-        self.watershed_image, self.roi_overlay, _ = utilities.draw_rois(self.rgb_image, self.pruned_labels, None, None, None, None, create_initial_overlay=True)
-        
+            self.watershed_images[i], self.roi_overlays[i], _ = utilities.draw_rois(rgb_image, self.labels[i], None, None, None, None, [], create_initial_overlay=True)
 
         self.param_widget.show_watershed_checkbox.setDisabled(False)
         self.param_widget.show_watershed_checkbox.setChecked(True)
         self.show_watershed_image(True)
 
-        self.param_widget.prune_rois_button.setDisabled(False)
+        self.param_widget.filter_rois_button.setDisabled(False)
+
+    def select_mask(self, mask_point):
+        selected_mask, selected_mask_num = utilities.get_mask_containing_point(self.masks[self.main_controller.params['z']], mask_point)
+
+        if selected_mask is not None:
+            self.param_widget.erase_selected_mask_button.setEnabled(True)
+
+            self.selected_mask     = selected_mask
+            self.selected_mask_num = selected_mask_num
+        else:
+            self.selected_mask     = None
+            self.selected_mask_num = -1
+
+            self.param_widget.erase_selected_mask_button.setEnabled(False)
+
+        self.preview_window.plot_image(self.adjusted_images[self.main_controller.params['z']])
+
+    def erase_selected_mask(self):
+        if self.selected_mask is not None:
+            del self.masks[self.main_controller.params['z']][self.selected_mask_num]
+            del self.mask_points[self.main_controller.params['z']][self.selected_mask_num]
+
+            self.selected_mask     = None
+            self.selected_mask_num = -1
+
+            self.param_widget.erase_selected_mask_button.setEnabled(False)
+            
+            self.preview_window.plot_image(self.adjusted_images[self.main_controller.params['z']])
 
     def motion_correct(self):
         self.main_controller.show_motion_correction_params()
 
-    def prune_rois(self):
-        self.main_controller.show_roi_pruning_params(self.labels, self.roi_areas, self.roi_overlay)
+    def filter_rois(self):
+        self.main_controller.show_roi_filtering_params(self.labels, self.roi_areas, self.roi_circs, self.roi_overlays)
 
     def save_params(self):
         json.dump(self.params, open(WATERSHED_PARAMS_FILENAME, "w"))
 
-class ROIPruningController():
+class ROIFilteringController():
     def __init__(self, main_controller):
         self.main_controller = main_controller
 
         # set parameters
-        if os.path.exists(ROI_PRUNING_PARAMS_FILENAME):
+        if os.path.exists(ROI_filtering_PARAMS_FILENAME):
             try:
-                self.params = DEFAULT_ROI_PRUNING_PARAMS
-                params = json.load(open(ROI_PRUNING_PARAMS_FILENAME))
+                self.params = DEFAULT_ROI_FILTERING_PARAMS
+                params = json.load(open(ROI_filtering_PARAMS_FILENAME))
                 for key in params.keys():
                     self.params[key] = params[key]
             except:
-                self.params = DEFAULT_ROI_PRUNING_PARAMS
+                self.params = DEFAULT_ROI_FILTERING_PARAMS
         else:
-            self.params = DEFAULT_ROI_PRUNING_PARAMS
+            self.params = DEFAULT_ROI_FILTERING_PARAMS
 
         self.image             = None
+        self.normalized_image  = None
         self.adjusted_image    = None
         self.rgb_image         = None
         self.labels            = None
-        self.pruned_labels     = None
+        self.filtered_labels   = None
         self.watershed_image   = None
         self.roi_overlay       = None
         self.roi_areas         = None
         self.selected_roi      = None
         self.final_overlay     = None
-        self.pruned_rois       = []
+        self.filtered_out_rois = []
         self.erased_rois       = []
         self.removed_rois      = []
         self.last_erased_rois  = []
+        self.locked_rois       = []
 
         self.figure = None
         self.axis   = None
 
-    def video_opened(self, video, video_path, labels, roi_areas, roi_overlay, plot=False):
-        self.video       = video
-        self.labels      = labels
-        self.roi_areas   = roi_areas
-        self.roi_overlay = roi_overlay
-        self.image       = utilities.normalize(utilities.mean(video)).astype(np.float32)
-        self.calculate_adjusted_image()
-        self.prune_rois()
+    def video_opened(self, video, video_path, labels, roi_areas, roi_circs, roi_overlay, plot=False):
+        self.video           = video
+        self.labels          = labels
+        self.original_labels = self.labels.copy()
+        self.roi_areas       = roi_areas
+        self.roi_circs       = roi_circs
+        self.roi_overlay     = roi_overlay
+        self.image           = utilities.normalize(utilities.mean(video, z=self.main_controller.params["z"])).astype(np.float32)
+       
+        self.image = denoise_tv_chambolle(self.image, weight=0.01, multichannel=False)
+        self.image = ndi.median_filter(self.image, 3) #Added
+
+        self.normalized_image = utilities.normalize(self.image).astype(np.uint8) 
+
+        self.calculate_adjusted_images()
+        self.filter_rois()
 
         if plot:
             self.preview_window.plot_image(self.watershed_image)
 
-    def calculate_adjusted_image(self):
-        self.adjusted_image = utilities.adjust_gamma(utilities.adjust_contrast(self.image, self.params['contrast']), self.params['gamma'])/255.0
+    def calculate_adjusted_images(self):
+        self.adjusted_image = utilities.adjust_gamma(utilities.adjust_contrast(self.normalized_image, self.main_controller.params['contrast']), self.main_controller.params['gamma'])/255.0
 
-        sigma_est = estimate_sigma(self.adjusted_image, multichannel=False)
-
-        self.adjusted_image = denoise_tv_chambolle(self.adjusted_image, weight=0.01, multichannel=False)
-        self.adjusted_image = ndi.median_filter(self.adjusted_image, 3) #Added
+        # self.adjusted_image = denoise_tv_chambolle(self.adjusted_image, weight=0.01, multichannel=False)
+        # self.adjusted_image = ndi.median_filter(self.adjusted_image, 3) #Added
 
         self.rgb_image = cv2.cvtColor((self.adjusted_image*255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
 
-    def calculate_watershed_image(self, create_initial_overlay=False, update_overlay=False):
-        self.watershed_image, self.roi_overlay, self.final_overlay = utilities.draw_rois(self.rgb_image, self.labels, self.roi_overlay, self.final_overlay, self.selected_roi, self.removed_rois, create_initial_overlay=create_initial_overlay, update_overlay=update_overlay)
+    def calculate_watershed_image(self, create_initial_overlay=False, update_overlay=False, rois_to_update=[], prev_labels=None):
+        self.watershed_image, self.roi_overlay, self.final_overlay = utilities.draw_rois(self.rgb_image, self.labels, self.roi_overlay, self.final_overlay, self.selected_roi, self.removed_rois, self.locked_rois, create_initial_overlay=create_initial_overlay, update_overlay=update_overlay, rois_to_update=rois_to_update, prev_labels=prev_labels)
 
         self.param_widget.show_watershed_checkbox.setDisabled(False)
         self.param_widget.show_watershed_checkbox.setChecked(True)
         self.show_watershed_image(True)
 
     def update_param(self, param, value):
-        self.params[param] = value
+        if param in self.params.keys():
+            self.params[param] = value
 
         if param in ("contrast, gamma"):
-            self.calculate_adjusted_image()
+            self.calculate_adjusted_images()
+        elif param == "z":
+            self.video_opened(self.video, self.video_path, self.labels, self.roi_areas, self.roi_overlay, plot=False)
         
         self.calculate_watershed_image(update_overlay=False)
 
         self.preview_window.plot_image(self.watershed_image)
-
-    def show_image(self):
-        if self.image is not None:
-            self.preview_window.plot_image(self.image)
 
     def show_adjusted_image(self):
         if self.adjusted_image is not None:
@@ -659,9 +711,9 @@ class ROIPruningController():
         else:
             self.preview_window.plot_image(self.adjusted_image)
 
-    def prune_rois(self):
-        self.pruned_labels, self.pruned_rois = utilities.prune_rois(self.labels, self.params['min_area'], self.params['max_area'], self.roi_areas)
-        self.removed_rois = self.pruned_rois + self.erased_rois
+    def filter_rois(self):
+        self.filtered_labels, self.filtered_out_rois = utilities.filter_rois(self.labels, self.params['min_area'], self.params['max_area'], self.params['min_circ'], self.params['max_circ'], self.roi_areas, self.roi_circs, self.locked_rois)
+        self.removed_rois = self.filtered_out_rois + self.erased_rois
         self.calculate_watershed_image(update_overlay=True)
 
     def erase_rois(self):
@@ -676,23 +728,32 @@ class ROIPruningController():
 
             self.param_widget.erase_rois_button.setText("Erase ROIs")
 
-    def erase_roi_at_point(self, roi_point):
-        roi_to_erase = utilities.get_roi_containing_point(self.pruned_labels, roi_point)
+    def erase_roi_at_point(self, roi_point, radius=1):
+        roi_to_erase = utilities.get_roi_containing_point(self.filtered_labels, roi_point)
 
-        if roi_to_erase is not None and roi_to_erase not in self.erased_rois:
+        if roi_to_erase is not None and roi_to_erase not in self.erased_rois and roi_to_erase not in self.locked_rois:
             self.erased_rois.append(roi_to_erase)
             self.last_erased_rois.append(roi_to_erase)
-            self.removed_rois = self.pruned_rois + self.erased_rois
+            self.removed_rois = self.filtered_out_rois + self.erased_rois
             self.calculate_watershed_image(update_overlay=True)
 
     def select_roi(self, roi_point):
-        selected_roi = utilities.get_roi_containing_point(self.pruned_labels, roi_point)
+        selected_roi = utilities.get_roi_containing_point(self.filtered_labels, roi_point)
 
         if selected_roi is not None:
-            self.selected_roi = selected_roi
-            self.calculate_watershed_image(update_overlay=True)
+            self.param_widget.lock_roi_button.setEnabled(True)
+            self.param_widget.enlarge_roi_button.setEnabled(True)
+            self.param_widget.shrink_roi_button.setEnabled(True)
+            if selected_roi in self.locked_rois:
+                self.param_widget.lock_roi_button.setText("Unlock ROI")
+            else:
+                self.param_widget.lock_roi_button.setText("Lock ROI")
 
-            activity = utilities.calc_activity_of_roi(self.pruned_labels, self.video, self.selected_roi)
+            self.param_widget.erase_selected_roi_button.setEnabled(True)
+
+            self.selected_roi = selected_roi
+
+            activity = utilities.calc_activity_of_roi(self.filtered_labels, self.video, self.selected_roi, z=self.main_controller.params["z"])
 
             if self.figure is None:
                 plt.close('all')
@@ -703,12 +764,21 @@ class ROIPruningController():
             self.axis.clear()
             self.axis.plot(activity, c="#FF6666")
             self.figure.canvas.set_window_title('ROI {} Activity'.format(selected_roi))
+        else:
+            self.selected_roi = -1
+
+            self.param_widget.lock_roi_button.setEnabled(False)
+            self.param_widget.enlarge_roi_button.setEnabled(False)
+            self.param_widget.shrink_roi_button.setEnabled(False)
+            self.param_widget.lock_roi_button.setText("Lock ROI")
+
+        self.calculate_watershed_image(update_overlay=True)
 
     def undo_erase(self):
         if len(self.last_erased_rois) > 0:
             self.erased_rois = self.erased_rois[:-len(self.last_erased_rois)]
             self.last_erased_rois = []
-            self.removed_rois = self.pruned_rois + self.erased_rois
+            self.removed_rois = self.filtered_out_rois + self.erased_rois
 
             self.calculate_watershed_image(update_overlay=True)
 
@@ -717,12 +787,56 @@ class ROIPruningController():
             self.erased_rois = []
             self.last_erased_rois = []
 
-            self.removed_rois = self.pruned_rois
+            self.removed_rois = self.filtered_out_rois
 
             self.calculate_watershed_image(update_overlay=True)
 
-    def keep_roi(self):
-        pass
+    def erase_selected_roi(self):
+        self.erased_rois.append(self.selected_roi)
+        self.last_erased_rois.append(self.selected_roi)
+        self.removed_rois = self.filtered_out_rois + self.erased_rois
+        self.selected_roi = None
+
+        self.calculate_watershed_image(update_overlay=True)
+
+        self.param_widget.erase_selected_roi_button.setEnabled(False)
+
+    def lock_roi(self):
+        if self.selected_roi not in self.locked_rois:
+            self.locked_rois.append(self.selected_roi)
+            self.param_widget.lock_roi_button.setText("Unlock ROI")
+        else:
+            index = self.locked_rois.index(self.selected_roi)
+            del self.locked_rois[index]
+            self.param_widget.lock_roi_button.setText("Lock ROI")
+
+    def enlarge_roi(self):
+        if self.selected_roi >= 1:
+            prev_labels = self.labels.copy()
+            mask = self.labels == self.selected_roi
+            mask = binary_dilation(mask, disk(1))
+
+            self.labels[mask] = self.selected_roi
+
+            self.calculate_watershed_image(rois_to_update=[self.selected_roi], prev_labels=prev_labels)
+            self.filter_rois()
+
+    def shrink_roi(self):
+        if self.selected_roi >= 1:
+            prev_labels = self.labels.copy()
+            
+            labels = self.labels.copy()
+            mask = prev_labels == self.selected_roi
+            labels[mask] = 0
+
+            mask = self.labels == self.selected_roi
+            mask = erosion(mask, disk(1))
+            labels[mask] = self.selected_roi
+
+            self.labels = labels.copy()
+
+            self.calculate_watershed_image(rois_to_update=[self.selected_roi], prev_labels=prev_labels)
+            self.filter_rois()
 
     def motion_correct(self):
         self.main_controller.show_motion_correction_params()
@@ -731,4 +845,4 @@ class ROIPruningController():
         self.main_controller.show_watershed_params()
 
     def save_params(self):
-        json.dump(self.params, open(ROI_PRUNING_PARAMS_FILENAME, "w"))
+        json.dump(self.params, open(ROI_filtering_PARAMS_FILENAME, "w"))

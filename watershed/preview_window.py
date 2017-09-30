@@ -40,25 +40,27 @@ class PreviewQLabel(QLabel):
 
     def mousePressEvent(self, event):
         if self.scale_factor is not None:
-            if self.preview_window.drawing_mask:
-                self.preview_window.add_mask_point((int(round(event.x()/self.scale_factor)), int(round(event.y()/self.scale_factor))))
-            elif not self.preview_window.erasing_rois:
-                self.pressed_point = (int(round(event.x()/self.scale_factor)), int(round(event.y()/self.scale_factor)))
+            self.pressed_point = (int(round(event.x()/self.scale_factor)), int(round(event.y()/self.scale_factor)))
+            self.current_point = self.pressed_point
+
+            self.preview_window.mouse_pressed(self.pressed_point)
 
     def mouseMoveEvent(self, event):
         if self.scale_factor is not None:
-            if self.preview_window.drawing_mask:
-                self.preview_window.add_tentative_mask_point((int(round(event.x()/self.scale_factor)), int(round(event.y()/self.scale_factor))))
-            elif self.preview_window.erasing_rois and event.buttons() & Qt.LeftButton:
-                self.preview_window.erase_roi_at_point((int(round(event.x()/self.scale_factor)), int(round(event.y()/self.scale_factor))))
+            self.current_point = (int(round(event.x()/self.scale_factor)), int(round(event.y()/self.scale_factor)))
+
+            self.preview_window.mouse_moved(self.current_point, clicked=(event.buttons() & Qt.LeftButton))
     
     def mouseReleaseEvent(self, event):
-        self.released_point = (int(round(event.x()/self.scale_factor)), int(round(event.y()/self.scale_factor)))
-        if (not self.preview_window.erasing_rois) and (not self.preview_window.drawing_mask) and self.preview_window.mode == "prune":
-            if self.released_point == self.pressed_point:
-                self.preview_window.select_roi(self.released_point)
-        elif self.preview_window.erasing_rois and event.buttons() & Qt.LeftButton:
-            self.preview_window.end_erase_rois()
+        if self.scale_factor is not None:
+            self.released_point = (int(round(event.x()/self.scale_factor)), int(round(event.y()/self.scale_factor)))
+            self.current_point = self.released_point
+
+            self.preview_window.mouse_released(self.released_point, mouse_moved=(self.released_point != self.pressed_point))
+
+            self.pressed_point  = None
+            self.released_point = None
+            self.current_point  = None
 
     def set_scale_factor(self, scale_factor):
         self.scale_factor = scale_factor
@@ -171,7 +173,7 @@ class PreviewWindow(QMainWindow):
         else:
             return available_width
 
-    def plot_image(self, image):
+    def plot_image(self, image, mask=None):
         if image is None:
             self.update_image_label(None)
             self.image_label.hide()
@@ -190,15 +192,23 @@ class PreviewWindow(QMainWindow):
             # update image
             self.image = normalized_image
 
-            if self.mode == "watershed" and len(self.controller.mask_points) > 0:
-                image = self.image.copy()
-                for mask_points in self.controller.mask_points:
-                    self.draw_mask_points(mask_points, image)
+            if mask is not None:
+                self.image[mask > 0] = np.array([255, 0, 0]).astype(np.uint8)
 
-                self.update_image_label(image)
-            else:
-                # update image label
-                self.update_image_label(self.image)
+            if self.main_controller.mode == "watershed" and len(self.controller.mask_points) > 0:
+                image = self.image.copy()
+                for i in range(len(self.controller.mask_points)):
+                    mask_points = self.controller.mask_points[i]
+
+                    self.draw_mask_points(mask_points, image, selected=(i == self.controller.selected_mask_num))
+
+                masks = np.array(self.controller.masks)
+                mask = np.sum(masks, axis=0).astype(bool)
+                image[mask == False] = image[mask == False]/2
+                self.image = image
+            
+            # update image label
+            self.update_image_label(self.image)
 
     def play_movie(self, frames, fps=60):
         if frames is None:
@@ -245,7 +255,7 @@ class PreviewWindow(QMainWindow):
 
     def update_frame(self):
         if self.frames is not None:
-            frame = cv2.cvtColor(self.frames[self.frame_num], cv2.COLOR_GRAY2RGB)
+            frame = cv2.cvtColor(self.frames[self.frame_num, int(self.main_controller.params['z'])], cv2.COLOR_GRAY2RGB)
 
             self.image_label.update_pixmap(frame)
 
@@ -259,7 +269,7 @@ class PreviewWindow(QMainWindow):
             # update size of image label
             self.image_label.update_size()
 
-            self.setWindowTitle("Preview: Frame {}/{}.".format(self.frame_num + 1, self.n_frames))
+            self.setWindowTitle("Preview: Z={}. Frame {}/{}.".format(self.main_controller.params['z'], self.frame_num + 1, self.n_frames))
 
     def zoom(self, zoom_level):
         self.resize(self.width()*zoom_level, self.height()*zoom_level)
@@ -273,16 +283,21 @@ class PreviewWindow(QMainWindow):
         # update size of image label
         self.image_label.update_size()
 
-    def draw_mask_points(self, mask_points, image=None):
+    def draw_mask_points(self, mask_points, image=None, selected=False):
         if image is None:
             image = self.image.copy()
+
+        if selected:
+            color = (0, 255, 0)
+        else:
+            color = (255, 255, 0)
 
         n_points = len(mask_points)
         if n_points >= 1:
             for i in range(n_points):
                 if i < n_points - 1:
-                    cv2.line(image, mask_points[i], mask_points[i+1], (255, 255, 0), 1)
-                cv2.circle(image, mask_points[i], 2, (255, 255, 0), -1)
+                    cv2.line(image, mask_points[i], mask_points[i+1], color, 1)
+                cv2.circle(image, mask_points[i], 2, color, -1)
 
     def draw_tentative_mask_points(self, mask_points, image=None):
         if image is None:
@@ -317,8 +332,18 @@ class PreviewWindow(QMainWindow):
     def erase_roi_at_point(self, roi_point):
         self.controller.erase_roi_at_point(roi_point)
 
+        # image = self.image.copy()
+        # overlay = image.copy()
+
+        # cv2.circle(overlay, roi_point, 10, (255, 0, 0), -1)
+        # cv2.addWeighted(overlay, 0.2, image, 0.8, 0, image)
+
+        # self.update_image_label(image)
+
     def end_erase_rois(self):
         self.image_label.erased_rois = []
+
+        self.update_image_label(self.image)
 
     def end_drawing_mask(self):
         self.drawing_mask = False
@@ -327,6 +352,29 @@ class PreviewWindow(QMainWindow):
 
     def select_roi(self, roi_point):
         self.controller.select_roi(roi_point)
+
+    def select_mask(self, roi_point):
+        self.controller.select_mask(roi_point)
+
+    def mouse_pressed(self, point):
+        if self.main_controller.mode == "watershed" and self.drawing_mask:
+            self.add_mask_point(point)
+
+    def mouse_moved(self, point, clicked=False):
+        if self.drawing_mask:
+            self.add_tentative_mask_point(point)
+        elif self.erasing_rois and clicked:
+            self.erase_roi_at_point(point)
+
+    def mouse_released(self, point, mouse_moved=False):
+        if self.main_controller.mode == "watershed":
+            if not self.drawing_mask and not mouse_moved:
+                self.select_mask(point)
+        elif self.main_controller.mode == "filter":
+            if self.erasing_rois:
+                self.end_erase_rois()
+            elif not mouse_moved:
+                self.select_roi(point)
 
     def closeEvent(self, ce):
         if not self.main_controller.closing:
