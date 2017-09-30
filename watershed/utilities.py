@@ -338,11 +338,17 @@ def draw_rois(rgb_image, labels, roi_overlay, final_overlay, selected_roi, remov
         roi_overlay = np.zeros(image.shape).astype(np.uint8)
 
         for l in np.unique(labels):
-            if l <= 1:
+            if l <= 1 or l in removed_rois:
                 continue
 
-            perim = bwperim((labels == l).astype(int), n=4) == 1
-            roi_overlay[perim > 0] = np.array([255, 0, 0]).astype(np.uint8)
+            # mask = labels == l
+
+            # eroded = erosion(mask, disk(1))
+
+            # roi_overlay[mask - eroded, 0] = 255
+            # p = labels & ~b_eroded;
+            # perim = bwperim((labels == l).astype(int), n=4) == 1
+            roi_overlay[bwperim((labels == l).astype(int), n=4), 0] = 255
 
             # a = roi_outlines[l-1]
             # roi_outlines[l-1, perim > 0] = np.array([255, 0, 0]).astype(np.uint8)
@@ -382,9 +388,10 @@ def draw_rois(rgb_image, labels, roi_overlay, final_overlay, selected_roi, remov
 
     final_overlay[mask] = roi_overlay_2[mask]
 
-    mask = np.isin(labels, removed_rois, assume_unique=False, invert=False)
+    if removed_rois is not None:
+        mask = np.isin(labels, removed_rois, assume_unique=False, invert=False)
 
-    final_overlay[mask] = rgb_image[mask]
+        final_overlay[mask] = rgb_image[mask]
 
     cv2.addWeighted(final_overlay, 0.5, image, 0.5, 0, image)
 

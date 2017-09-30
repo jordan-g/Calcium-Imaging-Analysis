@@ -427,7 +427,7 @@ class WatershedController():
                 self.mask_points[self.main_controller.params['z']].append(mask_points)
                 mask_points = np.array(mask_points)
 
-                mask = np.zeros(self.image.shape)
+                mask = np.zeros(self.mean_image.shape)
                 cv2.fillConvexPoly(mask, mask_points, 1)
                 mask = mask.astype(np.bool)
                 self.masks[self.main_controller.params['z']].append(mask)
@@ -507,7 +507,10 @@ class WatershedController():
         elif param == "z":
             self.calculate_adjusted_images(z_vals=[self.main_controller.params['z']])
             # self.video_opened(self.video, self.video_path, plot=False)
-            image = self.adjusted_images[self.main_controller.params['z']]
+            if self.param_widget.show_watershed_checkbox.isChecked():
+                image = self.watershed_images[self.main_controller.params['z']]
+            else:
+                image = self.adjusted_images[self.main_controller.params['z']]
 
         self.preview_window.plot_image(image, mask=mask)
 
@@ -568,11 +571,23 @@ class WatershedController():
 
             rgb_image = cv2.cvtColor((adjusted_image*255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
 
+            start = time.time()
+
             self.labels[i], self.roi_areas[i], self.roi_circs[i] = utilities.apply_watershed(adjusted_image, soma_mask, I_mod)
 
-            # self.filtered_labels, _ = utilities.filter_rois(self.labels, self.filtering_params['min_area'], self.filtering_params['max_area'], self.roi_areas)
+            end = time.time()
 
-            self.watershed_images[i], self.roi_overlays[i], _ = utilities.draw_rois(rgb_image, self.labels[i], None, None, None, None, [], create_initial_overlay=True)
+            print("Time: {}s.".format(end - start))
+
+            start = time.time()
+
+            filtered_labels, filtered_out_rois = utilities.filter_rois(self.labels[i], self.filtering_params['min_area'], self.filtering_params['max_area'], self.filtering_params['min_circ'], self.filtering_params['max_circ'], self.roi_areas[i], self.roi_circs[i], self.roi_areas[i])
+
+            self.watershed_images[i], self.roi_overlays[i], _ = utilities.draw_rois(rgb_image, self.labels[i], None, None, None, filtered_out_rois, [], create_initial_overlay=True)
+
+            end = time.time()
+
+            print("Time: {}s.".format(end - start))
 
         self.param_widget.show_watershed_checkbox.setDisabled(False)
         self.param_widget.show_watershed_checkbox.setChecked(True)
@@ -633,7 +648,7 @@ class ROIFilteringController():
         else:
             self.params = DEFAULT_ROI_FILTERING_PARAMS
 
-        self.image             = None
+        self.mean_image        = None
         self.normalized_image  = None
         self.adjusted_image    = None
         self.rgb_image         = None
@@ -660,12 +675,12 @@ class ROIFilteringController():
         self.roi_areas       = roi_areas
         self.roi_circs       = roi_circs
         self.roi_overlay     = roi_overlay
-        self.image           = utilities.normalize(utilities.mean(video, z=self.main_controller.params["z"])).astype(np.float32)
+        self.mean_image           = utilities.normalize(utilities.mean(video, z=self.main_controller.params["z"])).astype(np.float32)
        
-        self.image = denoise_tv_chambolle(self.image, weight=0.01, multichannel=False)
-        self.image = ndi.median_filter(self.image, 3) #Added
+        self.mean_image = denoise_tv_chambolle(self.mean_image, weight=0.01, multichannel=False)
+        self.mean_image = ndi.median_filter(self.mean_image, 3) #Added
 
-        self.normalized_image = utilities.normalize(self.image).astype(np.uint8) 
+        self.normalized_image = utilities.normalize(self.mean_image).astype(np.uint8) 
 
         self.calculate_adjusted_images()
         self.filter_rois()
