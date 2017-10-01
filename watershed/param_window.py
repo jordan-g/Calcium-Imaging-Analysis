@@ -134,7 +134,8 @@ class VideosWidget(QWidget):
         self.main_layout.setAlignment(self.title_widget, Qt.AlignTop)
         
         self.videos_list = QListWidget(self)
-        self.videos_list.setSelectionMode(QAbstractItemView.MultiSelection)
+        self.videos_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.videos_list.itemSelectionChanged.connect(self.item_selected)
         self.main_layout.addWidget(self.videos_list)
 
         # create main buttons
@@ -146,6 +147,7 @@ class VideosWidget(QWidget):
 
         self.remove_videos_button = HoverButton('Remove', None, self.parent_widget.statusBar())
         self.remove_videos_button.setHoverMessage("Remove the currently selected videos.")
+        self.remove_videos_button.setDisabled(True)
         self.remove_videos_button.clicked.connect(lambda:self.controller.remove_videos_at_indices([ x.row() for x in self.videos_list.selectedIndexes() ]))
         self.button_layout.addWidget(self.remove_videos_button)
 
@@ -158,6 +160,14 @@ class VideosWidget(QWidget):
 
         for i in range(len(selected_items)-1, -1, -1):
             self.videos_list.takeItem(self.videos_list.row(selected_items[i]))
+
+    def item_selected(self):
+        selected_items = self.videos_list.selectedItems()
+
+        if len(selected_items) > 0:
+            self.remove_videos_button.setDisabled(False)
+        else:
+            self.remove_videos_button.setDisabled(True)
 
 class ParamWidget(QWidget):
     def __init__(self, parent_widget, controller, title):
