@@ -234,12 +234,12 @@ class MotionCorrectionWidget(ParamWidget):
         self.button_layout.setSpacing(10)
         self.main_layout.addWidget(self.button_widget)
 
-        self.use_motion_corrected_video_checkbox = QCheckBox("Use Motion-Corrected Video")
-        self.use_motion_corrected_video_checkbox.setObjectName("Use Motion-Corrected Video")
-        self.use_motion_corrected_video_checkbox.setChecked(False)
-        self.use_motion_corrected_video_checkbox.clicked.connect(lambda:self.controller.use_motion_corrected_video(self.use_motion_corrected_video_checkbox.isChecked()))
-        self.use_motion_corrected_video_checkbox.setDisabled(True)
-        self.button_layout.addWidget(self.use_motion_corrected_video_checkbox)
+        self.use_mc_video_checkbox = QCheckBox("Use Motion-Corrected Video")
+        self.use_mc_video_checkbox.setObjectName("Use Motion-Corrected Video")
+        self.use_mc_video_checkbox.setChecked(False)
+        self.use_mc_video_checkbox.clicked.connect(lambda:self.controller.set_use_mc_video(self.use_mc_video_checkbox.isChecked()))
+        self.use_mc_video_checkbox.setDisabled(True)
+        self.button_layout.addWidget(self.use_mc_video_checkbox)
 
         self.button_layout.addStretch()
 

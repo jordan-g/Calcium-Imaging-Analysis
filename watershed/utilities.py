@@ -143,7 +143,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap):
     directory = os.path.dirname(full_video_path)
     filename  = os.path.basename(full_video_path)
 
-    mc_video = None
+    mc_videos_list = []
 
     # Create the cluster
     c, dview, n_processes = cm.cluster.setup_cluster(
@@ -154,7 +154,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap):
         imsave(video_path, video[:, z, :, :])
 
         a = imread(video_path)
-        print(a.shape)
+        # print(a.shape)
 
         # --- PARAMETERS --- #
 
@@ -162,7 +162,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap):
                         'max_shifts': (max_shift, max_shift),  # maximum allow rigid shift (2,2)
                         'niter_rig': 2,
                         'splits_rig': 20,  # for parallelization split the movies in  num_splits chuncks across time
-                        'num_splits_to_process_rig': 10,  # if none all the splits are processed and the movie is saved
+                        'num_splits_to_process_rig': None,  # if none all the splits are processed and the movie is saved
                         'strides': (patch_stride, patch_stride),  # intervals at which patches are laid out for motion correction
                         'overlaps': (patch_overlap, patch_overlap),  # overlap between pathes (size of patch strides+overlaps)
                         'splits_els': 20,  # for parallelization split the movies in  num_splits chuncks across time
@@ -214,6 +214,8 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap):
         # Do rigid motion correction
         mc.motion_correct_rigid(save_movie=True)
 
+        # print(mc.fname_tot_rig)
+
         # Load rigid motion corrected movie
         m_rig = cm.load(mc.fname_tot_rig)
 
@@ -264,9 +266,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap):
         images = np.reshape(Yr.T, [T] + list(dims), order='F')
         Y = np.reshape(Yr, dims + (T,), order='F')
 
-        if mc_video is None:
-            mc_video = np.zeros((video.shape[0], video.shape[1], images.shape[1], images.shape[2]))
-        mc_video[:, z, :, :] = images
+        mc_videos_list.append(np.nan_to_num(images))
 
         log_files = glob.glob('Yr*_LOG_*')
         for log_file in log_files:
@@ -276,6 +276,35 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap):
         out[:] = m_els[:]
 
         out = np.nan_to_num(out)
+
+    max_height = max([ a.shape[1] for a in mc_videos_list ])
+    max_width  = max([ a.shape[2] for a in mc_videos_list ])
+
+    # print("Max", max_height, max_width)
+
+    mc_video = np.zeros((video.shape[0], video.shape[1], max_height, max_width))
+
+    # print(mc_video.shape)
+
+    for z in range(len(mc_videos_list)):
+        a = mc_videos_list[z]
+        height_pad = max_height - a.shape[1]
+        width_pad  = max_width - a.shape[2]
+
+        # print("Pad", height_pad, width_pad)
+
+        height_pad_pre  = height_pad//2
+        height_pad_post = height_pad - height_pad_pre
+
+        width_pad_pre  = width_pad//2
+        width_pad_post = width_pad - width_pad_pre
+
+        b = np.pad(a, ((0, 0), (height_pad_pre, height_pad_post), (width_pad_pre, width_pad_post)), 'constant')
+        # print(b.shape)
+
+        mc_video[:, z, :, :] = b
+
+        # print(np.amax(mc_video), np.amin(mc_video))
 
     motion_corrected_video_path = os.path.splitext(os.path.basename(full_video_path))[0] + "_mc.npy"
     np.save(motion_corrected_video_path, mc_video)
