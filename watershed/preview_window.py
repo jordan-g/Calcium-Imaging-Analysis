@@ -195,14 +195,14 @@ class PreviewWindow(QMainWindow):
             if mask is not None:
                 self.image[mask > 0] = np.array([255, 0, 0]).astype(np.uint8)
 
-            if self.main_controller.mode == "watershed" and len(self.controller.mask_points) > 0:
+            if self.main_controller.mode == "watershed" and len(self.controller.mask_points[self.controller.z]) > 0:
                 image = self.image.copy()
-                for i in range(len(self.controller.mask_points)):
-                    mask_points = self.controller.mask_points[i]
+                for i in range(len(self.controller.mask_points[self.controller.z])):
+                    mask_points = self.controller.mask_points[self.controller.z][i]
 
                     self.draw_mask_points(mask_points, image, selected=(i == self.controller.selected_mask_num))
 
-                masks = np.array(self.controller.masks)
+                masks = np.array(self.controller.masks[self.controller.z])
                 mask = np.sum(masks, axis=0).astype(bool)
                 image[mask == False] = image[mask == False]/2
                 self.image = image
@@ -313,7 +313,7 @@ class PreviewWindow(QMainWindow):
         self.mask_points.append(mask_point)
 
         image = self.image.copy()
-        for mask_points in self.controller.mask_points:
+        for mask_points in self.controller.mask_points[self.controller.z]:
             self.draw_mask_points(mask_points, image)
         self.draw_mask_points(self.mask_points + [self.mask_points[0]], image)
 
@@ -321,7 +321,7 @@ class PreviewWindow(QMainWindow):
 
     def add_tentative_mask_point(self, mask_point):
         image = self.image.copy()
-        for mask_points in self.controller.mask_points:
+        for mask_points in self.controller.mask_points[self.controller.z]:
             self.draw_mask_points(mask_points, image)
         if len(self.mask_points) > 0:
             self.draw_mask_points(self.mask_points + [self.mask_points[0]], image)

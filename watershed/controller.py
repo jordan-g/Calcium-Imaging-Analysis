@@ -438,6 +438,7 @@ class WatershedController():
 
         self.mean_images          = None
         self.normalized_images    = None
+
         self.adjusted_image       = None
         self.background_mask      = None
         self.equalized_image      = None
@@ -544,7 +545,7 @@ class WatershedController():
                 self.mask_points[self.z].append(mask_points)
                 mask_points = np.array(mask_points)
 
-                mask = np.zeros(self.mean_image.shape)
+                mask = np.zeros(self.adjusted_image.shape)
                 cv2.fillConvexPoly(mask, mask_points, 1)
                 mask = mask.astype(np.bool)
                 self.masks[self.z].append(mask)
@@ -627,6 +628,14 @@ class WatershedController():
 
             self.labels[z], self.roi_areas[z], self.roi_circs[z] = utilities.apply_watershed(adjusted_image, soma_mask, I_mod)
 
+            if len(self.masks[z]) > 0:
+                masks = np.array(self.masks[z])
+                mask = np.sum(masks, axis=0).astype(bool)
+
+                out = np.zeros(self.labels[z].shape).astype(int)
+                out[mask] = self.labels[z][mask]
+                self.labels[z] = out.copy()
+
             end = time.time()
 
             print("Time: {}s.".format(end - start))
@@ -703,10 +712,12 @@ class ROIFilteringController():
 
         self.mean_images       = None
         self.normalized_images = None
+
         self.adjusted_images   = None
+        self.watershed_images  = None
+
         self.labels            = None
         self.filtered_labels   = None
-        self.watershed_images  = None
         self.roi_areas         = None
         self.roi_circs         = None
         self.selected_roi      = None
