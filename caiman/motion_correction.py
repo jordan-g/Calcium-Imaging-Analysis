@@ -2019,6 +2019,7 @@ def motion_correction_piecewise(fname, splits, strides, overlaps, add_to_movie=0
 
     dims = d1,d2
     if num_splits is not None:
+        print(len(idxs), num_splits)
         idxs = np.array(idxs)[np.random.randint(0,len(idxs),num_splits)]
         save_movie = False
         print('**** MOVIE NOT SAVED BECAUSE num_splits is not None ****')

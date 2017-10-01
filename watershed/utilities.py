@@ -6,6 +6,7 @@ from skimage.feature import peak_local_max
 
 from skimage.morphology import *
 from skimage.filters import rank
+from skimage.external.tifffile import imread, imsave
 
 import caiman as cm
 from caiman.motion_correction import tile_and_correct, motion_correction_piecewise
@@ -136,132 +137,150 @@ def adjust_gamma(image, gamma):
     # apply gamma correction using the lookup table
     return cv2.LUT(image, table.astype(np.uint8))
 
-def motion_correct(video_path, max_shift, patch_stride, patch_overlap):
-    # --- PARAMETERS --- #
+def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap):
+    full_video_path = video_path
 
-    params_movie = {'fname': video_path,
-                     'max_shifts': (max_shift, max_shift),  # maximum allow rigid shift (2,2)
-                     'niter_rig': 2,
-                     'splits_rig': 20,  # for parallelization split the movies in  num_splits chuncks across time
-                     'num_splits_to_process_rig': [10, None],  # if none all the splits are processed and the movie is saved
-                     'strides': (patch_stride, patch_stride),  # intervals at which patches are laid out for motion correction
-                     'overlaps': (patch_overlap, patch_overlap),  # overlap between pathes (size of patch strides+overlaps)
-                     'splits_els': 20,  # for parallelization split the movies in  num_splits chuncks across time
-                     'num_splits_to_process_els': [None],  # if none all the splits are processed and the movie is saved
-                     'upsample_factor_grid': 4,  # upsample factor to avoid smearing when merging patches
-                     'max_deviation_rigid': 10,  # maximum deviation allowed for patch with respect to rigid shift         
-                     }
+    directory = os.path.dirname(full_video_path)
+    filename  = os.path.basename(full_video_path)
 
-    # load movie (in memory!)
-    fname = params_movie['fname']
-    niter_rig = params_movie['niter_rig']
-    # maximum allow rigid shift
-    max_shifts = params_movie['max_shifts']  
-    # for parallelization split the movies in  num_splits chuncks across time
-    splits_rig = params_movie['splits_rig']  
-    # if none all the splits are processed and the movie is saved
-    num_splits_to_process_rig = params_movie['num_splits_to_process_rig']
-    # intervals at which patches are laid out for motion correction
-    strides = params_movie['strides']
-    # overlap between pathes (size of patch strides+overlaps)
-    overlaps = params_movie['overlaps']
-    # for parallelization split the movies in  num_splits chuncks across time
-    splits_els = params_movie['splits_els'] 
-    # if none all the splits are processed and the movie is saved
-    num_splits_to_process_els = params_movie['num_splits_to_process_els']
-    # upsample factor to avoid smearing when merging patches
-    upsample_factor_grid = params_movie['upsample_factor_grid'] 
-    # maximum deviation allowed for patch with respect to rigid
-    # shift
-    max_deviation_rigid = params_movie['max_deviation_rigid']
-
-    # --- RIGID MOTION CORRECTION --- #
-
-    # Load the original movie
-    m_orig = cm.load(fname)
-    min_mov = np.min(m_orig) # movie must be mostly positive for this to work
-
-    offset_mov = -min_mov
+    mc_video = None
 
     # Create the cluster
     c, dview, n_processes = cm.cluster.setup_cluster(
         backend='local', n_processes=None, single_thread=False)
 
-    # Create motion correction object
-    mc = MotionCorrect(fname, min_mov,
-                       dview=dview, max_shifts=max_shifts, niter_rig=niter_rig, splits_rig=splits_rig, 
-                       num_splits_to_process_rig=num_splits_to_process_rig, 
-                    strides= strides, overlaps= overlaps, splits_els=splits_els,
-                    num_splits_to_process_els=num_splits_to_process_els, 
-                    upsample_factor_grid=upsample_factor_grid, max_deviation_rigid=max_deviation_rigid, 
-                    shifts_opencv = True, nonneg_movie = True)
+    for z in range(video.shape[1]):
+        video_path = os.path.join(directory, os.path.splitext(filename)[0] + "_z_{}.tif".format(z))
+        imsave(video_path, video[:, z, :, :])
 
-    # Do rigid motion correction
-    mc.motion_correct_rigid(save_movie=True)
+        a = imread(video_path)
+        print(a.shape)
 
-    # Load rigid motion corrected movie
-    m_rig = cm.load(mc.fname_tot_rig)
+        # --- PARAMETERS --- #
 
-    # --- ELASTIC MOTION CORRECTION --- #
+        params_movie = {'fname': video_path,
+                        'max_shifts': (max_shift, max_shift),  # maximum allow rigid shift (2,2)
+                        'niter_rig': 2,
+                        'splits_rig': 20,  # for parallelization split the movies in  num_splits chuncks across time
+                        'num_splits_to_process_rig': 10,  # if none all the splits are processed and the movie is saved
+                        'strides': (patch_stride, patch_stride),  # intervals at which patches are laid out for motion correction
+                        'overlaps': (patch_overlap, patch_overlap),  # overlap between pathes (size of patch strides+overlaps)
+                        'splits_els': 20,  # for parallelization split the movies in  num_splits chuncks across time
+                        'num_splits_to_process_els': [None],  # if none all the splits are processed and the movie is saved
+                        'upsample_factor_grid': 4,  # upsample factor to avoid smearing when merging patches
+                        'max_deviation_rigid': 10,  # maximum deviation allowed for patch with respect to rigid shift         
+                        }
 
-    # Do elastic motion correction
-    mc.motion_correct_pwrigid(save_movie=True, template=mc.total_template_rig, show_template=False)
+        # load movie (in memory!)
+        fname = params_movie['fname']
+        niter_rig = params_movie['niter_rig']
+        # maximum allow rigid shift
+        max_shifts = params_movie['max_shifts']  
+        # for parallelization split the movies in  num_splits chuncks across time
+        splits_rig = params_movie['splits_rig']  
+        # if none all the splits are processed and the movie is saved
+        num_splits_to_process_rig = params_movie['num_splits_to_process_rig']
+        # intervals at which patches are laid out for motion correction
+        strides = params_movie['strides']
+        # overlap between pathes (size of patch strides+overlaps)
+        overlaps = params_movie['overlaps']
+        # for parallelization split the movies in  num_splits chuncks across time
+        splits_els = params_movie['splits_els'] 
+        # if none all the splits are processed and the movie is saved
+        num_splits_to_process_els = params_movie['num_splits_to_process_els']
+        # upsample factor to avoid smearing when merging patches
+        upsample_factor_grid = params_movie['upsample_factor_grid'] 
+        # maximum deviation allowed for patch with respect to rigid
+        # shift
+        max_deviation_rigid = params_movie['max_deviation_rigid']
 
-    # Save elastic shift border
-    bord_px_els = np.ceil(np.maximum(np.max(np.abs(mc.x_shifts_els)),
-                                     np.max(np.abs(mc.y_shifts_els)))).astype(np.int)
-    np.savez(mc.fname_tot_els + "_bord_px_els.npz", bord_px_els)
+        # --- RIGID MOTION CORRECTION --- #
 
-    # Load elastic motion corrected movie
-    m_els = cm.load(mc.fname_tot_els)
+        # Load the original movie
+        m_orig = cm.load(fname)
+        min_mov = np.min(m_orig) # movie must be mostly positive for this to work
 
-    # downsample_factor = 1
-    # cm.concatenate([m_orig.resize(1, 1, downsample_factor)+offset_mov, m_rig.resize(1, 1, downsample_factor), m_els.resize(
-    #     1, 1, downsample_factor)], axis=2).play(fr=60, gain=5, magnification=0.75, offset=0)
+        offset_mov = -min_mov
 
-    # Crop elastic shifts out of the movie and save
-    fnames = [mc.fname_tot_els]
-    border_to_0 = bord_px_els
-    idx_x=slice(border_to_0,-border_to_0,None)
-    idx_y=slice(border_to_0,-border_to_0,None)
-    idx_xy=(idx_x,idx_y)
-    # idx_xy = None
-    add_to_movie = -np.nanmin(m_els) + 1  # movie must be positive
-    remove_init = 0 # if you need to remove frames from the beginning of each file
-    downsample_factor = 1 
-    base_name = fname.split('/')[-1][:-4]
-    name_new = cm.save_memmap_each(fnames, dview=dview, base_name=base_name, resize_fact=(
-        1, 1, downsample_factor), remove_init=remove_init, idx_xy=idx_xy, add_to_movie=add_to_movie, border_to_0=0)
-    name_new.sort()
+        # Create motion correction object
+        mc = MotionCorrect(fname, min_mov,
+                           dview=dview, max_shifts=max_shifts, niter_rig=niter_rig, splits_rig=splits_rig, 
+                           num_splits_to_process_rig=num_splits_to_process_rig, 
+                        strides= strides, overlaps= overlaps, splits_els=splits_els,
+                        num_splits_to_process_els=num_splits_to_process_els, 
+                        upsample_factor_grid=upsample_factor_grid, max_deviation_rigid=max_deviation_rigid, 
+                        shifts_opencv = True, nonneg_movie = True)
 
-    # If multiple files were saved in C format, put them together in a single large file 
-    if len(name_new) > 1:
-        fname_new = cm.save_memmap_join(
-            name_new, base_name='Yr', n_chunks=20, dview=dview)
-    else:
-        print('One file only, not saving!')
-        fname_new = name_new[0]
+        # Do rigid motion correction
+        mc.motion_correct_rigid(save_movie=True)
 
-    print("Final movie saved in: {}.".format(fname_new))
+        # Load rigid motion corrected movie
+        m_rig = cm.load(mc.fname_tot_rig)
 
-    Yr, dims, T = cm.load_memmap(fname_new)
-    d1, d2 = dims
-    images = np.reshape(Yr.T, [T] + list(dims), order='F')
-    Y = np.reshape(Yr, dims + (T,), order='F')
+        # --- ELASTIC MOTION CORRECTION --- #
 
-    motion_corrected_video_path = os.path.splitext(os.path.basename(video_path))[0] + "_mc.npy"
-    np.save(motion_corrected_video_path, images)
+        # Do elastic motion correction
+        mc.motion_correct_pwrigid(save_movie=True, template=mc.total_template_rig, show_template=False)
 
-    log_files = glob.glob('Yr*_LOG_*')
-    for log_file in log_files:
-        os.remove(log_file)
+        # Save elastic shift border
+        bord_px_els = np.ceil(np.maximum(np.max(np.abs(mc.x_shifts_els)),
+                                         np.max(np.abs(mc.y_shifts_els)))).astype(np.int)
+        np.savez(mc.fname_tot_els + "_bord_px_els.npz", bord_px_els)
 
-    out = np.zeros(m_els.shape)
-    out[:] = m_els[:]
+        # Load elastic motion corrected movie
+        m_els = cm.load(mc.fname_tot_els)
 
-    out = np.nan_to_num(out)
+        # downsample_factor = 1
+        # cm.concatenate([m_orig.resize(1, 1, downsample_factor)+offset_mov, m_rig.resize(1, 1, downsample_factor), m_els.resize(
+        #     1, 1, downsample_factor)], axis=2).play(fr=60, gain=5, magnification=0.75, offset=0)
 
-    return out, motion_corrected_video_path
+        # Crop elastic shifts out of the movie and save
+        fnames = [mc.fname_tot_els]
+        border_to_0 = bord_px_els
+        idx_x=slice(border_to_0,-border_to_0,None)
+        idx_y=slice(border_to_0,-border_to_0,None)
+        idx_xy=(idx_x,idx_y)
+        # idx_xy = None
+        add_to_movie = -np.nanmin(m_els) + 1  # movie must be positive
+        remove_init = 0 # if you need to remove frames from the beginning of each file
+        downsample_factor = 1 
+        base_name = fname.split('/')[-1][:-4]
+        name_new = cm.save_memmap_each(fnames, dview=dview, base_name=base_name, resize_fact=(
+            1, 1, downsample_factor), remove_init=remove_init, idx_xy=idx_xy, add_to_movie=add_to_movie, border_to_0=0)
+        name_new.sort()
+
+        # If multiple files were saved in C format, put them together in a single large file 
+        if len(name_new) > 1:
+            fname_new = cm.save_memmap_join(
+                name_new, base_name='Yr', n_chunks=20, dview=dview)
+        else:
+            print('One file only, not saving!')
+            fname_new = name_new[0]
+
+        print("Final movie saved in: {}.".format(fname_new))
+
+        Yr, dims, T = cm.load_memmap(fname_new)
+        d1, d2 = dims
+        images = np.reshape(Yr.T, [T] + list(dims), order='F')
+        Y = np.reshape(Yr, dims + (T,), order='F')
+
+        if mc_video is None:
+            mc_video = np.zeros((video.shape[0], video.shape[1], images.shape[1], images.shape[2]))
+        mc_video[:, z, :, :] = images
+
+        log_files = glob.glob('Yr*_LOG_*')
+        for log_file in log_files:
+            os.remove(log_file)
+
+        out = np.zeros(m_els.shape)
+        out[:] = m_els[:]
+
+        out = np.nan_to_num(out)
+
+    motion_corrected_video_path = os.path.splitext(os.path.basename(full_video_path))[0] + "_mc.npy"
+    np.save(motion_corrected_video_path, mc_video)
+
+    return mc_video, motion_corrected_video_path
 
 def apply_watershed(original_image, cells_mask, starting_image):
     if len(original_image.shape) == 2:
@@ -295,14 +314,18 @@ def apply_watershed(original_image, cells_mask, starting_image):
 
     return labels, roi_areas, roi_circs
 
-def filter_rois(labels, min_area, max_area, min_circ, max_circ, roi_areas, roi_circs, locked_rois=[]):
+def filter_rois(image, labels, min_area, max_area, min_circ, max_circ, roi_areas, roi_circs, locked_rois=[]):
     filtered_labels = labels.copy()
     filtered_out_rois = []
 
     for l in np.unique(labels):
         mask = labels == l
 
-        if ((not (min_area <= roi_areas[l-1] <= max_area)) or l <= 1) and l not in locked_rois:
+        perim = bwperim(mask.astype(int), n=4) == 1
+
+        diff = np.mean(image[perim]) - np.mean(image[mask - perim])
+
+        if ((not (min_area <= roi_areas[l-1] <= max_area)) or l <= 1 or (diff != np.nan and diff < 1.0)) and l not in locked_rois:
             filtered_labels[mask] = 0
             filtered_out_rois.append(l)
 

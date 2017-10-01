@@ -217,6 +217,7 @@ class PreviewWindow(QMainWindow):
             self.image_label.hide()
             self.n_frames = 1
         else:
+            print(frames.shape)
             if self.frames is None:
                 self.main_widget.setMinimumSize(QSize(frames.shape[1] + 20, frames.shape[2] + 20))
 
@@ -240,7 +241,6 @@ class PreviewWindow(QMainWindow):
             self.image_label.hide()
             self.n_frames = 1
         else:
-            self.frame_num = 0
             self.image_label.show()
 
             frame = cv2.cvtColor(frame.astype(np.uint8), cv2.COLOR_GRAY2RGB)
@@ -255,7 +255,7 @@ class PreviewWindow(QMainWindow):
 
     def update_frame(self):
         if self.frames is not None:
-            frame = cv2.cvtColor(self.frames[self.frame_num, int(self.main_controller.params['z'])], cv2.COLOR_GRAY2RGB)
+            frame = cv2.cvtColor(self.frames[self.frame_num], cv2.COLOR_GRAY2RGB)
 
             self.image_label.update_pixmap(frame)
 

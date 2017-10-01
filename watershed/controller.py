@@ -91,6 +91,8 @@ class Controller():
         self.roi_filtering_controller.preview_window     = self.preview_window
         self.watershed_controller.filtering_params       = self.roi_filtering_controller.params
 
+        self.use_mc_video = False
+
         self.closing = False
 
     def select_and_open_video(self):
@@ -168,13 +170,15 @@ class Controller():
 
         self.video = np.nan_to_num(self.video).astype(np.float32)
 
-        self.normalized_video = utilities.normalize(self.video).astype(np.uint8)
+        self.video = utilities.normalize(self.video).astype(np.uint8)
+
+        self.normalized_video = self.video
 
         self.param_window.stacked_widget.setDisabled(False)
         self.param_window.statusBar().showMessage("")
 
         # update the motion correction controller
-        self.motion_correction_controller.video_opened(self.video, self.normalized_video, self.video_path, plot=True)
+        self.motion_correction_controller.video_opened(self.video, self.video_path, plot=True)
 
     def show_watershed_params(self, video=None, video_path=None):
         if video is None:
@@ -182,6 +186,7 @@ class Controller():
 
         if video_path is None:
             video_path = self.video_path
+
         self.param_window.stacked_widget.setCurrentIndex(1)
         self.watershed_controller.video_opened(video, video_path, plot=True)
         self.preview_window.controller = self.watershed_controller
@@ -265,45 +270,70 @@ class MotionCorrectionController():
         else:
             self.params = DEFAULT_MOTION_CORRECTION_PARAMS
 
-        self.video                             = None
-        self.normalized_video                  = None
-        self.adjusted_video                    = None
-        self.adjusted_frame                    = None
-        self.motion_corrected_video            = None
-        self.normalized_motion_corrected_video = None
-        self.current_video                     = None
-        self.current_adjusted_video            = None
-        self.adjusted_motion_corrected_video   = None
-        self.video_path                        = None
-        self.motion_corrected_video_path       = None
+        self.video             = None
+        self.mc_video          = None
+        
+        self.adjusted_video    = None
+        self.adjusted_mc_video = None
+        
+        self.adjusted_frame    = None
+        self.adjusted_mc_frame = None
+        
+        self.video_path        = None
+        self.mc_video_path     = None
 
-        self.showing_motion_corrected_video = False
+        self.use_mc_video = False
+        self.z            = 0
 
-    def video_opened(self, video, normalized_video, video_path, plot=False):
-        self.video            = video
-        self.normalized_video = normalized_video
-        self.video_path       = video_path
+    def video_opened(self, video, video_path, plot=False):
+        self.video      = video
+        self.video_path = video_path
+
+        self.z = self.main_controller.params['z']
 
         self.preview_window.timer.stop()
 
-        self.calculate_adjusted_video()
+        self.adjusted_video = self.calculate_adjusted_video(self.video, z=self.main_controller.params['z'])
 
-        if plot:
-            self.play_adjusted_video()
+        self.play_video(self.adjusted_video)
+
+    def switched_to(self):
+        if self.z != self.main_controller.params['z']:
+            z = self.main_controller.params['z']
+
+            if self.use_mc_video:
+                self.adjusted_mc_video = self.calculate_adjusted_video(self.mc_video, z=self.main_controller.params['z'])
+            else:
+                self.adjusted_video = self.calculate_adjusted_video(self.video, z=self.main_controller.params['z'])
+
+            self.z = z
+
+        self.preview_window.timer.stop()
+
+        if self.use_mc_video:
+            self.play_video(self.adjusted_mc_video)
+        else:
+            self.play_video(self.adjusted_video)
 
     def preview_contrast(self, contrast):
         self.preview_window.timer.stop()
 
-        self.calculate_adjusted_frame()
+        if self.use_mc_video:
+            adjusted_frame = self.calculate_adjusted_frame(self.mc_video)
+        else:
+            adjusted_frame = self.calculate_adjusted_frame(self.video)
           
-        self.preview_window.show_frame(self.adjusted_frame)
+        self.preview_window.show_frame(adjusted_frame)
 
     def preview_gamma(self, gamma):
         self.preview_window.timer.stop()
 
-        self.calculate_adjusted_frame()
+        if self.use_mc_video:
+            adjusted_frame = self.calculate_adjusted_frame(self.mc_video)
+        else:
+            adjusted_frame = self.calculate_adjusted_frame(self.video)
 
-        self.preview_window.show_frame(self.adjusted_frame)
+        self.preview_window.show_frame(adjusted_frame)
 
     def update_param(self, param, value):
         if param in self.params.keys():
@@ -312,59 +342,76 @@ class MotionCorrectionController():
         if param in ("contrast, gamma"):
             self.preview_window.timer.stop()
 
-            self.calculate_adjusted_video()
-
-            self.preview_window.play_movie(self.adjusted_video, fps=self.main_controller.params['fps'])
+            if self.use_mc_video:
+                self.adjusted_mc_video = self.calculate_adjusted_video(self.mc_video, self.z)
+                self.play_video(self.adjusted_mc_video)
+            else:
+                self.adjusted_video = self.calculate_adjusted_video(self.video, self.z)
+                self.play_video(self.adjusted_video)
         elif param == "fps":
             self.preview_window.set_fps(self.main_controller.params['fps'])
         elif param == "z":
+            self.z = value
+
+            if self.use_mc_video:
+                self.adjusted_video    = None
+                self.adjusted_mc_video = self.calculate_adjusted_video(self.mc_video, self.z)
+            else:
+                self.adjusted_mc_video = None
+                self.adjusted_video    = self.calculate_adjusted_video(self.video, self.z)
+
             self.preview_window.timer.stop()
 
-            self.preview_window.play_movie(self.adjusted_video, fps=self.main_controller.params['fps'])
+            if self.use_mc_video:
+                self.play_video(self.adjusted_mc_video)
+            else:
+                self.play_video(self.adjusted_video)
 
-    def calculate_adjusted_video(self):
-        if self.showing_motion_corrected_video:
-            self.adjusted_video = utilities.adjust_gamma(utilities.adjust_contrast(self.normalized_motion_corrected_video, self.main_controller.params['contrast']), self.main_controller.params['gamma'])
+    def calculate_adjusted_video(self, video, z=None):
+        if z is not None:
+            return utilities.adjust_gamma(utilities.adjust_contrast(video[:, z, :, :], self.main_controller.params['contrast']), self.main_controller.params['gamma'])
         else:
-            self.adjusted_video = utilities.adjust_gamma(utilities.adjust_contrast(self.normalized_video, self.main_controller.params['contrast']), self.main_controller.params['gamma'])
+            return utilities.adjust_gamma(utilities.adjust_contrast(video, self.main_controller.params['contrast']), self.main_controller.params['gamma'])
 
-    def calculate_adjusted_frame(self):
-        if self.showing_motion_corrected_video:
-            self.adjusted_frame = utilities.adjust_gamma(utilities.adjust_contrast(self.normalized_motion_corrected_video[self.preview_window.frame_num, self.main_controller.params['z']], self.main_controller.params['contrast']), self.main_controller.params['gamma'])
+    def calculate_adjusted_frame(self, video):
+        return utilities.adjust_gamma(utilities.adjust_contrast(video[self.preview_window.frame_num, self.z], self.main_controller.params['contrast']), self.main_controller.params['gamma'])
+
+    def motion_correct_video(self):
+        self.mc_video, self.mc_video_path = utilities.motion_correct(self.video, self.video_path, int(self.params["max_shift"]), int(self.params["patch_stride"]), int(self.params["patch_overlap"]))
+
+        self.mc_video = utilities.normalize(self.mc_video).astype(np.uint8)
+
+        self.use_mc_video = True
+
+        self.adjusted_mc_video = self.calculate_adjusted_video(self.mc_video, self.z)
+
+        self.param_widget.use_mc_video_checkbox.setEnabled(True)
+        self.param_widget.use_mc_video_checkbox.setChecked(True)
+
+        self.use_mc_video(True)
+
+    def play_video(self, video):
+        self.preview_window.play_movie(video, fps=self.main_controller.params['fps'])
+
+    def use_mc_video(self, use_mc_video):
+        self.use_mc_video = use_mc_video
+
+        if self.use_mc_video:
+            if self.adjusted_mc_video is None:
+                self.adjusted_mc_video = self.calculate_adjusted_video(self.mc_video, self.z)
+            self.preview_window.play_movie(self.adjusted_mc_video, fps=self.main_controller.params['fps'])
         else:
-            self.adjusted_frame = utilities.adjust_gamma(utilities.adjust_contrast(self.normalized_video[self.preview_window.frame_num, self.main_controller.params['z']], self.main_controller.params['contrast']), self.main_controller.params['gamma'])
-
-    def process_video(self):
-        self.motion_corrected_video, self.motion_corrected_video_path = utilities.motion_correct(self.video_path, int(self.params["max_shift"]), int(self.params["patch_stride"]), int(self.params["patch_overlap"]))
-
-        self.normalized_motion_corrected_video = utilities.normalize(self.motion_corrected_video).astype(np.uint8)
-
-        self.showing_motion_corrected_video = True
-        self.calculate_adjusted_video()
-
-        self.param_widget.play_motion_corrected_video_checkbox.setEnabled(True)
-        self.param_widget.play_motion_corrected_video_checkbox.setChecked(True)
-        self.play_motion_corrected_video(True)
-
-        self.param_widget.accept_button.setEnabled(True)
-
-    def play_adjusted_video(self):
-        if self.adjusted_video is not None:
+            if self.adjusted_video is None:
+                self.adjusted_video = self.calculate_adjusted_video(self.video, self.z)
             self.preview_window.play_movie(self.adjusted_video, fps=self.main_controller.params['fps'])
-
-    def play_motion_corrected_video(self, show):
-        self.showing_motion_corrected_video = show
-
-        self.calculate_adjusted_video()
-        self.preview_window.play_movie(self.adjusted_video, fps=self.main_controller.params['fps'])
-
-    def skip(self):
-        self.preview_window.timer.stop()
-        self.main_controller.show_watershed_params()
 
     def accept(self):
         self.preview_window.timer.stop()
-        self.main_controller.show_watershed_params(video=self.motion_corrected_video, video_path=self.motion_corrected_video_path)
+
+        if self.use_mc_video:
+            self.main_controller.show_watershed_params(video=self.mc_video, video_path=self.mc_video_path)
+        else:
+            self.main_controller.show_watershed_params(video=self.video, video_path=self.video_path)
 
     def save_params(self):
         json.dump(self.params, open(MOTION_CORRECTION_PARAMS_FILENAME, "w"))
@@ -408,7 +455,7 @@ class WatershedController():
         self.video       = video
         self.video_path  = video_path
         
-        self.mean_images = [ ndi.median_filter(denoise_tv_chambolle(utilities.normalize(utilities.mean(video, i)).astype(np.float32), weight=0.01, multichannel=False), 3) for i in range(video.shape[1]) ]
+        self.mean_images = [ ndi.median_filter(denoise_tv_chambolle(utilities.mean(video, i).astype(np.float32), weight=0.01, multichannel=False), 3) for i in range(video.shape[1]) ]
 
         self.normalized_images = [ utilities.normalize(mean_image).astype(np.uint8) for mean_image in self.mean_images ]
 
@@ -431,8 +478,7 @@ class WatershedController():
         self.calculate_equalized_images(z_vals=range(self.video.shape[1]))
         self.calculate_soma_threshold_images(z_vals=range(self.video.shape[1]))
 
-        if plot:
-            self.preview_window.plot_image(self.adjusted_images[self.main_controller.params['z']])
+        self.preview_window.plot_image(self.adjusted_images[self.main_controller.params['z']])
 
     def calculate_background_masks(self, z_vals=[0]):
         for z in z_vals:
@@ -502,6 +548,8 @@ class WatershedController():
             equalized_image[equalized_image > 1] = 1
 
             equalized_image[background_mask] = 0
+
+            print(np.amax(equalized_image), np.amin(equalized_image))
 
             self.equalized_images[z] = 1.0 - equalized_image
 
@@ -617,7 +665,7 @@ class WatershedController():
 
             start = time.time()
 
-            filtered_labels, filtered_out_rois = utilities.filter_rois(self.labels[i], self.filtering_params['min_area'], self.filtering_params['max_area'], self.filtering_params['min_circ'], self.filtering_params['max_circ'], self.roi_areas[i], self.roi_circs[i], self.roi_areas[i])
+            filtered_labels, filtered_out_rois = utilities.filter_rois(self.mean_images[i], self.labels[i], self.filtering_params['min_area'], self.filtering_params['max_area'], self.filtering_params['min_circ'], self.filtering_params['max_circ'], self.roi_areas[i], self.roi_circs[i], self.roi_areas[i])
 
             self.watershed_images[i], self.roi_overlays[i], _ = utilities.draw_rois(rgb_image, self.labels[i], None, filtered_out_rois, None)
 
@@ -773,7 +821,7 @@ class ROIFilteringController():
 
     def filter_rois(self, z_vals=[0]):
         for z in z_vals:
-            self.filtered_labels[z], self.filtered_out_rois[z] = utilities.filter_rois(self.labels[z], self.params['min_area'], self.params['max_area'], self.params['min_circ'], self.params['max_circ'], self.roi_areas[z], self.roi_circs[z], self.locked_rois[z])
+            self.filtered_labels[z], self.filtered_out_rois[z] = utilities.filter_rois(self.mean_images[z], self.labels[z], self.params['min_area'], self.params['max_area'], self.params['min_circ'], self.params['max_circ'], self.roi_areas[z], self.roi_circs[z], self.locked_rois[z])
             self.removed_rois[z] = self.filtered_out_rois[z] + self.erased_rois[z]
         self.calculate_watershed_images(z_vals=z_vals)
 

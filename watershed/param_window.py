@@ -230,43 +230,33 @@ class MotionCorrectionWidget(ParamWidget):
 
         self.button_widget = QWidget(self)
         self.button_layout = QHBoxLayout(self.button_widget)
-        self.button_layout.setContentsMargins(0, 0, 0, 0)
+        self.button_layout.setContentsMargins(10, 0, 0, 0)
         self.button_layout.setSpacing(10)
         self.main_layout.addWidget(self.button_widget)
+
+        self.use_motion_corrected_video_checkbox = QCheckBox("Use Motion-Corrected Video")
+        self.use_motion_corrected_video_checkbox.setObjectName("Use Motion-Corrected Video")
+        self.use_motion_corrected_video_checkbox.setChecked(False)
+        self.use_motion_corrected_video_checkbox.clicked.connect(lambda:self.controller.use_motion_corrected_video(self.use_motion_corrected_video_checkbox.isChecked()))
+        self.use_motion_corrected_video_checkbox.setDisabled(True)
+        self.button_layout.addWidget(self.use_motion_corrected_video_checkbox)
+
+        self.button_layout.addStretch()
 
         self.motion_correct_button = HoverButton('Motion Correct', None, self.parent_widget.statusBar())
         self.motion_correct_button.setHoverMessage("Perform motion correction on the video.")
         self.motion_correct_button.setIcon(QIcon("motion_correct_icon.png"))
         self.motion_correct_button.setIconSize(QSize(16,16))
-        # self.motion_correct_button.setMaximumWidth(130)
-        self.motion_correct_button.clicked.connect(self.controller.process_video)
+        self.motion_correct_button.clicked.connect(self.controller.motion_correct_video)
         self.button_layout.addWidget(self.motion_correct_button)
-
-        self.play_motion_corrected_video_checkbox = QCheckBox("Show Motion-Corrected Video")
-        self.play_motion_corrected_video_checkbox.setObjectName("Show Motion-Corrected Video")
-        self.play_motion_corrected_video_checkbox.setChecked(False)
-        self.play_motion_corrected_video_checkbox.clicked.connect(lambda:self.controller.play_motion_corrected_video(self.play_motion_corrected_video_checkbox.isChecked()))
-        self.play_motion_corrected_video_checkbox.setDisabled(True)
-        self.button_layout.addWidget(self.play_motion_corrected_video_checkbox)
-
-        self.button_layout.addStretch()
-
-        self.skip_button = HoverButton('Skip', None, self.parent_widget.statusBar())
-        self.skip_button.setHoverMessage("Skip motion correction.")
-        self.skip_button.setIcon(QIcon("skip_icon.png"))
-        self.skip_button.setIconSize(QSize(16,16))
-        # self.skip_button.setMaximumWidth(100)
-        self.skip_button.clicked.connect(self.controller.skip)
-        self.button_layout.addWidget(self.skip_button)
         
-        self.accept_button = HoverButton('Accept', None, self.parent_widget.statusBar())
-        self.accept_button.setHoverMessage("Accept the motion-corrected video and move to the next step.")
+        self.accept_button = HoverButton('Find ROIs', None, self.parent_widget.statusBar())
+        self.accept_button.setHoverMessage("Automatically find ROIs.")
         self.accept_button.setStyleSheet('font-weight: bold;')
         self.accept_button.setIcon(QIcon("accept_icon.png"))
         self.accept_button.setIconSize(QSize(16,16))
         # self.accept_button.setMaximumWidth(100)
         self.accept_button.clicked.connect(self.controller.accept)
-        self.accept_button.setEnabled(False)
         self.button_layout.addWidget(self.accept_button)
 
     def preview_contrast(self):
