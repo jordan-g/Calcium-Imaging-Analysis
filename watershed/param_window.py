@@ -7,6 +7,8 @@ except:
     from PyQt5.QtGui import *
     from PyQt5.QtWidgets import *
 
+import os
+
 TITLE_STYLESHEET = "font-size: 18px; font-weight: bold;"
 
 class ParamWindow(QMainWindow):
@@ -23,7 +25,7 @@ class ParamWindow(QMainWindow):
         self.setGeometry(0, 32, 10, 10)
 
         self.main_widget = QWidget(self)
-        self.main_layout = QVBoxLayout(self.main_widget)
+        self.main_layout = QGridLayout(self.main_widget)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
 
@@ -38,7 +40,7 @@ class ParamWindow(QMainWindow):
         self.button_layout = QHBoxLayout(self.button_widget)
         self.button_layout.setContentsMargins(0, 0, 0, 0)
         self.button_layout.setSpacing(5)
-        self.main_layout.addWidget(self.button_widget)
+        self.main_layout.addWidget(self.button_widget, 0, 0)
 
         self.open_file_button = HoverButton('Open...', None, self.statusBar())
         self.open_file_button.setHoverMessage("Open a video file for processing.")
@@ -61,15 +63,15 @@ class ParamWindow(QMainWindow):
         self.button_layout.addStretch()
 
         self.main_param_widget = MainParamWidget(self, self.controller)
-        self.main_layout.addWidget(self.main_param_widget)
+        self.main_layout.addWidget(self.main_param_widget, 1, 0)
 
-        self.main_layout.addWidget(HLine())
+        self.main_layout.addWidget(HLine(), 2, 0)
 
         # create stacked widget
         self.stacked_widget = QStackedWidget(self)
         self.stacked_widget.setContentsMargins(0, 0, 0, 0)
         self.stacked_widget.setDisabled(True)
-        self.main_layout.addWidget(self.stacked_widget)
+        self.main_layout.addWidget(self.stacked_widget, 3, 0)
 
         # create motion correction widget
         self.motion_correction_widget = MotionCorrectionWidget(self, self.controller)
@@ -83,13 +85,43 @@ class ParamWindow(QMainWindow):
         self.roi_filtering_widget = ROIFilteringWidget(self, self.controller)
         self.stacked_widget.addWidget(self.roi_filtering_widget)
 
+        self.videos_widget = VideosWidget(self)
+        self.videos_widget.setMinimumWidth(200)
+        self.main_layout.addWidget(self.videos_widget, 0, 1, 4, 1)
+
         # set window title bar buttons
         self.setWindowFlags(Qt.CustomizeWindowHint | Qt.WindowCloseButtonHint | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint | Qt.WindowFullscreenButtonHint)
 
         self.show()
 
+    def videos_opened(self, video_paths):
+        for video_path in video_paths:
+            self.videos_widget.videos_list.addItem(os.path.basename(video_path))
+
     def closeEvent(self, event):
         self.controller.close_all()
+
+class VideosWidget(QWidget):
+    def __init__(self, parent_widget):
+        QWidget.__init__(self)
+
+        self.parent_widget = parent_widget
+
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setContentsMargins(5, 5, 5, 5)
+
+        self.title_widget = QWidget(self)
+        self.title_layout = QHBoxLayout(self.title_widget)
+        self.title_layout.setContentsMargins(0, 10, 0, 0)
+        self.main_layout.addWidget(self.title_widget)
+
+        self.title_label = QLabel("Videos")
+        self.title_label.setStyleSheet(TITLE_STYLESHEET)
+        self.title_layout.addWidget(self.title_label)
+        self.main_layout.setAlignment(self.title_widget, Qt.AlignTop)
+        
+        self.videos_list = QListWidget(self)
+        self.main_layout.addWidget(self.videos_list)
 
 class ParamWidget(QWidget):
     def __init__(self, parent_widget, controller, title):
@@ -231,7 +263,7 @@ class MotionCorrectionWidget(ParamWidget):
         self.button_widget = QWidget(self)
         self.button_layout = QHBoxLayout(self.button_widget)
         self.button_layout.setContentsMargins(10, 0, 0, 0)
-        self.button_layout.setSpacing(10)
+        self.button_layout.setSpacing(5)
         self.main_layout.addWidget(self.button_widget)
 
         self.use_mc_video_checkbox = QCheckBox("Use Motion-Corrected Video")

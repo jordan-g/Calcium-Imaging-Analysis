@@ -104,7 +104,7 @@ class Controller():
 
         # open the first selected video (note: needs to be updates to process batches of videos)
         if video_paths is not None and len(video_paths) > 0:
-            self.open_video(video_paths[0])
+            self.open_videos(video_paths)
 
     def save_rois(self):
         if self.watershed_controller.labels[0] is not None:
@@ -145,15 +145,16 @@ class Controller():
 
         self.show_roi_filtering_params(self.watershed_controller.labels, self.watershed_controller.roi_areas, self.watershed_controller.roi_circs, None)
 
-    def open_video(self, video_path):
-        self.video_path = video_path
+    def open_videos(self, video_paths):
+        self.video_paths = video_paths
+        self.video_path = video_paths[0]
 
         # open video
-        base_name = os.path.basename(video_path)
+        base_name = os.path.basename(self.video_path)
         if base_name.endswith('.npy'):
-            self.video = np.load(video_path)
+            self.video = np.load(self.video_path)
         elif base_name.endswith('.tif') or base_name.endswith('.tiff'):
-            self.video = imread(video_path)
+            self.video = imread(self.video_path)
 
         # imsave("test.tif", self.video)
 
@@ -179,6 +180,8 @@ class Controller():
 
         # update the motion correction controller
         self.motion_correction_controller.video_opened(self.video, self.video_path)
+
+        self.param_window.videos_opened(self.video_paths)
 
     def show_watershed_params(self, video=None, video_path=None):
         if video is None:
