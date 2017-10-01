@@ -47,6 +47,16 @@ class ParamWindow(QMainWindow):
         self.open_file_button.setIconSize(QSize(16,16))
         self.open_file_button.clicked.connect(self.controller.select_and_open_video)
         self.button_layout.addWidget(self.open_file_button)
+
+        self.save_rois_button = HoverButton('Save ROIs', None, self.statusBar())
+        self.save_rois_button.setHoverMessage("Save the current ROIs.")
+        self.save_rois_button.clicked.connect(self.controller.save_rois)
+        self.button_layout.addWidget(self.save_rois_button)
+
+        self.load_rois_button = HoverButton('Load ROIs', None, self.statusBar())
+        self.load_rois_button.setHoverMessage("Load saved ROIs.")
+        self.load_rois_button.clicked.connect(self.controller.load_rois)
+        self.button_layout.addWidget(self.load_rois_button)
         
         self.button_layout.addStretch()
 
@@ -353,6 +363,7 @@ class ROIFilteringWidget(ParamWidget):
     def __init__(self, parent_widget, controller):
         ParamWidget.__init__(self, parent_widget, controller, "ROI Filtering Parameters")
 
+        self.main_controller = controller
         self.controller = controller.roi_filtering_controller
 
         self.add_param_slider(label_name="Minimum Area", name="min_area", minimum=1, maximum=500, moved=self.update_param, multiplier=1, released=self.update_param, description="Minimum ROI area.")
@@ -431,7 +442,7 @@ class ROIFilteringWidget(ParamWidget):
 
         self.filter_rois_button = HoverButton('Filter ROIs', None, self.parent_widget.statusBar())
         self.filter_rois_button.setHoverMessage("Automatically filter ROIs with the current parameters.")
-        self.filter_rois_button.clicked.connect(self.controller.filter_rois)
+        self.filter_rois_button.clicked.connect(lambda:self.controller.filter_rois([self.main_controller.params['z']]))
         self.button_layout.addWidget(self.filter_rois_button)
 
         self.show_watershed_checkbox = QCheckBox("Show ROIs")

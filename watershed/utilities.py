@@ -20,6 +20,8 @@ from mahotas.labeled import bwperim
 import os
 import glob
 
+colors = [ np.random.randint(50, 255, size=3) for i in range(100000) ]
+
 def play_movie(movie):
     t = movie.shape[-1]
 
@@ -327,49 +329,18 @@ def calc_activity_of_roi(labels, video, roi, z=0):
 
     return np.mean(z_video*mask, axis=(1, 2))
 
-def draw_rois(rgb_image, labels, roi_overlay, final_overlay, selected_roi, removed_rois, locked_rois, create_initial_overlay=False, update_overlay=False, rois_to_update=[], prev_labels=None):
+def draw_rois(rgb_image, labels, selected_roi, removed_rois, locked_rois, prev_labels=None):
+    global colors
     image = rgb_image.copy()
 
-    if create_initial_overlay:
-        roi_overlay = None
+    n_rois = len(np.unique(labels))
+    roi_overlay = np.zeros(image.shape).astype(np.uint8)
 
-    if roi_overlay is None:
-        n_rois = len(np.unique(labels))
-        roi_overlay = np.zeros(image.shape).astype(np.uint8)
+    for l in np.unique(labels):
+        if l <= 1 or l in removed_rois:
+            continue
 
-        for l in np.unique(labels):
-            if l <= 1 or l in removed_rois:
-                continue
-
-            # mask = labels == l
-
-            # eroded = erosion(mask, disk(1))
-
-            # roi_overlay[mask - eroded, 0] = 255
-            # p = labels & ~b_eroded;
-            # perim = bwperim((labels == l).astype(int), n=4) == 1
-            roi_overlay[bwperim((labels == l).astype(int), n=4), 0] = 255
-
-            # a = roi_outlines[l-1]
-            # roi_outlines[l-1, perim > 0] = np.array([255, 0, 0]).astype(np.uint8)
-            # roi_outlines[l] = a
-
-    for l in np.unique(rois_to_update):
-        mask = prev_labels == l
-
-        roi_overlay[mask] = 0
-
-        perim = bwperim((labels == l).astype(int), n=4) == 1
-
-        roi_overlay[perim > 0] = np.array([255, 0, 0]).astype(np.uint8)
-
-        # a = roi_outlines[l-1]
-        # roi_outlines[l-1] = 0
-        # roi_outlines[l-1, perim > 0] = np.array([255, 0, 0]).astype(np.uint8)
-        # roi_outlines[l] = a
-
-    # if create_initial_overlay or len(rois_to_update) > 0:
-    #     roi_overlay = np.sum(roi_outlines, axis=0)
+        roi_overlay[labels == l] = colors[l]
 
     roi_overlay_2 = roi_overlay.copy()
 
@@ -377,21 +348,18 @@ def draw_rois(rgb_image, labels, roi_overlay, final_overlay, selected_roi, remov
         perim = bwperim((labels == selected_roi).astype(int), n=4) == 1
 
         roi_overlay_2[perim > 0] = np.array([0, 255, 0]).astype(np.uint8)
-    for l in locked_rois:
-        perim = bwperim((labels == l).astype(int), n=4) == 1
+    
+    if locked_rois is not None:
+        for l in locked_rois:
+            perim = bwperim((labels == l).astype(int), n=4) == 1
 
-        roi_overlay_2[perim > 0] = np.array([255, 255, 0]).astype(np.uint8)
+            roi_overlay_2[perim > 0] = np.array([255, 255, 0]).astype(np.uint8)
 
     final_overlay = image.copy()
 
     mask = np.sum(roi_overlay_2, axis=-1) > 0
 
     final_overlay[mask] = roi_overlay_2[mask]
-
-    if removed_rois is not None:
-        mask = np.isin(labels, removed_rois, assume_unique=False, invert=False)
-
-        final_overlay[mask] = rgb_image[mask]
 
     cv2.addWeighted(final_overlay, 0.5, image, 0.5, 0, image)
 
