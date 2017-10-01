@@ -80,6 +80,9 @@ class Controller():
         self.param_window   = ParamWindow(self)
         self.preview_window = PreviewWindow(self)
 
+        self.video_path = None
+        self.video_paths = []
+
         self.mode = "motion_correct"
 
         self.param_widget                                = self.param_window.main_param_widget
@@ -146,8 +149,14 @@ class Controller():
         self.show_roi_filtering_params(self.watershed_controller.labels, self.watershed_controller.roi_areas, self.watershed_controller.roi_circs, None)
 
     def open_videos(self, video_paths):
-        self.video_paths = video_paths
-        self.video_path = video_paths[0]
+        self.video_paths += video_paths
+        self.param_window.videos_opened(video_paths)
+
+        if self.video_path is None:
+            self.open_video(self.video_paths[0])
+
+    def open_video(self, video_path):
+        self.video_path = video_path
 
         # open video
         base_name = os.path.basename(self.video_path)
@@ -181,7 +190,23 @@ class Controller():
         # update the motion correction controller
         self.motion_correction_controller.video_opened(self.video, self.video_path)
 
-        self.param_window.videos_opened(self.video_paths)
+    def remove_videos_at_indices(self, indices):
+        indices = sorted(indices)
+        for i in range(len(indices)-1, -1, -1):
+            index = indices[i]
+            del self.video_paths[index]
+
+        self.param_window.remove_selected_items()
+
+        if len(self.video_paths) == 0:
+            self.video_path = None
+            self.use_mc_video = False
+
+            self.show_motion_correction_params()
+            self.param_window.toggle_initial_state(True)
+            self.preview_window.plot_image(None)
+        elif 0 in indices:
+            self.open_video(self.video_paths[0])
 
     def show_watershed_params(self, video=None, video_path=None):
         if video is None:
@@ -200,7 +225,7 @@ class Controller():
 
     def show_motion_correction_params(self):
         self.param_window.stacked_widget.setCurrentIndex(0)
-        self.motion_correction_controller.video_opened(self.video, self.normalized_video, self.video_path)
+        self.motion_correction_controller.video_opened(self.video, self.video_path)
         self.preview_window.controller = self.motion_correction_controller
         self.param_window.statusBar().showMessage("")
 

@@ -70,7 +70,6 @@ class ParamWindow(QMainWindow):
         # create stacked widget
         self.stacked_widget = QStackedWidget(self)
         self.stacked_widget.setContentsMargins(0, 0, 0, 0)
-        self.stacked_widget.setDisabled(True)
         self.main_layout.addWidget(self.stacked_widget, 3, 0)
 
         # create motion correction widget
@@ -85,9 +84,11 @@ class ParamWindow(QMainWindow):
         self.roi_filtering_widget = ROIFilteringWidget(self, self.controller)
         self.stacked_widget.addWidget(self.roi_filtering_widget)
 
-        self.videos_widget = VideosWidget(self)
+        self.videos_widget = VideosWidget(self, self.controller)
         self.videos_widget.setMinimumWidth(200)
         self.main_layout.addWidget(self.videos_widget, 0, 1, 4, 1)
+
+        self.toggle_initial_state(True)
 
         # set window title bar buttons
         self.setWindowFlags(Qt.CustomizeWindowHint | Qt.WindowCloseButtonHint | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint | Qt.WindowFullscreenButtonHint)
@@ -95,17 +96,29 @@ class ParamWindow(QMainWindow):
         self.show()
 
     def videos_opened(self, video_paths):
-        for video_path in video_paths:
-            self.videos_widget.videos_list.addItem(os.path.basename(video_path))
+        self.videos_widget.videos_opened(video_paths)
+
+        self.toggle_initial_state(False)
+
+    def remove_selected_items(self):
+        self.videos_widget.remove_selected_items()
+
+    def toggle_initial_state(self, initial_state=True):
+        self.main_param_widget.setDisabled(initial_state)
+        self.stacked_widget.setDisabled(initial_state)
+        self.save_rois_button.setDisabled(initial_state)
+        self.load_rois_button.setDisabled(initial_state)
 
     def closeEvent(self, event):
         self.controller.close_all()
 
 class VideosWidget(QWidget):
-    def __init__(self, parent_widget):
+    def __init__(self, parent_widget, controller):
         QWidget.__init__(self)
 
         self.parent_widget = parent_widget
+
+        self.controller = controller
 
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(5, 5, 5, 5)
@@ -121,7 +134,30 @@ class VideosWidget(QWidget):
         self.main_layout.setAlignment(self.title_widget, Qt.AlignTop)
         
         self.videos_list = QListWidget(self)
+        self.videos_list.setSelectionMode(QAbstractItemView.MultiSelection)
         self.main_layout.addWidget(self.videos_list)
+
+        # create main buttons
+        self.button_widget = QWidget(self)
+        self.button_layout = QHBoxLayout(self.button_widget)
+        self.button_layout.setContentsMargins(0, 0, 0, 0)
+        self.button_layout.setSpacing(5)
+        self.main_layout.addWidget(self.button_widget)
+
+        self.remove_videos_button = HoverButton('Remove', None, self.parent_widget.statusBar())
+        self.remove_videos_button.setHoverMessage("Remove the currently selected videos.")
+        self.remove_videos_button.clicked.connect(lambda:self.controller.remove_videos_at_indices([ x.row() for x in self.videos_list.selectedIndexes() ]))
+        self.button_layout.addWidget(self.remove_videos_button)
+
+    def videos_opened(self, video_paths):
+        for video_path in video_paths:
+            self.videos_list.addItem(os.path.basename(video_path))
+
+    def remove_selected_items(self):
+        selected_items = self.videos_list.selectedItems()
+
+        for i in range(len(selected_items)-1, -1, -1):
+            self.videos_list.takeItem(self.videos_list.row(selected_items[i]))
 
 class ParamWidget(QWidget):
     def __init__(self, parent_widget, controller, title):
