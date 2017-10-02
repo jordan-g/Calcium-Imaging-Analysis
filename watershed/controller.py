@@ -208,6 +208,9 @@ class Controller():
         elif 0 in indices:
             self.open_video(self.video_paths[0])
 
+    def process_all_videos(self):
+        ...
+
     def show_watershed_params(self, video=None, video_path=None):
         if video is None:
             video = self.video

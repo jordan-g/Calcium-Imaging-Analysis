@@ -35,20 +35,15 @@ class ParamWindow(QMainWindow):
         self.statusBar().setStyleSheet("background-color: rgba(255, 255, 255, 0.5); border-top: 1px solid rgba(0, 0, 0, 0.1); font-size: 10px; font-style: italic;")
         self.statusBar().showMessage("To begin, open a video file. TIFF and NPY files are supported.")
 
+        self.videos_widget = VideosWidget(self, self.controller)
+        self.main_layout.addWidget(self.videos_widget, 0, 0)
+
         # create main buttons
         self.button_widget = QWidget(self)
         self.button_layout = QHBoxLayout(self.button_widget)
         self.button_layout.setContentsMargins(0, 0, 0, 0)
         self.button_layout.setSpacing(5)
-        self.main_layout.addWidget(self.button_widget, 0, 0)
-
-        self.open_file_button = HoverButton('Open...', None, self.statusBar())
-        self.open_file_button.setHoverMessage("Open a video file for processing.")
-        self.open_file_button.setStyleSheet('font-weight: bold;')
-        self.open_file_button.setIcon(QIcon("open_file_icon.png"))
-        self.open_file_button.setIconSize(QSize(16,16))
-        self.open_file_button.clicked.connect(self.controller.select_and_open_video)
-        self.button_layout.addWidget(self.open_file_button)
+        self.main_layout.addWidget(self.button_widget, 1, 0)
 
         self.save_rois_button = HoverButton('Save ROIs', None, self.statusBar())
         self.save_rois_button.setHoverMessage("Save the current ROIs.")
@@ -63,14 +58,14 @@ class ParamWindow(QMainWindow):
         self.button_layout.addStretch()
 
         self.main_param_widget = MainParamWidget(self, self.controller)
-        self.main_layout.addWidget(self.main_param_widget, 1, 0)
+        self.main_layout.addWidget(self.main_param_widget, 2, 0)
 
-        self.main_layout.addWidget(HLine(), 2, 0)
+        self.main_layout.addWidget(HLine(), 3, 0)
 
         # create stacked widget
         self.stacked_widget = QStackedWidget(self)
         self.stacked_widget.setContentsMargins(0, 0, 0, 0)
-        self.main_layout.addWidget(self.stacked_widget, 3, 0)
+        self.main_layout.addWidget(self.stacked_widget, 4, 0)
 
         # create motion correction widget
         self.motion_correction_widget = MotionCorrectionWidget(self, self.controller)
@@ -83,10 +78,6 @@ class ParamWindow(QMainWindow):
         # create ROI filtering widget
         self.roi_filtering_widget = ROIFilteringWidget(self, self.controller)
         self.stacked_widget.addWidget(self.roi_filtering_widget)
-
-        self.videos_widget = VideosWidget(self, self.controller)
-        self.videos_widget.setMinimumWidth(200)
-        self.main_layout.addWidget(self.videos_widget, 0, 1, 4, 1)
 
         self.toggle_initial_state(True)
 
@@ -121,22 +112,7 @@ class VideosWidget(QWidget):
         self.controller = controller
 
         self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(5, 5, 5, 5)
-
-        self.title_widget = QWidget(self)
-        self.title_layout = QHBoxLayout(self.title_widget)
-        self.title_layout.setContentsMargins(0, 10, 0, 0)
-        self.main_layout.addWidget(self.title_widget)
-
-        self.title_label = QLabel("Videos")
-        self.title_label.setStyleSheet(TITLE_STYLESHEET)
-        self.title_layout.addWidget(self.title_label)
-        self.main_layout.setAlignment(self.title_widget, Qt.AlignTop)
-        
-        self.videos_list = QListWidget(self)
-        self.videos_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.videos_list.itemSelectionChanged.connect(self.item_selected)
-        self.main_layout.addWidget(self.videos_list)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
 
         # create main buttons
         self.button_widget = QWidget(self)
@@ -145,11 +121,47 @@ class VideosWidget(QWidget):
         self.button_layout.setSpacing(5)
         self.main_layout.addWidget(self.button_widget)
 
+        self.open_file_button = HoverButton('Open...', None, self.parent_widget.statusBar())
+        self.open_file_button.setHoverMessage("Open a video file for processing.")
+        self.open_file_button.setStyleSheet('font-weight: bold;')
+        self.open_file_button.setIcon(QIcon("open_file_icon.png"))
+        self.open_file_button.setIconSize(QSize(16,16))
+        self.open_file_button.clicked.connect(self.controller.select_and_open_video)
+        self.button_layout.addWidget(self.open_file_button)
+
         self.remove_videos_button = HoverButton('Remove', None, self.parent_widget.statusBar())
         self.remove_videos_button.setHoverMessage("Remove the currently selected videos.")
         self.remove_videos_button.setDisabled(True)
         self.remove_videos_button.clicked.connect(lambda:self.controller.remove_videos_at_indices([ x.row() for x in self.videos_list.selectedIndexes() ]))
         self.button_layout.addWidget(self.remove_videos_button)
+
+        self.process_all_button = HoverButton('Process All', None, self.parent_widget.statusBar())
+        self.process_all_button.setHoverMessage("Extract activities from all the loaded videos using the current ROIs.")
+        self.process_all_button.setDisabled(True)
+        self.process_all_button.clicked.connect(self.controller.process_all_videos)
+        self.button_layout.addWidget(self.process_all_button)
+
+        self.title_widget = QWidget(self)
+        self.title_layout = QHBoxLayout(self.title_widget)
+        self.title_layout.setContentsMargins(10, 0, 10, 0)
+        self.main_layout.addWidget(self.title_widget)
+
+        self.title_label = QLabel("Videos to Process")
+        self.title_label.setStyleSheet(TITLE_STYLESHEET)
+        self.title_layout.addWidget(self.title_label)
+        self.main_layout.setAlignment(self.title_widget, Qt.AlignTop)
+
+        self.videos_list_widget = QWidget(self)
+        self.videos_list_layout = QHBoxLayout(self.videos_list_widget)
+        self.videos_list_layout.setContentsMargins(10, 0, 10, 10)
+        self.main_layout.addWidget(self.videos_list_widget)
+        
+        self.videos_list = QListWidget(self)
+        self.videos_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.videos_list.itemSelectionChanged.connect(self.item_selected)
+        self.videos_list_layout.addWidget(self.videos_list)
+
+        self.button_layout.addStretch()
 
     def videos_opened(self, video_paths):
         for video_path in video_paths:
