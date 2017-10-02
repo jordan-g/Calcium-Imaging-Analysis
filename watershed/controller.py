@@ -121,7 +121,6 @@ class Controller():
             roi_data = {'labels': self.watershed_controller.labels,
                         'roi_areas': self.watershed_controller.roi_areas,
                         'roi_circs': self.watershed_controller.roi_circs,
-                        'filtered_labels': self.roi_filtering_controller.filtered_labels,
                         'filtered_out_rois': self.roi_filtering_controller.filtered_out_rois,
                         'erased_rois': self.roi_filtering_controller.erased_rois,
                         'removed_rois': self.roi_filtering_controller.removed_rois,
@@ -140,7 +139,6 @@ class Controller():
         self.watershed_controller.labels                = roi_data['labels']
         self.watershed_controller.roi_areas             = roi_data['roi_areas']
         self.watershed_controller.roi_circs             = roi_data['roi_circs']
-        self.roi_filtering_controller.filtered_labels   = roi_data['filtered_labels']
         self.roi_filtering_controller.filtered_out_rois = roi_data['filtered_out_rois']
         self.roi_filtering_controller.erased_rois       = roi_data['erased_rois']
         self.roi_filtering_controller.removed_rois      = roi_data['removed_rois']
@@ -687,7 +685,7 @@ class WatershedController():
 
             start = time.time()
 
-            filtered_labels, self.filtered_out_rois[z] = utilities.filter_rois(self.normalized_images[z], self.labels[z], self.filtering_params['min_area'], self.filtering_params['max_area'], self.filtering_params['min_circ'], self.filtering_params['max_circ'], self.roi_areas[z], self.roi_circs[z], self.roi_areas[z])
+            _, self.filtered_out_rois[z] = utilities.filter_rois(self.normalized_images[z], self.labels[z], self.filtering_params['min_area'], self.filtering_params['max_area'], self.filtering_params['min_circ'], self.filtering_params['max_circ'], self.roi_areas[z], self.roi_circs[z], self.roi_areas[z])
 
             end = time.time()
 
@@ -764,8 +762,8 @@ class ROIFilteringController():
         self.watershed_image = None
         self.roi_overlay     = None
 
+        self.original_labels   = None
         self.labels            = None
-        self.filtered_labels   = None
         self.roi_areas         = None
         self.roi_circs         = None
         self.selected_roi      = None
@@ -782,7 +780,7 @@ class ROIFilteringController():
         self.z = 0
 
     def video_opened(self, video, video_path, labels, roi_areas, roi_circs, mean_images, normalized_images):
-        if labels is not self.labels:
+        if labels is not self.original_labels:
             self.video      = video
             self.video_path = video_path
 
@@ -791,8 +789,8 @@ class ROIFilteringController():
             self.mean_images       = mean_images
             self.normalized_images = normalized_images
 
-            self.labels          = labels
-            self.filtered_labels = [ [] for i in range(video.shape[1]) ]
+            self.original_labels = labels
+            self.labels          = self.original_labels.copy()
             self.roi_areas       = roi_areas
             self.roi_circs       = roi_circs
 
@@ -808,7 +806,7 @@ class ROIFilteringController():
 
             self.filter_rois(z=self.z)
 
-            self.calculate_watershed_image(z=self.z, update_overlay=True)
+            self.calculate_watershed_image(z=self.z, update_overlay=False)
 
             self.param_widget.show_watershed_checkbox.setDisabled(False)
             self.param_widget.show_watershed_checkbox.setChecked(True)
@@ -860,7 +858,7 @@ class ROIFilteringController():
             self.preview_window.plot_image(self.adjusted_image)
 
     def filter_rois(self, z):
-        self.filtered_labels[z], self.filtered_out_rois[z] = utilities.filter_rois(self.mean_images[z], self.labels[z], self.params['min_area'], self.params['max_area'], self.params['min_circ'], self.params['max_circ'], self.roi_areas[z], self.roi_circs[z], self.locked_rois[z])
+        _, self.filtered_out_rois[z] = utilities.filter_rois(self.mean_images[z], self.labels[z], self.params['min_area'], self.params['max_area'], self.params['min_circ'], self.params['max_circ'], self.roi_areas[z], self.roi_circs[z], self.locked_rois[z])
         self.removed_rois[z] = self.filtered_out_rois[z] + self.erased_rois[z]
 
     def erase_rois(self):
@@ -880,7 +878,7 @@ class ROIFilteringController():
             self.last_erased_rois[self.z].append([])
             self.rois_erased = True
 
-        roi_to_erase = utilities.get_roi_containing_point(self.filtered_labels[self.z], roi_point)
+        roi_to_erase = utilities.get_roi_containing_point(self.labels[self.z], roi_point)
 
         if roi_to_erase is not None and roi_to_erase not in self.erased_rois[self.z] and roi_to_erase not in self.locked_rois[self.z]:
             self.erased_rois[self.z].append(roi_to_erase)
@@ -892,7 +890,7 @@ class ROIFilteringController():
             self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
 
     def select_roi(self, roi_point):
-        selected_roi = utilities.get_roi_containing_point(self.filtered_labels[self.z], roi_point)
+        selected_roi = utilities.get_roi_containing_point(self.labels[self.z], roi_point)
 
         if selected_roi is not None:
             self.param_widget.lock_roi_button.setEnabled(True)
@@ -911,7 +909,7 @@ class ROIFilteringController():
 
             self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
 
-            activity = utilities.calc_activity_of_roi(self.filtered_labels[self.z], self.video, self.selected_roi, z=self.z)
+            activity = utilities.calc_activity_of_roi(self.labels[self.z], self.video, self.selected_roi, z=self.z)
 
             if self.figure is None:
                 plt.close('all')
@@ -936,7 +934,7 @@ class ROIFilteringController():
 
     def undo_erase(self):
         if len(self.last_erased_rois[self.z]) > 0:
-            self.erased_rois[self.z] = self.erased_rois[self.z][:-len(self.last_erased_rois[-1])]
+            self.erased_rois[self.z] = self.erased_rois[self.z][:-len(self.last_erased_rois[self.z][-1])]
             del self.last_erased_rois[self.z][-1]
             self.removed_rois[self.z] = self.filtered_out_rois[self.z] + self.erased_rois[self.z]
 
@@ -945,15 +943,14 @@ class ROIFilteringController():
             self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
 
     def reset_erase(self):
-        if len(self.last_erased_rois[self.z]) > 0:
-            self.erased_rois[self.z]      = []
-            self.last_erased_rois[self.z] = []
+        self.labels[self.z]           = self.original_labels[self.z].copy()
+        self.erased_rois[self.z]      = []
+        self.last_erased_rois[self.z] = []
+        self.removed_rois[self.z]     = self.filtered_out_rois[self.z]
 
-            self.removed_rois[self.z] = self.filtered_out_rois[self.z]
+        self.calculate_watershed_image(z=self.z, update_overlay=True)
 
-            self.calculate_watershed_image(z=self.z, update_overlay=True)
-
-            self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
+        self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
 
     def erase_selected_roi(self):
         self.erased_rois[self.z].append(self.selected_roi)
@@ -992,7 +989,7 @@ class ROIFilteringController():
 
             self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
 
-            activity = utilities.calc_activity_of_roi(self.filtered_labels[self.z], self.video, self.selected_roi, z=self.z)
+            activity = utilities.calc_activity_of_roi(self.labels[self.z], self.video, self.selected_roi, z=self.z)
 
             if self.figure is None:
                 plt.close('all')
@@ -1022,7 +1019,7 @@ class ROIFilteringController():
 
             self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
 
-            activity = utilities.calc_activity_of_roi(self.filtered_labels[self.z], self.video, self.selected_roi, z=self.z)
+            activity = utilities.calc_activity_of_roi(self.labels[self.z], self.video, self.selected_roi, z=self.z)
 
             if self.figure is None:
                 plt.close('all')
