@@ -493,7 +493,7 @@ class ROIFilteringWidget(ParamWidget):
 
         self.add_param_slider(label_name="Minimum Area", name="min_area", minimum=1, maximum=500, moved=self.update_param, multiplier=1, released=self.update_param, description="Minimum ROI area.")
         self.add_param_slider(label_name="Maximum Area", name="max_area", minimum=1, maximum=500, moved=self.update_param, multiplier=1, released=self.update_param, description="Maximum ROI area.")
-        self.add_param_slider(label_name="Minimum Circulature", name="max_circ", minimum=0, maximum=500, moved=self.update_param, multiplier=100, released=self.update_param, description="Maximum ROI circulature.")
+        self.add_param_slider(label_name="Minimum Circulature", name="min_circ", minimum=0, maximum=500, moved=self.update_param, multiplier=100, released=self.update_param, description="Minimum ROI circulature.")
         self.add_param_slider(label_name="Maximum Circulature", name="max_circ", minimum=0, maximum=500, moved=self.update_param, multiplier=100, released=self.update_param, description="Maximum ROI circulature.")
 
         self.main_layout.addStretch()
@@ -597,7 +597,7 @@ class ROIFilteringWidget(ParamWidget):
         self.filter_rois_button.setHoverMessage("Automatically filter ROIs with the current parameters.")
         self.watershed_button.setIcon(QIcon("motion_correct_icon.png"))
         self.watershed_button.setIconSize(QSize(16,16))
-        self.filter_rois_button.clicked.connect(lambda:self.controller.filter_rois([self.main_controller.params['z']]))
+        self.filter_rois_button.clicked.connect(lambda:self.controller.filter_rois(self.main_controller.params['z'], update_overlay=True))
         self.button_layout.addWidget(self.filter_rois_button)
 
 class HoverButton(QPushButton):

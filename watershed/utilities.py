@@ -119,6 +119,35 @@ def std(movie):
 #     new_image[new_image > 255] = 255
 #     return new_image
 
+def sharpen(image):
+    print(np.amin(image), np.amax(image))
+    kernel      = np.ones((3,3))*(-1)
+    kernel[1,1] = 8
+    Lap         = ndi.filters.convolve(image, kernel)
+    Laps        = Lap*100.0/np.amax(Lap) #Sharpening factor!
+    # Laps += np.amin(Laps)
+
+    A           = image + Laps
+
+    print(np.amin(A), np.amax(A))
+
+    A = abs(A)
+
+    A           *= 255.0/np.amax(A)
+
+    print(np.amin(A), np.amax(A))
+
+    A_cv2       = A
+    A_cv2       = A_cv2.astype(np.uint8)
+
+    tile_s0     = 8
+    tile_s1     = 8
+
+    clahe       = cv2.createCLAHE(clipLimit=1, tileGridSize=(tile_s0,tile_s1))
+    A_cv2       = clahe.apply(A_cv2)
+
+    return A_cv2
+
 def adjust_contrast(image, contrast):
     # print(np.amax(image), np.amin(image))
     table = np.array([i*contrast
@@ -252,10 +281,10 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
             percent_complete = int(100.0*float(z + (2/3))/video.shape[1])
             progress_signal.emit(percent_complete)
 
-        # Save elastic shift border
+        # # Save elastic shift border
         bord_px_els = np.ceil(np.maximum(np.max(np.abs(mc.x_shifts_els)),
                                          np.max(np.abs(mc.y_shifts_els)))).astype(np.int)
-        np.savez(mc.fname_tot_els + "_bord_px_els.npz", bord_px_els)
+        # np.savez(mc.fname_tot_els + "_bord_px_els.npz", bord_px_els)
 
         # Load elastic motion corrected movie
         m_els = cm.load(mc.fname_tot_els)
@@ -272,27 +301,32 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         idx_xy=(idx_x,idx_y)
         # idx_xy = None
         add_to_movie = -np.nanmin(m_els) + 1  # movie must be positive
-        remove_init = 0 # if you need to remove frames from the beginning of each file
-        downsample_factor = 1 
-        base_name = fname.split('/')[-1][:-4]
-        name_new = cm.save_memmap_each(fnames, dview=dview, base_name=base_name, resize_fact=(
-            1, 1, downsample_factor), remove_init=remove_init, idx_xy=idx_xy, add_to_movie=add_to_movie, border_to_0=0)
-        name_new.sort()
 
-        # If multiple files were saved in C format, put them together in a single large file 
-        if len(name_new) > 1:
-            fname_new = cm.save_memmap_join(
-                name_new, base_name='Yr', n_chunks=20, dview=dview)
-        else:
-            print('One file only, not saving!')
-            fname_new = name_new[0]
+        print(m_els.shape)
+        images = m_els[:, idx_xy[0], idx_xy[1]].copy()
+        images += add_to_movie
 
-        print("Final movie saved in: {}.".format(fname_new))
+        # remove_init = 0 # if you need to remove frames from the beginning of each file
+        # downsample_factor = 1 
+        # base_name = fname.split('/')[-1][:-4]
+        # name_new = cm.save_memmap_each(fnames, dview=dview, base_name=base_name, resize_fact=(
+        #     1, 1, downsample_factor), remove_init=remove_init, idx_xy=idx_xy, add_to_movie=add_to_movie, border_to_0=0)
+        # name_new.sort()
 
-        Yr, dims, T = cm.load_memmap(fname_new)
-        d1, d2 = dims
-        images = np.reshape(Yr.T, [T] + list(dims), order='F')
-        Y = np.reshape(Yr, dims + (T,), order='F')
+        # # If multiple files were saved in C format, put them together in a single large file 
+        # if len(name_new) > 1:
+        #     fname_new = cm.save_memmap_join(
+        #         name_new, base_name='Yr', n_chunks=20, dview=dview)
+        # else:
+        #     print('One file only, not saving!')
+        #     fname_new = name_new[0]
+
+        # print("Final movie saved in: {}.".format(fname_new))
+
+        # Yr, dims, T = cm.load_memmap(fname_new)
+        # d1, d2 = dims
+        # images = np.reshape(Yr.T, [T] + list(dims), order='F')
+        # Y = np.reshape(Yr, dims + (T,), order='F')
 
         mc_videos_list.append(np.nan_to_num(images))
 
@@ -300,10 +334,10 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         for log_file in log_files:
             os.remove(log_file)
 
-        out = np.zeros(m_els.shape)
-        out[:] = m_els[:]
+        # out = np.zeros(m_els.shape)
+        # out[:] = m_els[:]
 
-        out = np.nan_to_num(out)
+        # out = np.nan_to_num(out)
 
         if thread is not None and thread.running == False:
             return [None]*2
@@ -418,6 +452,11 @@ def apply_watershed(original_image, cells_mask, starting_image):
 
         area = cv2.contourArea(c)
 
+        perimeter = cv2.arcLength(c, True)
+
+        if area > 0:
+            roi_circs[l-1] = (perimeter**2)/(4*np.pi*area)
+
         roi_areas[l-1] = area
 
     return labels, roi_areas, roi_circs
@@ -427,7 +466,7 @@ def filter_rois(image, labels, min_area, max_area, min_circ, max_circ, roi_areas
     filtered_out_rois = []
 
     for l in np.unique(labels):
-        if ((not (min_area <= roi_areas[l-1] <= max_area)) or l <= 1) and l not in locked_rois:
+        if ((not (min_area <= roi_areas[l-1] <= max_area)) or (not (min_circ <= roi_circs[l-1] <= max_circ)) or l <= 1) and l not in locked_rois:
             mask = labels == l
             
             filtered_labels[mask] = 0
@@ -440,7 +479,7 @@ def filter_rois(image, labels, min_area, max_area, min_circ, max_circ, roi_areas
 
             difference = np.mean(image[a - b]) - np.mean(image[b])
 
-            if (difference != np.nan and difference < 1.0):
+            if (difference != np.nan and difference < 4.0):
                 filtered_labels[mask] = 0
                 filtered_out_rois.append(l)
 
