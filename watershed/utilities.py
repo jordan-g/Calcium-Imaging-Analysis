@@ -381,38 +381,31 @@ def calc_activity_of_roi(labels, video, roi, z=0):
 
     return np.mean(z_video*mask, axis=(1, 2))
 
-def draw_rois(rgb_image, labels, selected_roi, removed_rois, locked_rois, prev_labels=None):
+def draw_rois(rgb_image, labels, selected_roi, removed_rois, locked_rois, roi_overlay=None):
     global colors
     image = rgb_image.copy()
 
-    n_rois = len(np.unique(labels))
-    roi_overlay = np.zeros(image.shape).astype(np.uint8)
+    if roi_overlay is None:
+        n_rois = len(np.unique(labels))
+        roi_overlay = np.zeros(image.shape).astype(np.uint8)
 
-    for l in np.unique(labels):
-        if l <= 1 or l in removed_rois:
-            continue
+        for l in np.unique(labels):
+            if l <= 1 or l in removed_rois:
+                continue
 
-        roi_overlay[labels == l] = colors[l]
+            roi_overlay[labels == l] = colors[l]
 
-    roi_overlay_2 = roi_overlay.copy()
+    cv2.addWeighted(roi_overlay, 0.5, image, 0.5, 0, image)
 
     if selected_roi is not None:
         perim = bwperim((labels == selected_roi).astype(int), n=4) == 1
 
-        roi_overlay_2[perim > 0] = np.array([0, 255, 0]).astype(np.uint8)
+        image[perim > 0] = np.array([0, 255, 0]).astype(np.uint8)
     
     if locked_rois is not None:
         for l in locked_rois:
             perim = bwperim((labels == l).astype(int), n=4) == 1
 
-            roi_overlay_2[perim > 0] = np.array([255, 255, 0]).astype(np.uint8)
+            image[perim > 0] = np.array([255, 255, 0]).astype(np.uint8)
 
-    final_overlay = image.copy()
-
-    mask = np.sum(roi_overlay_2, axis=-1) > 0
-
-    final_overlay[mask] = roi_overlay_2[mask]
-
-    cv2.addWeighted(final_overlay, 0.5, image, 0.5, 0, image)
-
-    return image, roi_overlay, final_overlay
+    return image, roi_overlay

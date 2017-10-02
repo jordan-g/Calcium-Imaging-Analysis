@@ -165,8 +165,6 @@ class Controller():
         elif base_name.endswith('.tif') or base_name.endswith('.tiff'):
             self.video = imread(self.video_path)
 
-        # imsave("test.tif", self.video)
-
         if len(self.video.shape) == 3:
             # add z dimension
             self.video = self.video[:, np.newaxis, :, :]
@@ -219,28 +217,26 @@ class Controller():
             video_path = self.video_path
 
         self.param_window.stacked_widget.setCurrentIndex(1)
-        self.watershed_controller.video_opened(video, video_path)
+        self.mode = "watershed"
         self.preview_window.controller = self.watershed_controller
+        self.watershed_controller.video_opened(video, video_path)
         self.param_window.statusBar().showMessage("")
 
         self.preview_window.setWindowTitle("Preview")
-        self.mode = "watershed"
 
     def show_motion_correction_params(self):
         self.param_window.stacked_widget.setCurrentIndex(0)
-        self.motion_correction_controller.video_opened(self.video, self.video_path)
-        self.preview_window.controller = self.motion_correction_controller
-        self.param_window.statusBar().showMessage("")
-
         self.mode = "motion_correct"
-
-    def show_roi_filtering_params(self, labels, roi_areas, roi_circs):
-        self.param_window.stacked_widget.setCurrentIndex(2)
-        self.roi_filtering_controller.video_opened(self.video, self.video_path, labels, roi_areas, roi_circs)
-        self.preview_window.controller = self.roi_filtering_controller
+        self.preview_window.controller = self.motion_correction_controller
+        self.motion_correction_controller.video_opened(self.video, self.video_path)
         self.param_window.statusBar().showMessage("")
 
+    def show_roi_filtering_params(self, labels, roi_areas, roi_circs, mean_images, normalized_images):
+        self.param_window.stacked_widget.setCurrentIndex(2)
         self.mode = "filter"
+        self.preview_window.controller = self.roi_filtering_controller
+        self.roi_filtering_controller.video_opened(self.video, self.video_path, labels, roi_areas, roi_circs, mean_images, normalized_images)
+        self.param_window.statusBar().showMessage("")
 
     def rois_created(self):
         self.param_window.rois_created()
@@ -483,6 +479,7 @@ class WatershedController():
         self.I_mod                = None
         self.soma_threshold_image = None
         self.watershed_image      = None
+        self.roi_overlay          = None
         
         self.masks             = None
         self.mask_points       = None
@@ -605,9 +602,10 @@ class WatershedController():
         if param in ("contrast, gamma"):
             self.adjusted_image = self.calculate_adjusted_image(self.normalized_images[self.z])
 
-            self.param_widget.show_watershed_checkbox.setChecked(False)
+            if self.labels is not None:
+                self.calculate_watershed_image(self.z, update_overlay=False)
 
-            self.preview_window.plot_image(self.adjusted_image, mask=None)
+            self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
         elif param == "background_threshold":
             self.background_mask = self.calculate_background_mask(self.adjusted_image)
 
@@ -626,10 +624,19 @@ class WatershedController():
             self.adjusted_image = self.calculate_adjusted_image(self.normalized_images[self.z])
 
             if self.labels is not None:
-                rgb_image = cv2.cvtColor((self.adjusted_image*255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
-                self.watershed_image, _, _ = utilities.draw_rois(rgb_image, self.labels[self.z], None, self.filtered_out_rois[self.z], None)
+                self.calculate_watershed_image(self.z, update_overlay=True)
 
             self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
+
+    def calculate_watershed_image(self, z, update_overlay=True):
+        if update_overlay:
+            roi_overlay = None
+        else:
+            roi_overlay = self.roi_overlay
+
+        rgb_image = cv2.cvtColor((self.adjusted_image*255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
+
+        self.watershed_image, self.roi_overlay = utilities.draw_rois(rgb_image, self.labels[z], None, self.filtered_out_rois[z], None, roi_overlay=roi_overlay)
 
     def show_watershed_image(self, show):
         if show:
@@ -691,7 +698,7 @@ class WatershedController():
         self.param_widget.filter_rois_button.setDisabled(False)
 
         rgb_image = cv2.cvtColor((self.adjusted_image*255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
-        self.watershed_image, _, _ = utilities.draw_rois(rgb_image, self.labels[self.z], None, self.filtered_out_rois[self.z], None)
+        self.watershed_image, self.roi_overlay = utilities.draw_rois(rgb_image, self.labels[self.z], None, self.filtered_out_rois[self.z], None)
 
         self.main_controller.rois_created()
 
@@ -729,7 +736,7 @@ class WatershedController():
         self.main_controller.show_motion_correction_params()
 
     def filter_rois(self):
-        self.main_controller.show_roi_filtering_params(self.labels, self.roi_areas, self.roi_circs)
+        self.main_controller.show_roi_filtering_params(self.labels, self.roi_areas, self.roi_circs, self.mean_images, self.normalized_images)
 
     def save_params(self):
         json.dump(self.params, open(WATERSHED_PARAMS_FILENAME, "w"))
@@ -753,99 +760,110 @@ class ROIFilteringController():
         self.mean_images       = None
         self.normalized_images = None
 
-        self.adjusted_images   = None
-        self.watershed_images  = None
+        self.adjusted_image  = None
+        self.watershed_image = None
+        self.roi_overlay     = None
 
         self.labels            = None
         self.filtered_labels   = None
         self.roi_areas         = None
         self.roi_circs         = None
         self.selected_roi      = None
-        self.filtered_out_rois = []
-        self.erased_rois       = []
-        self.removed_rois      = []
-        self.last_erased_rois  = []
-        self.locked_rois       = []
+
+        self.filtered_out_rois = None
+        self.erased_rois       = None
+        self.removed_rois      = None
+        self.last_erased_rois  = None
+        self.locked_rois       = None
 
         self.figure = None
         self.axis   = None
 
-    def video_opened(self, video, video_path, labels, roi_areas, roi_circs, plot=False):
-        self.video      = video
-        self.video_path = video_path
-        if labels is not None:
-            self.labels = labels
-        if roi_areas is not None:
-            self.roi_areas = roi_areas
-        if roi_circs is not None:
-            self.roi_circs = roi_circs
+        self.z = 0
 
-        self.mean_images = [ ndi.median_filter(denoise_tv_chambolle(utilities.normalize(utilities.mean(video, i)).astype(np.float32), weight=0.01, multichannel=False), 3) for i in range(video.shape[1]) ]
+    def video_opened(self, video, video_path, labels, roi_areas, roi_circs, mean_images, normalized_images):
+        if labels is not self.labels:
+            self.video      = video
+            self.video_path = video_path
 
-        self.normalized_images = [ utilities.normalize(mean_image).astype(np.uint8) for mean_image in self.mean_images ]
+            self.z = self.main_controller.params['z']
+            
+            self.mean_images       = mean_images
+            self.normalized_images = normalized_images
 
-        self.adjusted_images   = [ [] for i in range(video.shape[1]) ]
-        self.filtered_labels   = [ [] for i in range(video.shape[1]) ]
-        self.watershed_images  = [ [] for i in range(video.shape[1]) ]
-        self.filtered_out_rois = [ [] for i in range(video.shape[1]) ]
-        self.erased_rois       = [ [] for i in range(video.shape[1]) ]
-        self.removed_rois      = [ [] for i in range(video.shape[1]) ]
-        self.last_erased_rois  = [ [] for i in range(video.shape[1]) ]
-        self.locked_rois       = [ [] for i in range(video.shape[1]) ]
+            self.labels          = labels
+            self.filtered_labels = [ [] for i in range(video.shape[1]) ]
+            self.roi_areas       = roi_areas
+            self.roi_circs       = roi_circs
 
-        self.rois_erased = False
+            self.filtered_out_rois = [ [] for i in range(video.shape[1]) ]
+            self.erased_rois       = [ [] for i in range(video.shape[1]) ]
+            self.removed_rois      = [ [] for i in range(video.shape[1]) ]
+            self.last_erased_rois  = [ [] for i in range(video.shape[1]) ]
+            self.locked_rois       = [ [] for i in range(video.shape[1]) ]
 
-        self.calculate_adjusted_images(z_vals=[self.main_controller.params['z']])
-        self.filter_rois(z_vals=[self.main_controller.params['z']])
+            self.rois_erased = False
 
-        # self.preview_window.plot_image(self.watershed_images[self.main_controller.params['z']])
+            self.adjusted_image = self.calculate_adjusted_image(self.normalized_images[self.z])
 
-    def calculate_adjusted_images(self, z_vals=[0]):
-        for z in z_vals:
-            self.adjusted_images[z] = utilities.adjust_gamma(utilities.adjust_contrast(self.normalized_images[z], self.main_controller.params['contrast']), self.main_controller.params['gamma'])/255.0
+            self.filter_rois(z=self.z)
 
-    def calculate_watershed_images(self, z_vals=[0]):
-        for z in z_vals:
-            rgb_image = cv2.cvtColor((self.adjusted_images[z]*255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
+            self.calculate_watershed_image(z=self.z, update_overlay=True)
 
-            self.watershed_images[z], _, _ = utilities.draw_rois(rgb_image, self.labels[z], self.selected_roi, self.removed_rois[z], self.locked_rois[z])
+            self.param_widget.show_watershed_checkbox.setDisabled(False)
+            self.param_widget.show_watershed_checkbox.setChecked(True)
 
-        self.param_widget.show_watershed_checkbox.setDisabled(False)
-        self.param_widget.show_watershed_checkbox.setChecked(True)
-        self.show_watershed_image(True)
+            self.show_watershed_image(True)
+
+    def calculate_adjusted_image(self, normalized_image):
+        return utilities.adjust_gamma(utilities.adjust_contrast(normalized_image, self.main_controller.params['contrast']), self.main_controller.params['gamma'])/255.0
+
+    def calculate_watershed_image(self, z, update_overlay=True):
+        if update_overlay:
+            roi_overlay = None
+        else:
+            roi_overlay = self.roi_overlay
+
+        rgb_image = cv2.cvtColor((self.adjusted_image*255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
+
+        self.watershed_image, self.roi_overlay = utilities.draw_rois(rgb_image, self.labels[z], self.selected_roi, self.removed_rois[z], self.locked_rois[z], roi_overlay=roi_overlay)
 
     def update_param(self, param, value):
         if param in self.params.keys():
             self.params[param] = value
 
         if param in ("contrast, gamma"):
-            self.calculate_adjusted_images(z_vals=[self.main_controller.params['z']])
-            self.preview_window.plot_image(self.watershed_images[self.main_controller.params['z']])
-        elif param == "z":
-            self.calculate_adjusted_images(z_vals=[self.main_controller.params['z']])
-            self.filter_rois(z_vals=[self.main_controller.params['z']])
-        elif param in ("min_area", "max_area", "min_circ", "max_circ"):
-            self.filter_rois(z_vals=[self.main_controller.params['z']])
+            self.adjusted_image = self.calculate_adjusted_image(self.normalized_images[self.z])
 
-    def show_adjusted_image(self):
-        if self.adjusted_images[self.main_controller.params['z']] is not None:
-            self.preview_window.plot_image(self.adjusted_images[self.main_controller.params['z']])
+            self.calculate_watershed_image(self.z, update_overlay=False)
+
+            self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
+        elif param == "z":
+            self.adjusted_image = self.calculate_adjusted_image(self.normalized_images[self.z])
+
+            self.filter_rois(z=self.z)
+
+            self.calculate_watershed_image(z=self.z, update_overlay=True)
+
+            self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
+        elif param in ("min_area", "max_area", "min_circ", "max_circ"):
+            self.filter_rois(z=self.z)
+
+            self.calculate_watershed_image(z=self.z, update_overlay=True)
+
+            self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
 
     def show_watershed_image(self, show):
         if show:
-            self.preview_window.plot_image(self.watershed_images[self.main_controller.params['z']])
+            self.preview_window.plot_image(self.watershed_image)
         else:
-            self.preview_window.plot_image(self.adjusted_images[self.main_controller.params['z']])
+            self.preview_window.plot_image(self.adjusted_image)
 
-    def filter_rois(self, z_vals=[0]):
-        for z in z_vals:
-            self.filtered_labels[z], self.filtered_out_rois[z] = utilities.filter_rois(self.mean_images[z], self.labels[z], self.params['min_area'], self.params['max_area'], self.params['min_circ'], self.params['max_circ'], self.roi_areas[z], self.roi_circs[z], self.locked_rois[z])
-            self.removed_rois[z] = self.filtered_out_rois[z] + self.erased_rois[z]
-        self.calculate_watershed_images(z_vals=z_vals)
+    def filter_rois(self, z):
+        self.filtered_labels[z], self.filtered_out_rois[z] = utilities.filter_rois(self.mean_images[z], self.labels[z], self.params['min_area'], self.params['max_area'], self.params['min_circ'], self.params['max_circ'], self.roi_areas[z], self.roi_circs[z], self.locked_rois[z])
+        self.removed_rois[z] = self.filtered_out_rois[z] + self.erased_rois[z]
 
     def erase_rois(self):
-        z = self.main_controller.params['z']
-
         self.rois_erased = False
 
         if not self.preview_window.erasing_rois:
@@ -858,30 +876,29 @@ class ROIFilteringController():
             self.param_widget.erase_rois_button.setText("Erase ROIs")
 
     def erase_roi_at_point(self, roi_point, radius=1):
-        z = self.main_controller.params['z']
-
         if not self.rois_erased:
-            self.last_erased_rois[z].append([])
+            self.last_erased_rois[self.z].append([])
             self.rois_erased = True
 
-        roi_to_erase = utilities.get_roi_containing_point(self.filtered_labels[z], roi_point)
+        roi_to_erase = utilities.get_roi_containing_point(self.filtered_labels[self.z], roi_point)
 
-        if roi_to_erase is not None and roi_to_erase not in self.erased_rois[z] and roi_to_erase not in self.locked_rois[z]:
-            self.erased_rois[z].append(roi_to_erase)
-            self.last_erased_rois[z][-1].append(roi_to_erase)
-            self.removed_rois[z] = self.filtered_out_rois[z] + self.erased_rois[z]
-            self.calculate_watershed_images(z_vals=[z])
+        if roi_to_erase is not None and roi_to_erase not in self.erased_rois[self.z] and roi_to_erase not in self.locked_rois[self.z]:
+            self.erased_rois[self.z].append(roi_to_erase)
+            self.last_erased_rois[self.z][-1].append(roi_to_erase)
+            self.removed_rois[self.z] = self.filtered_out_rois[self.z] + self.erased_rois[self.z]
+            
+            self.calculate_watershed_image(z=self.z, update_overlay=True)
+
+            self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
 
     def select_roi(self, roi_point):
-        z = self.main_controller.params['z']
-
-        selected_roi = utilities.get_roi_containing_point(self.filtered_labels[z], roi_point)
+        selected_roi = utilities.get_roi_containing_point(self.filtered_labels[self.z], roi_point)
 
         if selected_roi is not None:
             self.param_widget.lock_roi_button.setEnabled(True)
             self.param_widget.enlarge_roi_button.setEnabled(True)
             self.param_widget.shrink_roi_button.setEnabled(True)
-            if selected_roi in self.locked_rois[z]:
+            if selected_roi in self.locked_rois[self.z]:
                 self.param_widget.lock_roi_button.setText("Unlock ROI")
             else:
                 self.param_widget.lock_roi_button.setText("Lock ROI")
@@ -890,7 +907,11 @@ class ROIFilteringController():
 
             self.selected_roi = selected_roi
 
-            activity = utilities.calc_activity_of_roi(self.filtered_labels[z], self.video, self.selected_roi, z=z)
+            self.calculate_watershed_image(z=self.z, update_overlay=False)
+
+            self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
+
+            activity = utilities.calc_activity_of_roi(self.filtered_labels[self.z], self.video, self.selected_roi, z=self.z)
 
             if self.figure is None:
                 plt.close('all')
@@ -900,92 +921,118 @@ class ROIFilteringController():
 
             self.axis.clear()
             self.axis.plot(activity, c="#FF6666")
-            self.figure.canvas.set_window_title('ROI {} Activity'.format(selected_roi))
+            self.figure.canvas.set_window_title('ROI {} Activity'.format(self.selected_roi))
         else:
             self.selected_roi = -1
+
+            self.calculate_watershed_image(z=self.z, update_overlay=False)
+
+            self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
 
             self.param_widget.lock_roi_button.setEnabled(False)
             self.param_widget.enlarge_roi_button.setEnabled(False)
             self.param_widget.shrink_roi_button.setEnabled(False)
             self.param_widget.lock_roi_button.setText("Lock ROI")
 
-        self.calculate_watershed_images(z_vals=[z])
-
     def undo_erase(self):
-        z = self.main_controller.params['z']
+        if len(self.last_erased_rois[self.z]) > 0:
+            self.erased_rois[self.z] = self.erased_rois[self.z][:-len(self.last_erased_rois[-1])]
+            del self.last_erased_rois[self.z][-1]
+            self.removed_rois[self.z] = self.filtered_out_rois[self.z] + self.erased_rois[self.z]
 
-        if len(self.last_erased_rois[z]) > 0:
-            self.erased_rois[z] = self.erased_rois[z][:-len(self.last_erased_rois[-1])]
-            del self.last_erased_rois[z][-1]
-            self.removed_rois[z] = self.filtered_out_rois[z] + self.erased_rois[z]
+            self.calculate_watershed_image(z=self.z, update_overlay=True)
 
-            self.calculate_watershed_images(z_vals=[z])
+            self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
 
     def reset_erase(self):
-        z = self.main_controller.params['z']
+        if len(self.last_erased_rois[self.z]) > 0:
+            self.erased_rois[self.z]      = []
+            self.last_erased_rois[self.z] = []
 
-        if len(self.last_erased_rois[z]) > 0:
-            self.erased_rois[z]      = []
-            self.last_erased_rois[z] = []
+            self.removed_rois[self.z] = self.filtered_out_rois[self.z]
 
-            self.removed_rois[z] = self.filtered_out_rois[z]
+            self.calculate_watershed_image(z=self.z, update_overlay=True)
 
-            self.calculate_watershed_images(z_vals=[z])
+            self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
 
     def erase_selected_roi(self):
-        z = self.main_controller.params['z']
-
-        self.erased_rois[z].append(self.selected_roi)
-        self.last_erased_rois[z].append([self.selected_roi])
-        self.removed_rois[z] = self.filtered_out_rois[z] + self.erased_rois[z]
+        self.erased_rois[self.z].append(self.selected_roi)
+        self.last_erased_rois[self.z].append([self.selected_roi])
+        self.removed_rois[self.z] = self.filtered_out_rois[self.z] + self.erased_rois[self.z]
         self.selected_roi = None
 
-        self.calculate_watershed_images(z_vals=[z])
+        self.calculate_watershed_image(z=self.z, update_overlay=True)
+
+        self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
 
         self.param_widget.erase_selected_roi_button.setEnabled(False)
 
     def lock_roi(self):
-        z = self.main_controller.params['z']
-
-        if self.selected_roi not in self.locked_rois[z]:
-            self.locked_rois[z].append(self.selected_roi)
+        if self.selected_roi not in self.locked_rois[self.z]:
+            self.locked_rois[self.z].append(self.selected_roi)
             self.param_widget.lock_roi_button.setText("Unlock ROI")
         else:
-            index = self.locked_rois[z].index(self.selected_roi)
-            del self.locked_rois[z][index]
+            index = self.locked_rois[self.z].index(self.selected_roi)
+            del self.locked_rois[self.z][index]
             self.param_widget.lock_roi_button.setText("Lock ROI")
 
-    def enlarge_roi(self):
-        z = self.main_controller.params['z']
+        self.calculate_watershed_image(z=self.z, update_overlay=True)
 
+        self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
+
+    def enlarge_roi(self):
         if self.selected_roi >= 1:
-            prev_labels = self.labels[z].copy()
-            mask = self.labels[z] == self.selected_roi
+            prev_labels = self.labels[self.z].copy()
+            mask = self.labels[self.z] == self.selected_roi
             mask = binary_dilation(mask, disk(1))
 
-            self.labels[z][mask] = self.selected_roi
+            self.labels[self.z][mask] = self.selected_roi
 
-            self.calculate_watershed_images(rois_to_update=[self.selected_roi], prev_labels=prev_labels, z_vals=[z])
-            self.filter_rois(z_vals=[z])
+            self.calculate_watershed_image(z=self.z, update_overlay=True)
+
+            self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
+
+            activity = utilities.calc_activity_of_roi(self.filtered_labels[self.z], self.video, self.selected_roi, z=self.z)
+
+            if self.figure is None:
+                plt.close('all')
+                self.figure, self.axis = plt.subplots(figsize=(5, 3))
+                self.figure.canvas.set_window_title('ROI Activity')
+                self.figure.tight_layout()
+
+            self.axis.clear()
+            self.axis.plot(activity, c="#FF6666")
+            self.figure.canvas.set_window_title('ROI {} Activity'.format(self.selected_roi))
 
     def shrink_roi(self):
-        z = self.main_controller.params['z']
-
         if self.selected_roi >= 1:
-            prev_labels = self.labels[z].copy()
+            prev_labels = self.labels[self.z].copy()
             
-            labels = self.labels[z].copy()
+            labels = self.labels[self.z].copy()
             mask = prev_labels == self.selected_roi
             labels[mask] = 0
 
-            mask = self.labels[z] == self.selected_roi
+            mask = self.labels[self.z] == self.selected_roi
             mask = erosion(mask, disk(1))
             labels[mask] = self.selected_roi
 
-            self.labels[z] = labels.copy()
+            self.labels[self.z] = labels.copy()
 
-            self.calculate_watershed_images(rois_to_update=[self.selected_roi], prev_labels=prev_labels, z_vals=[z])
-            self.filter_rois(z_vals=[z])
+            self.calculate_watershed_image(z=self.z, update_overlay=True)
+
+            self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
+
+            activity = utilities.calc_activity_of_roi(self.filtered_labels[self.z], self.video, self.selected_roi, z=self.z)
+
+            if self.figure is None:
+                plt.close('all')
+                self.figure, self.axis = plt.subplots(figsize=(5, 3))
+                self.figure.canvas.set_window_title('ROI Activity')
+                self.figure.tight_layout()
+
+            self.axis.clear()
+            self.axis.plot(activity, c="#FF6666")
+            self.figure.canvas.set_window_title('ROI {} Activity'.format(self.selected_roi))
 
     def motion_correct(self):
         self.main_controller.show_motion_correction_params()
