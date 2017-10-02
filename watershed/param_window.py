@@ -19,7 +19,7 @@ class ParamWindow(QMainWindow):
         self.controller = controller
 
         # set window title
-        self.setWindowTitle("Automatic ROI Segmentation Parameters")
+        self.setWindowTitle("Automatic ROI Segmentation")
 
         # set initial position
         self.setGeometry(0, 32, 10, 10)

@@ -470,8 +470,11 @@ class WatershedController():
         else:
             self.params = DEFAULT_WATERSHED_PARAMS
 
-        self.mean_images          = None
-        self.normalized_images    = None
+        self.video      = None
+        self.video_path = None
+
+        self.mean_images       = None
+        self.normalized_images = None
 
         self.adjusted_image       = None
         self.background_mask      = None
@@ -495,26 +498,27 @@ class WatershedController():
         self.z = 0
 
     def video_opened(self, video, video_path):
-        self.video       = video
-        self.video_path  = video_path
+        if video_path != self.video_path:
+            self.video       = video
+            self.video_path  = video_path
 
-        self.z = self.main_controller.params['z']
-        
-        self.mean_images = [ ndi.median_filter(denoise_tv_chambolle(utilities.mean(self.video, z).astype(np.float32), weight=0.01, multichannel=False), 3) for z in range(video.shape[1]) ]
+            self.z = self.main_controller.params['z']
 
-        self.normalized_images = [ utilities.normalize(mean_image).astype(np.uint8) for mean_image in self.mean_images ]
+            self.mean_images = [ ndi.median_filter(denoise_tv_chambolle(utilities.mean(self.video, z).astype(np.float32), weight=0.01, multichannel=False), 3) for z in range(video.shape[1]) ]
 
-        self.masks             = [ [] for i in range(video.shape[1]) ]
-        self.mask_points       = [ [] for i in range(video.shape[1]) ]
-        self.labels            = [ [] for i in range(video.shape[1]) ]
-        self.roi_areas         = [ [] for i in range(video.shape[1]) ]
-        self.roi_circs         = [ [] for i in range(video.shape[1]) ]
-        self.filtered_out_rois = [ [] for i in range(video.shape[1]) ]
-        
-        self.adjusted_image       = self.calculate_adjusted_image(self.normalized_images[self.z])
-        self.background_mask      = self.calculate_background_mask(self.adjusted_image)
-        self.equalized_image      = self.calculate_equalized_image(self.adjusted_image, self.background_mask)
-        self.soma_mask, self.I_mod, self.soma_threshold_image = self.calculate_soma_threshold_image(self.equalized_image)
+            self.normalized_images = [ utilities.normalize(mean_image).astype(np.uint8) for mean_image in self.mean_images ]
+
+            self.masks             = [ [] for i in range(video.shape[1]) ]
+            self.mask_points       = [ [] for i in range(video.shape[1]) ]
+            self.labels            = [ [] for i in range(video.shape[1]) ]
+            self.roi_areas         = [ [] for i in range(video.shape[1]) ]
+            self.roi_circs         = [ [] for i in range(video.shape[1]) ]
+            self.filtered_out_rois = [ [] for i in range(video.shape[1]) ]
+            
+            self.adjusted_image       = self.calculate_adjusted_image(self.normalized_images[self.z])
+            self.background_mask      = self.calculate_background_mask(self.adjusted_image)
+            self.equalized_image      = self.calculate_equalized_image(self.adjusted_image, self.background_mask)
+            self.soma_mask, self.I_mod, self.soma_threshold_image = self.calculate_soma_threshold_image(self.equalized_image)
 
         self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
 
