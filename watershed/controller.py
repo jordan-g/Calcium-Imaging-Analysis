@@ -144,7 +144,7 @@ class Controller():
         self.roi_filtering_controller.removed_rois      = roi_data['removed_rois']
         self.roi_filtering_controller.locked_rois       = roi_data['locked_rois']
 
-        self.show_roi_filtering_params(self.watershed_controller.labels, self.watershed_controller.roi_areas, self.watershed_controller.roi_circs, None)
+        self.show_roi_filtering_params(self.watershed_controller.labels, self.watershed_controller.roi_areas, self.watershed_controller.roi_circs, None, None)
 
     def open_videos(self, video_paths):
         self.video_paths += video_paths
@@ -499,6 +499,8 @@ class WatershedController():
 
             self.z = self.main_controller.params['z']
 
+            self.preview_window.timer.stop()
+
             self.mean_images = [ ndi.median_filter(denoise_tv_chambolle(utilities.mean(self.video, z).astype(np.float32), weight=0.01, multichannel=False), 3) for z in range(video.shape[1]) ]
 
             self.normalized_images = [ utilities.normalize(mean_image).astype(np.uint8) for mean_image in self.mean_images ]
@@ -785,9 +787,18 @@ class ROIFilteringController():
             self.video_path = video_path
 
             self.z = self.main_controller.params['z']
+
+            self.preview_window.timer.stop()
             
-            self.mean_images       = mean_images
-            self.normalized_images = normalized_images
+            if mean_images is not None:
+                self.mean_images = mean_images
+            else:
+                self.mean_images = [ ndi.median_filter(denoise_tv_chambolle(utilities.mean(self.video, z).astype(np.float32), weight=0.01, multichannel=False), 3) for z in range(video.shape[1]) ]
+
+            if normalized_images is not None:
+                self.normalized_images = normalized_images
+            else:
+                self.normalized_images = [ utilities.normalize(mean_image).astype(np.uint8) for mean_image in self.mean_images ]
 
             self.original_labels = labels
             self.labels          = self.original_labels.copy()

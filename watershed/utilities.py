@@ -395,7 +395,11 @@ def draw_rois(rgb_image, labels, selected_roi, removed_rois, locked_rois, roi_ov
 
             roi_overlay[labels == l] = colors[l]
 
-    cv2.addWeighted(roi_overlay, 0.5, image, 0.5, 0, image)
+    final_roi_overlay = image.copy()
+    mask = roi_overlay != 0
+    final_roi_overlay[mask] = roi_overlay[mask]
+
+    cv2.addWeighted(final_roi_overlay, 0.5, image, 0.5, 0, image)
 
     if selected_roi is not None:
         perim = bwperim((labels == selected_roi).astype(int), n=4) == 1
