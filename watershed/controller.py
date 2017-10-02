@@ -136,6 +136,9 @@ class Controller():
 
         roi_data = np.load(load_path)[()]
 
+        if self.mode == "motion_correct":
+            self.motion_correction_controller.cancel_motion_correction()
+
         self.watershed_controller.labels                = roi_data['labels']
         self.watershed_controller.roi_areas             = roi_data['roi_areas']
         self.watershed_controller.roi_circs             = roi_data['roi_circs']
@@ -195,6 +198,9 @@ class Controller():
         self.param_window.remove_selected_items()
 
         if len(self.video_paths) == 0:
+            if self.mode == "motion_correct":
+                self.motion_correction_controller.cancel_motion_correction()
+
             self.video_path = None
             self.use_mc_video = False
 
@@ -205,7 +211,8 @@ class Controller():
             self.open_video(self.video_paths[0])
 
     def process_all_videos(self):
-        ...
+        if self.mode == "motion_correct":
+            self.motion_correction_controller.cancel_motion_correction()
 
     def show_watershed_params(self, video=None, video_path=None):
         if video is None:
@@ -240,6 +247,9 @@ class Controller():
         self.param_window.rois_created()
 
     def close_all(self):
+        if self.mode == "motion_correct":
+            self.motion_correction_controller.cancel_motion_correction()
+            
         self.closing = True
         self.param_window.close()
         self.preview_window.close()
@@ -313,6 +323,9 @@ class MotionCorrectionController():
         self.use_mc_video = False
 
         self.z = 0
+
+        self.motion_correct_thread = None
+        self.performing_motion_correction = False
 
     def video_opened(self, video, video_path):
         self.video      = video
@@ -409,7 +422,32 @@ class MotionCorrectionController():
         return utilities.adjust_gamma(utilities.adjust_contrast(video[self.preview_window.frame_num, self.z], self.main_controller.params['contrast']), self.main_controller.params['gamma'])
 
     def motion_correct_video(self):
-        self.mc_video, self.mc_video_path = utilities.motion_correct(self.video, self.video_path, int(self.params["max_shift"]), int(self.params["patch_stride"]), int(self.params["patch_overlap"]))
+        if not self.performing_motion_correction:
+            if self.motion_correct_thread is None:
+                self.motion_correct_thread = MotionCorrectThread(self.param_widget)
+                self.motion_correct_thread.progress.connect(self.motion_correction_progress)
+                self.motion_correct_thread.finished.connect(self.motion_correction_finished)
+            else:
+                self.motion_correct_thread.running = False
+
+            self.motion_correct_thread.set_parameters(self.video, self.video_path, int(self.params["max_shift"]), int(self.params["patch_stride"]), int(self.params["patch_overlap"]))
+
+            self.motion_correct_thread.start()
+
+            self.param_widget.motion_correction_started()
+
+            self.performing_motion_correction = True
+        else:
+            self.cancel_motion_correction()
+
+    def motion_correction_progress(self, percent):
+        self.param_widget.update_motion_correction_progress(percent)
+
+    def motion_correction_finished(self, mc_video, mc_video_path):
+        self.mc_video      = mc_video
+        self.mc_video_path = mc_video_path
+
+        self.param_widget.update_motion_correction_progress(100)
 
         self.mc_video = utilities.normalize(self.mc_video).astype(np.uint8)
 
@@ -421,6 +459,13 @@ class MotionCorrectionController():
         self.param_widget.use_mc_video_checkbox.setChecked(True)
 
         self.set_use_mc_video(True)
+
+    def cancel_motion_correction(self):
+        self.motion_correct_thread.running = False
+
+        self.param_widget.update_motion_correction_progress(100)
+
+        self.performing_motion_correction = False
 
     def play_video(self, video):
         self.preview_window.play_movie(video, fps=self.main_controller.params['fps'])
@@ -1052,3 +1097,29 @@ class ROIFilteringController():
 
     def save_params(self):
         json.dump(self.params, open(ROI_filtering_PARAMS_FILENAME, "w"))
+
+class MotionCorrectThread(QThread):
+    finished = pyqtSignal(np.ndarray, str)
+    progress = pyqtSignal(int)
+
+    def __init__(self, parent):
+        QThread.__init__(self, parent)
+
+        self.running = False
+
+    def set_parameters(self, video, video_path, max_shift, patch_stride, patch_overlap):
+        self.video         = video
+        self.video_path    = video_path
+        self.max_shift     = max_shift
+        self.patch_stride  = patch_stride
+        self.patch_overlap = patch_overlap
+
+    def run(self):
+        self.running = True
+
+        mc_video, mc_video_path = utilities.motion_correct(self.video, self.video_path, self.max_shift, self.patch_stride, self.patch_overlap, progress_signal=self.progress, thread=self)
+
+        if mc_video is not None:
+            self.finished.emit(mc_video, mc_video_path)
+
+        self.running = False

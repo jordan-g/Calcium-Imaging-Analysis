@@ -337,6 +337,10 @@ class MotionCorrectionWidget(ParamWidget):
 
         self.button_layout.addStretch()
 
+        self.mc_progress_label = QLabel("")
+        self.mc_progress_label.setStyleSheet("font-size: 10px; font-style: italic;")
+        self.button_layout.addWidget(self.mc_progress_label)
+
         self.motion_correct_button = HoverButton('Motion Correct', None, self.parent_widget.statusBar())
         self.motion_correct_button.setHoverMessage("Perform motion correction on the video.")
         self.motion_correct_button.setIcon(QIcon("motion_correct_icon.png"))
@@ -362,6 +366,21 @@ class MotionCorrectionWidget(ParamWidget):
         gamma = self.param_sliders["gamma"].sliderPosition()/float(self.param_slider_multipliers["gamma"])
 
         self.controller.preview_gamma(gamma)
+
+    def motion_correction_started(self):
+        self.mc_progress_label.setText("Motion correcting... 0%.")
+        self.motion_correct_button.setText('Cancel')
+        self.motion_correct_button.setHoverMessage("Stop motion correction calculation.")
+        self.accept_button.setEnabled(False)
+
+    def update_motion_correction_progress(self, percent):
+        if percent == 100:
+            self.mc_progress_label.setText("")
+            self.motion_correct_button.setText('Motion Correct')
+            self.motion_correct_button.setHoverMessage("Perform motion correction on the video.")
+            self.accept_button.setEnabled(True)
+        else:
+            self.mc_progress_label.setText("Motion correcting... {}%.".format(int(percent)))
 
 class WatershedWidget(ParamWidget):
     def __init__(self, parent_widget, controller):

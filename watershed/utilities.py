@@ -137,7 +137,7 @@ def adjust_gamma(image, gamma):
     # apply gamma correction using the lookup table
     return cv2.LUT(image, table.astype(np.uint8))
 
-def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap):
+def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, progress_signal=None, thread=None):
     full_video_path = video_path
 
     directory = os.path.dirname(full_video_path)
@@ -145,9 +145,19 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap):
 
     mc_videos_list = []
 
+    if thread is not None and thread.running == False:
+        return [None]*2
+
     # Create the cluster
-    c, dview, n_processes = cm.cluster.setup_cluster(
-        backend='local', n_processes=None, single_thread=False)
+    c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
+
+    if thread is not None and thread.running == False:
+        return [None]*2
+
+    if progress_signal:
+        # send an update signal to the GUI
+        percent_complete = int(100.0*float(0.1)/video.shape[1])
+        progress_signal.emit(percent_complete)
 
     for z in range(video.shape[1]):
         video_path = os.path.join(directory, os.path.splitext(filename)[0] + "_z_{}.tif".format(z))
@@ -214,6 +224,14 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap):
         # Do rigid motion correction
         mc.motion_correct_rigid(save_movie=True)
 
+        if thread is not None and thread.running == False:
+            return [None]*2
+
+        if progress_signal:
+            # send an update signal to the GUI
+            percent_complete = int(100.0*float(z + (1/3))/video.shape[1])
+            progress_signal.emit(percent_complete)
+
         # print(mc.fname_tot_rig)
 
         # Load rigid motion corrected movie
@@ -223,6 +241,14 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap):
 
         # Do elastic motion correction
         mc.motion_correct_pwrigid(save_movie=True, template=mc.total_template_rig, show_template=False)
+
+        if thread is not None and thread.running == False:
+            return [None]*2
+
+        if progress_signal:
+            # send an update signal to the GUI
+            percent_complete = int(100.0*float(z + (2/3))/video.shape[1])
+            progress_signal.emit(percent_complete)
 
         # Save elastic shift border
         bord_px_els = np.ceil(np.maximum(np.max(np.abs(mc.x_shifts_els)),
@@ -277,6 +303,14 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap):
 
         out = np.nan_to_num(out)
 
+        if thread is not None and thread.running == False:
+            return [None]*2
+
+        if progress_signal:
+            # send an update signal to the GUI
+            percent_complete = int(100.0*float(z + 1)/video.shape[1])
+            progress_signal.emit(percent_complete)
+
     max_height = max([ a.shape[1] for a in mc_videos_list ])
     max_width  = max([ a.shape[2] for a in mc_videos_list ])
 
@@ -305,6 +339,9 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap):
         mc_video[:, z, :, :] = b
 
         # print(np.amax(mc_video), np.amin(mc_video))
+
+    if thread is not None and thread.running == False:
+        return [None]*2
 
     motion_corrected_video_path = os.path.splitext(os.path.basename(full_video_path))[0] + "_mc.npy"
     np.save(motion_corrected_video_path, mc_video)
