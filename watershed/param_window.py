@@ -94,6 +94,9 @@ class ParamWindow(QMainWindow):
     def remove_selected_items(self):
         self.videos_widget.remove_selected_items()
 
+    def rois_created(self):
+        self.videos_widget.process_all_button.setEnabled(True)
+
     def toggle_initial_state(self, initial_state=True):
         self.main_param_widget.setDisabled(initial_state)
         self.stacked_widget.setDisabled(initial_state)
@@ -135,8 +138,11 @@ class VideosWidget(QWidget):
         self.remove_videos_button.clicked.connect(lambda:self.controller.remove_videos_at_indices([ x.row() for x in self.videos_list.selectedIndexes() ]))
         self.button_layout.addWidget(self.remove_videos_button)
 
+        self.button_layout.addStretch()
+
         self.process_all_button = HoverButton('Process All', None, self.parent_widget.statusBar())
         self.process_all_button.setHoverMessage("Extract activities from all the loaded videos using the current ROIs.")
+        self.process_all_button.setStyleSheet('font-weight: bold;')
         self.process_all_button.setDisabled(True)
         self.process_all_button.clicked.connect(self.controller.process_all_videos)
         self.button_layout.addWidget(self.process_all_button)
@@ -160,8 +166,6 @@ class VideosWidget(QWidget):
         self.videos_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.videos_list.itemSelectionChanged.connect(self.item_selected)
         self.videos_list_layout.addWidget(self.videos_list)
-
-        self.button_layout.addStretch()
 
     def videos_opened(self, video_paths):
         for video_path in video_paths:

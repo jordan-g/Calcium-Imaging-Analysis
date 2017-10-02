@@ -242,6 +242,9 @@ class Controller():
 
         self.mode = "filter"
 
+    def rois_created(self):
+        self.param_window.rois_created()
+
     def close_all(self):
         self.closing = True
         self.param_window.close()
@@ -513,7 +516,7 @@ class WatershedController():
         self.equalized_image      = self.calculate_equalized_image(self.adjusted_image, self.background_mask)
         self.soma_mask, self.I_mod, self.soma_threshold_image = self.calculate_soma_threshold_image(self.equalized_image)
 
-        self.preview_window.plot_image(self.adjusted_image)
+        self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
 
     def calculate_adjusted_image(self, normalized_image):
         return utilities.adjust_gamma(utilities.adjust_contrast(normalized_image, self.main_controller.params['contrast']), self.main_controller.params['gamma'])/255.0
@@ -685,6 +688,8 @@ class WatershedController():
 
         rgb_image = cv2.cvtColor((self.adjusted_image*255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
         self.watershed_image, _, _ = utilities.draw_rois(rgb_image, self.labels[self.z], None, self.filtered_out_rois[self.z], None)
+
+        self.main_controller.rois_created()
 
         self.show_watershed_image(True)
 
