@@ -144,7 +144,7 @@ class Controller():
         self.roi_filtering_controller.removed_rois      = roi_data['removed_rois']
         self.roi_filtering_controller.locked_rois       = roi_data['locked_rois']
 
-        self.show_roi_filtering_params(self.watershed_controller.labels, self.watershed_controller.roi_areas, self.watershed_controller.roi_circs, None, None)
+        self.show_roi_filtering_params(self.watershed_controller.labels, self.watershed_controller.roi_areas, self.watershed_controller.roi_circs, None, None, loading_rois=True)
 
     def open_videos(self, video_paths):
         self.video_paths += video_paths
@@ -229,11 +229,11 @@ class Controller():
         self.motion_correction_controller.video_opened(self.video, self.video_path)
         self.param_window.statusBar().showMessage("")
 
-    def show_roi_filtering_params(self, labels, roi_areas, roi_circs, mean_images, normalized_images):
+    def show_roi_filtering_params(self, labels, roi_areas, roi_circs, mean_images, normalized_images, loading_rois=False):
         self.param_window.stacked_widget.setCurrentIndex(2)
         self.mode = "filter"
         self.preview_window.controller = self.roi_filtering_controller
-        self.roi_filtering_controller.video_opened(self.video, self.video_path, labels, roi_areas, roi_circs, mean_images, normalized_images)
+        self.roi_filtering_controller.video_opened(self.video, self.video_path, labels, roi_areas, roi_circs, mean_images, normalized_images, loading_rois=loading_rois)
         self.param_window.statusBar().showMessage("")
 
     def rois_created(self):
@@ -781,7 +781,7 @@ class ROIFilteringController():
 
         self.z = 0
 
-    def video_opened(self, video, video_path, labels, roi_areas, roi_circs, mean_images, normalized_images):
+    def video_opened(self, video, video_path, labels, roi_areas, roi_circs, mean_images, normalized_images, loading_rois=False):
         if labels is not self.original_labels:
             self.video      = video
             self.video_path = video_path
@@ -805,11 +805,13 @@ class ROIFilteringController():
             self.roi_areas       = roi_areas
             self.roi_circs       = roi_circs
 
-            self.filtered_out_rois = [ [] for i in range(video.shape[1]) ]
-            self.erased_rois       = [ [] for i in range(video.shape[1]) ]
-            self.removed_rois      = [ [] for i in range(video.shape[1]) ]
+            if not loading_rois:
+                self.filtered_out_rois = [ [] for i in range(video.shape[1]) ]
+                self.erased_rois       = [ [] for i in range(video.shape[1]) ]
+                self.removed_rois      = [ [] for i in range(video.shape[1]) ]
+                self.locked_rois       = [ [] for i in range(video.shape[1]) ]
+            
             self.last_erased_rois  = [ [] for i in range(video.shape[1]) ]
-            self.locked_rois       = [ [] for i in range(video.shape[1]) ]
 
             self.rois_erased = False
 
