@@ -253,7 +253,8 @@ class ParamWidget(QWidget):
         textbox.setStyleSheet("border-radius: 3px; border: 1px solid #ccc; padding: 2px;")
         textbox.setAlignment(Qt.AlignHCenter)
         textbox.setObjectName(name)
-        textbox.setFixedWidth(40)
+        textbox.setFixedWidth(60)
+        textbox.setFixedHeight(20)
         textbox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         textbox.editingFinished.connect(lambda:self.update_slider_from_textbox(slider, textbox, multiplier, int_values))
         textbox.editingFinished.connect(released)
@@ -426,16 +427,9 @@ class WatershedWidget(ParamWidget):
 
         self.button_widget = QWidget(self)
         self.button_layout = QHBoxLayout(self.button_widget)
-        self.button_layout.setContentsMargins(0, 0, 0, 0)
+        self.button_layout.setContentsMargins(10, 0, 0, 0)
         self.button_layout.setSpacing(5)
         self.main_layout.addWidget(self.button_widget)
-
-        self.process_video_button = HoverButton('Find ROIs', None, self.parent_widget.statusBar())
-        self.process_video_button.setHoverMessage("Find ROIs using the watershed algorithm.")
-        self.process_video_button.setIcon(QIcon("find_rois_icon.png"))
-        self.process_video_button.setIconSize(QSize(16,16))
-        self.process_video_button.clicked.connect(self.controller.process_video)
-        self.button_layout.addWidget(self.process_video_button)
 
         self.show_watershed_checkbox = QCheckBox("Show ROIs")
         self.show_watershed_checkbox.setObjectName("Show ROIs")
@@ -446,6 +440,10 @@ class WatershedWidget(ParamWidget):
 
         self.button_layout.addStretch()
 
+        self.watershed_progress_label = QLabel("")
+        self.watershed_progress_label.setStyleSheet("font-size: 10px; font-style: italic;")
+        self.button_layout.addWidget(self.watershed_progress_label)
+
         self.motion_correct_button = HoverButton('Motion Correction', None, self.parent_widget.statusBar())
         self.motion_correct_button.setHoverMessage("Go back to motion correction.")
         self.motion_correct_button.setIcon(QIcon("skip_back_icon.png"))
@@ -453,14 +451,38 @@ class WatershedWidget(ParamWidget):
         self.motion_correct_button.clicked.connect(self.controller.motion_correct)
         self.button_layout.addWidget(self.motion_correct_button)
 
+        self.process_video_button = HoverButton('Find ROIs', None, self.parent_widget.statusBar())
+        self.process_video_button.setHoverMessage("Find ROIs using the watershed algorithm.")
+        self.process_video_button.setIcon(QIcon("motion_correct_icon.png"))
+        self.process_video_button.setIconSize(QSize(16,16))
+        self.process_video_button.clicked.connect(self.controller.process_video)
+        self.button_layout.addWidget(self.process_video_button)
+
         self.filter_rois_button = HoverButton('Filter ROIs', None, self.parent_widget.statusBar())
         self.filter_rois_button.setHoverMessage("Automatically and manually filter the found ROIs.")
-        self.filter_rois_button.setIcon(QIcon("filter_icon.png"))
+        self.filter_rois_button.setIcon(QIcon("accept_icon.png"))
         self.filter_rois_button.setIconSize(QSize(16,16))
         self.filter_rois_button.clicked.connect(self.controller.filter_rois)
         self.filter_rois_button.setStyleSheet('font-weight: bold;')
         self.filter_rois_button.setDisabled(True)
         self.button_layout.addWidget(self.filter_rois_button)
+
+    def watershed_started(self):
+        self.watershed_progress_label.setText("Finding ROIs... 0%.")
+        self.process_video_button.setText('Cancel')
+        self.process_video_button.setHoverMessage("Stop finding ROIs.")
+        self.filter_rois_button.setEnabled(False)
+        self.motion_correct_button.setEnabled(False)
+
+    def update_watershed_progress(self, percent):
+        if percent == 100:
+            self.watershed_progress_label.setText("")
+            self.process_video_button.setText('Find ROIs')
+            self.process_video_button.setHoverMessage("Find ROIs using the watershed algorithm.")
+            self.filter_rois_button.setEnabled(True)
+            self.motion_correct_button.setEnabled(True)
+        else:
+            self.watershed_progress_label.setText("Finding ROIs... {}%.".format(int(percent)))
 
 class ROIFilteringWidget(ParamWidget):
     def __init__(self, parent_widget, controller):
@@ -478,9 +500,14 @@ class ROIFilteringWidget(ParamWidget):
         
         self.main_layout.addWidget(HLine())
 
+        self.title_widget = QWidget(self)
+        self.title_layout = QHBoxLayout(self.title_widget)
+        self.title_layout.setContentsMargins(10, 10, 0, 0)
+        self.main_layout.addWidget(self.title_widget)
+
         self.title_label = QLabel("Manual Controls")
         self.title_label.setStyleSheet(TITLE_STYLESHEET)
-        self.main_layout.addWidget(self.title_label)
+        self.title_layout.addWidget(self.title_label)
 
         self.roi_button_widget = QWidget(self)
         self.roi_button_layout = QHBoxLayout(self.roi_button_widget)
@@ -539,14 +566,9 @@ class ROIFilteringWidget(ParamWidget):
 
         self.button_widget = QWidget(self)
         self.button_layout = QHBoxLayout(self.button_widget)
-        self.button_layout.setContentsMargins(0, 0, 0, 0)
+        self.button_layout.setContentsMargins(10, 0, 0, 0)
         self.button_layout.setSpacing(5)
         self.main_layout.addWidget(self.button_widget)
-
-        self.filter_rois_button = HoverButton('Filter ROIs', None, self.parent_widget.statusBar())
-        self.filter_rois_button.setHoverMessage("Automatically filter ROIs with the current parameters.")
-        self.filter_rois_button.clicked.connect(lambda:self.controller.filter_rois([self.main_controller.params['z']]))
-        self.button_layout.addWidget(self.filter_rois_button)
 
         self.show_watershed_checkbox = QCheckBox("Show ROIs")
         self.show_watershed_checkbox.setObjectName("Show ROIs")
@@ -565,11 +587,18 @@ class ROIFilteringWidget(ParamWidget):
         self.button_layout.addWidget(self.motion_correct_button)
 
         self.watershed_button = HoverButton('ROI Segmentation', None, self.parent_widget.statusBar())
+        self.watershed_button.setHoverMessage("Go back to ROI segmentation.")
         self.watershed_button.setIcon(QIcon("skip_back_icon.png"))
         self.watershed_button.setIconSize(QSize(16,16))
         self.watershed_button.clicked.connect(self.controller.watershed)
-        self.watershed_button.setToolTip("Go back to ROI segmentation.")
         self.button_layout.addWidget(self.watershed_button)
+
+        self.filter_rois_button = HoverButton('Filter ROIs', None, self.parent_widget.statusBar())
+        self.filter_rois_button.setHoverMessage("Automatically filter ROIs with the current parameters.")
+        self.watershed_button.setIcon(QIcon("motion_correct_icon.png"))
+        self.watershed_button.setIconSize(QSize(16,16))
+        self.filter_rois_button.clicked.connect(lambda:self.controller.filter_rois([self.main_controller.params['z']]))
+        self.button_layout.addWidget(self.filter_rois_button)
 
 class HoverButton(QPushButton):
     def __init__(self, text, parent=None, status_bar=None):

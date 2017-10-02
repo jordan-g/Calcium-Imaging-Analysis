@@ -15,10 +15,7 @@ from skimage.measure import find_contours, regionprops
 from skimage.filters import gaussian
 from skimage.restoration import (denoise_tv_chambolle, denoise_bilateral,
                                  denoise_wavelet, estimate_sigma)
-from watershed.imimposemin import imimposemin
-from mahotas.labeled import bwperim
 import cv2
-import math
 import matplotlib.pyplot as plt
 
 # import the Qt library
@@ -147,7 +144,7 @@ class Controller():
         self.roi_filtering_controller.removed_rois      = roi_data['removed_rois']
         self.roi_filtering_controller.locked_rois       = roi_data['locked_rois']
 
-        self.show_roi_filtering_params(self.watershed_controller.labels, self.watershed_controller.roi_areas, self.watershed_controller.roi_circs, None, None, loading_rois=True)
+        self.show_roi_filtering_params(self.watershed_controller.labels, self.watershed_controller.roi_areas, self.watershed_controller.roi_circs, None, None, None, loading_rois=True)
 
     def open_videos(self, video_paths):
         self.video_paths += video_paths
@@ -236,11 +233,11 @@ class Controller():
         self.motion_correction_controller.video_opened(self.video, self.video_path)
         self.param_window.statusBar().showMessage("")
 
-    def show_roi_filtering_params(self, labels, roi_areas, roi_circs, mean_images, normalized_images, loading_rois=False):
+    def show_roi_filtering_params(self, labels, roi_areas, roi_circs, mean_images, normalized_images, filtered_out_rois, loading_rois=False):
         self.param_window.stacked_widget.setCurrentIndex(2)
         self.mode = "filter"
         self.preview_window.controller = self.roi_filtering_controller
-        self.roi_filtering_controller.video_opened(self.video, self.video_path, labels, roi_areas, roi_circs, mean_images, normalized_images, loading_rois=loading_rois)
+        self.roi_filtering_controller.video_opened(self.video, self.video_path, labels, roi_areas, roi_circs, mean_images, normalized_images, filtered_out_rois, loading_rois=loading_rois)
         self.param_window.statusBar().showMessage("")
 
     def rois_created(self):
@@ -249,7 +246,7 @@ class Controller():
     def close_all(self):
         if self.mode == "motion_correct":
             self.motion_correction_controller.cancel_motion_correction()
-            
+
         self.closing = True
         self.param_window.close()
         self.preview_window.close()
@@ -324,7 +321,7 @@ class MotionCorrectionController():
 
         self.z = 0
 
-        self.motion_correct_thread = None
+        self.motion_correct_thread        = None
         self.performing_motion_correction = False
 
     def video_opened(self, video, video_path):
@@ -537,6 +534,9 @@ class WatershedController():
 
         self.z = 0
 
+        self.watershed_thread     = None
+        self.performing_watershed = False
+
     def video_opened(self, video, video_path):
         if video_path != self.video_path:
             self.video       = video
@@ -552,58 +552,14 @@ class WatershedController():
 
             self.masks             = [ [] for i in range(video.shape[1]) ]
             self.mask_points       = [ [] for i in range(video.shape[1]) ]
-            self.labels            = [ [] for i in range(video.shape[1]) ]
-            self.roi_areas         = [ [] for i in range(video.shape[1]) ]
-            self.roi_circs         = [ [] for i in range(video.shape[1]) ]
-            self.filtered_out_rois = [ [] for i in range(video.shape[1]) ]
             
-            self.adjusted_image       = self.calculate_adjusted_image(self.normalized_images[self.z])
-            self.background_mask      = self.calculate_background_mask(self.adjusted_image)
-            self.equalized_image      = self.calculate_equalized_image(self.adjusted_image, self.background_mask)
-            self.soma_mask, self.I_mod, self.soma_threshold_image = self.calculate_soma_threshold_image(self.equalized_image)
+            self.adjusted_image       = utilities.calculate_adjusted_image(self.normalized_images[self.z], self.main_controller.params['contrast'], self.main_controller.params['gamma'])
+            self.background_mask      = utilities.calculate_background_mask(self.adjusted_image, self.params['background_threshold'])
+            self.equalized_image      = utilities.calculate_equalized_image(self.adjusted_image, self.background_mask, self.params['window_size'])
+            self.soma_mask, self.I_mod, self.soma_threshold_image = utilities.calculate_soma_threshold_image(self.equalized_image, self.params['soma_threshold'])
 
         self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
 
-    def calculate_adjusted_image(self, normalized_image):
-        return utilities.adjust_gamma(utilities.adjust_contrast(normalized_image, self.main_controller.params['contrast']), self.main_controller.params['gamma'])/255.0
-
-    def calculate_background_mask(self, adjusted_image):
-        return adjusted_image < self.params['background_threshold']/255.0
-    
-    def calculate_equalized_image(self, adjusted_image, background_mask):
-        new_image_10 = utilities.order_statistic(adjusted_image, 0.1, int(self.params['window_size']))
-        new_image_90 = utilities.order_statistic(adjusted_image, 0.9, int(self.params['window_size']))
-
-        image_difference = adjusted_image - new_image_10
-        image_difference[image_difference < 0] = 0
-
-        image_range = new_image_90 - new_image_10
-        image_range[image_range <= 0] = 1e-6
-
-        equalized_image = utilities.rescale_0_1(image_difference/image_range)
-
-        equalized_image[equalized_image < 0] = 0
-        equalized_image[equalized_image > 1] = 1
-
-        equalized_image[background_mask] = 0
-
-        return 1.0 - equalized_image
-    
-    def calculate_soma_threshold_image(self, equalized_image):
-        nuclei_image = equalized_image.copy()
-
-        soma_mask = local_maxima(h_maxima(nuclei_image, self.params['soma_threshold']/255.0, selem=square(3)), selem=square(3))
-        # self.soma_masks[i] = remove_small_objects(self.soma_masks[i].astype(bool), 2, connectivity=2, in_place=True)
-
-        nuclei_image_c = 1 - nuclei_image
-
-        I_mod = imimposemin(nuclei_image_c.astype(float), soma_mask)
-
-        soma_threshold_image = I_mod/np.amax(I_mod)
-        soma_threshold_image[soma_threshold_image == -math.inf] = 0
-
-        return soma_mask, I_mod, soma_threshold_image
-    
     def draw_mask(self):
         if not self.preview_window.drawing_mask:
             self.preview_window.plot_image(self.adjusted_image)
@@ -645,20 +601,20 @@ class WatershedController():
             self.params[param] = value
 
         if param in ("contrast, gamma"):
-            self.adjusted_image = self.calculate_adjusted_image(self.normalized_images[self.z])
+            self.adjusted_image = utilities.calculate_adjusted_image(self.normalized_images[self.z], self.main_controller.params['contrast'], self.main_controller.params['gamma'])
 
             if self.labels is not None:
                 self.calculate_watershed_image(self.z, update_overlay=False)
 
             self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
         elif param == "background_threshold":
-            self.background_mask = self.calculate_background_mask(self.adjusted_image)
+            self.background_mask = utilities.calculate_background_mask(self.adjusted_image, self.params['background_threshold'])
 
             self.param_widget.show_watershed_checkbox.setChecked(False)
 
             self.preview_window.plot_image(self.adjusted_image, mask=self.background_mask)
         elif param == "window_size":
-            self.equalized_image = self.calculate_equalized_image(self.adjusted_image, self.background_mask)
+            self.equalized_image = utilities.calculate_equalized_image(self.adjusted_image, self.background_mask, self.params['window_size'])
 
             self.param_widget.show_watershed_checkbox.setChecked(False)
 
@@ -666,7 +622,7 @@ class WatershedController():
         elif param == "z":
             self.z = value
 
-            self.adjusted_image = self.calculate_adjusted_image(self.normalized_images[self.z])
+            self.adjusted_image = utilities.calculate_adjusted_image(self.normalized_images[self.z], self.main_controller.params['contrast'], self.main_controller.params['gamma'])
 
             if self.labels is not None:
                 self.calculate_watershed_image(self.z, update_overlay=True)
@@ -690,53 +646,34 @@ class WatershedController():
             self.preview_window.plot_image(self.adjusted_image)
 
     def process_video(self):
-        centers_list = []
+        if not self.performing_watershed:
+            if self.watershed_thread is None:
+                self.watershed_thread = WatershedThread(self.param_widget)
+                self.watershed_thread.progress.connect(self.watershed_progress)
+                self.watershed_thread.finished.connect(self.watershed_finished)
+            else:
+                self.watershed_thread.running = False
 
-        for z in range(self.video.shape[1]):
-            adjusted_image  = self.calculate_adjusted_image(self.normalized_images[z])
-            background_mask = self.calculate_background_mask(adjusted_image)
-            equalized_image = self.calculate_equalized_image(adjusted_image, background_mask)
-            soma_mask, I_mod, soma_threshold_image = self.calculate_soma_threshold_image(equalized_image)
+            self.watershed_thread.set_parameters(self.video, self.normalized_images, self.masks, int(self.filtering_params["min_area"]), int(self.filtering_params["max_area"]), int(self.filtering_params["min_circ"]), int(self.filtering_params["max_circ"]), self.params['soma_threshold'], self.params['window_size'], self.params['background_threshold'], self.params['contrast'], self.params['gamma'])
 
-            if len(self.masks[z]) > 0:
-                masks = np.array(self.masks[z])
-                mask = np.sum(masks, axis=0).astype(bool)
+            self.watershed_thread.start()
 
-                out = np.zeros(adjusted_image.shape)
-                out[mask] = adjusted_image[mask]
-                adjusted_image = out.copy()
+            self.param_widget.watershed_started()
 
-                out = np.zeros(soma_mask.shape)
-                out[mask] = soma_mask[mask]
-                soma_mask = out.copy()
+            self.performing_watershed = True
+        else:
+            self.cancel_watershed()
 
-                out = np.zeros(I_mod.shape)
-                out[mask] = I_mod[mask]
-                I_mod = out.copy()
+    def watershed_progress(self, percent):
+        self.param_widget.update_watershed_progress(percent)
 
-            start = time.time()
+    def watershed_finished(self, labels, roi_areas, roi_circs, filtered_out_rois):
+        self.labels            = labels
+        self.roi_areas         = roi_areas
+        self.roi_circs         = roi_circs
+        self.filtered_out_rois = filtered_out_rois
 
-            self.labels[z], self.roi_areas[z], self.roi_circs[z] = utilities.apply_watershed(adjusted_image, soma_mask, I_mod)
-
-            if len(self.masks[z]) > 0:
-                masks = np.array(self.masks[z])
-                mask = np.sum(masks, axis=0).astype(bool)
-
-                out = np.zeros(self.labels[z].shape).astype(int)
-                out[mask] = self.labels[z][mask]
-                self.labels[z] = out.copy()
-
-            end = time.time()
-
-            print("Time: {}s.".format(end - start))
-
-            start = time.time()
-
-            _, self.filtered_out_rois[z] = utilities.filter_rois(self.normalized_images[z], self.labels[z], self.filtering_params['min_area'], self.filtering_params['max_area'], self.filtering_params['min_circ'], self.filtering_params['max_circ'], self.roi_areas[z], self.roi_circs[z], self.roi_areas[z])
-
-            end = time.time()
-
-            print("Time: {}s.".format(end - start))
+        self.param_widget.update_watershed_progress(100)
 
         self.param_widget.show_watershed_checkbox.setDisabled(False)
         self.param_widget.show_watershed_checkbox.setChecked(True)
@@ -748,6 +685,13 @@ class WatershedController():
         self.main_controller.rois_created()
 
         self.show_watershed_image(True)
+
+    def cancel_watershed(self):
+        self.watershed_thread.running = False
+
+        self.param_widget.update_watershed_progress(100)
+
+        self.performing_watershed = False
 
     def select_mask(self, mask_point):
         selected_mask, selected_mask_num = utilities.get_mask_containing_point(self.masks[self.z], mask_point)
@@ -781,7 +725,7 @@ class WatershedController():
         self.main_controller.show_motion_correction_params()
 
     def filter_rois(self):
-        self.main_controller.show_roi_filtering_params(self.labels, self.roi_areas, self.roi_circs, self.mean_images, self.normalized_images)
+        self.main_controller.show_roi_filtering_params(self.labels, self.roi_areas, self.roi_circs, self.mean_images, self.normalized_images, self.filtered_out_rois)
 
     def save_params(self):
         json.dump(self.params, open(WATERSHED_PARAMS_FILENAME, "w"))
@@ -826,7 +770,7 @@ class ROIFilteringController():
 
         self.z = 0
 
-    def video_opened(self, video, video_path, labels, roi_areas, roi_circs, mean_images, normalized_images, loading_rois=False):
+    def video_opened(self, video, video_path, labels, roi_areas, roi_circs, mean_images, normalized_images, filtered_out_rois, loading_rois=False):
         if labels is not self.original_labels:
             self.video      = video
             self.video_path = video_path
@@ -845,26 +789,32 @@ class ROIFilteringController():
             else:
                 self.normalized_images = [ utilities.normalize(mean_image).astype(np.uint8) for mean_image in self.mean_images ]
 
-            self.original_labels = labels
-            self.labels          = self.original_labels.copy()
-            self.roi_areas       = roi_areas
-            self.roi_circs       = roi_circs
+            self.original_labels   = labels.copy()
+            self.labels            = self.original_labels.copy()
+            self.roi_areas         = roi_areas
+            self.roi_circs         = roi_circs
+            self.filtered_out_rois = filtered_out_rois
 
             if not loading_rois:
-                self.filtered_out_rois = [ [] for i in range(video.shape[1]) ]
-                self.erased_rois       = [ [] for i in range(video.shape[1]) ]
-                self.removed_rois      = [ [] for i in range(video.shape[1]) ]
-                self.locked_rois       = [ [] for i in range(video.shape[1]) ]
+                self.erased_rois = [ [] for i in range(video.shape[1]) ]
+                self.locked_rois = [ [] for i in range(video.shape[1]) ]
+
+                if self.filtered_out_rois is None:
+                    self.filtered_out_rois = filtered_out_rois.copy()
+
+                if self.removed_rois is None:
+                    self.removed_rois = filtered_out_rois.copy()
             
             self.last_erased_rois  = [ [] for i in range(video.shape[1]) ]
 
             self.rois_erased = False
 
-            self.adjusted_image = self.calculate_adjusted_image(self.normalized_images[self.z])
+            self.adjusted_image = utilities.calculate_adjusted_image(self.normalized_images[self.z], self.main_controller.params['contrast'], self.main_controller.params['gamma'])
 
-            self.filter_rois(z=self.z)
+            if self.filtered_out_rois is None:
+                self.filter_rois(z=self.z)
 
-            self.calculate_watershed_image(z=self.z, update_overlay=False)
+            self.calculate_watershed_image(z=self.z, update_overlay=True)
 
             self.param_widget.show_watershed_checkbox.setDisabled(False)
             self.param_widget.show_watershed_checkbox.setChecked(True)
@@ -889,13 +839,13 @@ class ROIFilteringController():
             self.params[param] = value
 
         if param in ("contrast, gamma"):
-            self.adjusted_image = self.calculate_adjusted_image(self.normalized_images[self.z])
+            self.adjusted_image = utilities.calculate_adjusted_image(self.normalized_images[self.z], self.main_controller.params['contrast'], self.main_controller.params['gamma'])
 
             self.calculate_watershed_image(self.z, update_overlay=False)
 
             self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
         elif param == "z":
-            self.adjusted_image = self.calculate_adjusted_image(self.normalized_images[self.z])
+            self.adjusted_image = utilities.calculate_adjusted_image(self.normalized_images[self.z], self.main_controller.params['contrast'], self.main_controller.params['gamma'])
 
             self.filter_rois(z=self.z)
 
@@ -903,11 +853,7 @@ class ROIFilteringController():
 
             self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
         elif param in ("min_area", "max_area", "min_circ", "max_circ"):
-            self.filter_rois(z=self.z)
-
-            self.calculate_watershed_image(z=self.z, update_overlay=True)
-
-            self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
+            pass
 
     def show_watershed_image(self, show):
         if show:
@@ -1004,7 +950,7 @@ class ROIFilteringController():
         self.labels[self.z]           = self.original_labels[self.z].copy()
         self.erased_rois[self.z]      = []
         self.last_erased_rois[self.z] = []
-        self.removed_rois[self.z]     = self.filtered_out_rois[self.z]
+        self.removed_rois[self.z]     = self.filtered_out_rois[self.z].copy()
 
         self.calculate_watershed_image(z=self.z, update_overlay=True)
 
@@ -1121,5 +1067,96 @@ class MotionCorrectThread(QThread):
 
         if mc_video is not None:
             self.finished.emit(mc_video, mc_video_path)
+
+        self.running = False
+
+class WatershedThread(QThread):
+    finished = pyqtSignal(list, list, list, list)
+    progress = pyqtSignal(int)
+
+    def __init__(self, parent):
+        QThread.__init__(self, parent)
+
+        self.running = False
+
+    def set_parameters(self, video, normalized_images, masks, min_area, max_area, min_circ, max_circ, soma_threshold, window_size, background_threshold, contrast, gamma):
+        self.video                = video
+        self.normalized_images    = normalized_images
+        self.masks                = masks
+        self.min_area             = min_area
+        self.max_area             = max_area
+        self.min_circ             = min_circ
+        self.max_circ             = max_circ
+        self.soma_threshold       = soma_threshold
+        self.window_size          = window_size
+        self.background_threshold = background_threshold
+        self.contrast             = contrast
+        self.gamma                = gamma
+
+    def run(self):
+        labels            = [ [] for i in range(self.video.shape[1]) ]
+        roi_areas         = [ [] for i in range(self.video.shape[1]) ]
+        roi_circs         = [ [] for i in range(self.video.shape[1]) ]
+        filtered_out_rois = [ [] for i in range(self.video.shape[1]) ]
+
+        self.running = True
+
+        for z in range(self.video.shape[1]):
+            adjusted_image  = utilities.calculate_adjusted_image(self.normalized_images[z], self.contrast, self.gamma)
+            background_mask = utilities.calculate_background_mask(adjusted_image, self.background_threshold)
+            equalized_image = utilities.calculate_equalized_image(adjusted_image, background_mask, self.window_size)
+            soma_mask, I_mod, soma_threshold_image = utilities.calculate_soma_threshold_image(equalized_image, self.soma_threshold)
+
+            if not self.running:
+                self.running = False
+
+                return
+
+            self.progress.emit(int(100.0*float(z + (1/3))/self.video.shape[1]))
+
+            if len(self.masks[z]) > 0:
+                masks = np.array(self.masks[z])
+                mask = np.sum(masks, axis=0).astype(bool)
+
+                out = np.zeros(adjusted_image.shape)
+                out[mask] = adjusted_image[mask]
+                adjusted_image = out.copy()
+
+                out = np.zeros(soma_mask.shape)
+                out[mask] = soma_mask[mask]
+                soma_mask = out.copy()
+
+                out = np.zeros(I_mod.shape)
+                out[mask] = I_mod[mask]
+                I_mod = out.copy()
+
+            labels[z], roi_areas[z], roi_circs[z] = utilities.apply_watershed(adjusted_image, soma_mask, I_mod)
+
+            if not self.running:
+                self.running = False
+
+                return
+
+            self.progress.emit(int(100.0*float(z + (2/3))/self.video.shape[1]))
+
+            if len(self.masks[z]) > 0:
+                masks = np.array(self.masks[z])
+                mask = np.sum(masks, axis=0).astype(bool)
+
+                out = np.zeros(labels[z].shape).astype(int)
+                out[mask] = labels[z][mask]
+                labels[z] = out.copy()
+
+            _, filtered_out_rois[z] = utilities.filter_rois(self.normalized_images[z], labels[z], self.min_area, self.max_area, self.min_circ, self.max_circ, roi_areas[z], roi_circs[z])
+            
+            if not self.running:
+                self.running = False
+
+                return
+
+            self.progress.emit(int(100.0*float(z + 1)/self.video.shape[1]))
+
+        if labels is not None:
+            self.finished.emit(labels, roi_areas, roi_circs, filtered_out_rois)
 
         self.running = False

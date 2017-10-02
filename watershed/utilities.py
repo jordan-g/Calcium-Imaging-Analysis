@@ -17,6 +17,8 @@ from caiman.utils.visualization import plot_contours, view_patches_bar
 from caiman.base.rois import extract_binary_masks_blob
 from caiman.utils.utils import download_demo
 from mahotas.labeled import bwperim
+from watershed.imimposemin import imimposemin
+import math
 
 import os
 import glob
@@ -348,6 +350,46 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
 
     return mc_video, motion_corrected_video_path
 
+def calculate_adjusted_image(normalized_image, contrast, gamma):
+    return adjust_gamma(adjust_contrast(normalized_image, contrast), gamma)/255.0
+
+def calculate_background_mask(adjusted_image, background_threshold):
+    return adjusted_image < background_threshold/255.0
+
+def calculate_equalized_image(adjusted_image, background_mask, window_size):
+    new_image_10 = order_statistic(adjusted_image, 0.1, int(window_size))
+    new_image_90 = order_statistic(adjusted_image, 0.9, int(window_size))
+
+    image_difference = adjusted_image - new_image_10
+    image_difference[image_difference < 0] = 0
+
+    image_range = new_image_90 - new_image_10
+    image_range[image_range <= 0] = 1e-6
+
+    equalized_image = rescale_0_1(image_difference/image_range)
+
+    equalized_image[equalized_image < 0] = 0
+    equalized_image[equalized_image > 1] = 1
+
+    equalized_image[background_mask] = 0
+
+    return 1.0 - equalized_image
+
+def calculate_soma_threshold_image(equalized_image, soma_threshold):
+    nuclei_image = equalized_image.copy()
+
+    soma_mask = local_maxima(h_maxima(nuclei_image, soma_threshold/255.0, selem=square(3)), selem=square(3))
+    # self.soma_masks[i] = remove_small_objects(self.soma_masks[i].astype(bool), 2, connectivity=2, in_place=True)
+
+    nuclei_image_c = 1 - nuclei_image
+
+    I_mod = imimposemin(nuclei_image_c.astype(float), soma_mask)
+
+    soma_threshold_image = I_mod/np.amax(I_mod)
+    soma_threshold_image[soma_threshold_image == -math.inf] = 0
+
+    return soma_mask, I_mod, soma_threshold_image
+
 def apply_watershed(original_image, cells_mask, starting_image):
     if len(original_image.shape) == 2:
         rgb_image = cv2.cvtColor((original_image*255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
@@ -385,15 +427,22 @@ def filter_rois(image, labels, min_area, max_area, min_circ, max_circ, roi_areas
     filtered_out_rois = []
 
     for l in np.unique(labels):
-        mask = labels == l
-
-        perim = bwperim(mask.astype(int), n=4) == 1
-
-        diff = np.mean(image[perim]) - np.mean(image[mask - perim])
-
-        if ((not (min_area <= roi_areas[l-1] <= max_area)) or l <= 1 or (diff != np.nan and diff < 1.0)) and l not in locked_rois:
+        if ((not (min_area <= roi_areas[l-1] <= max_area)) or l <= 1) and l not in locked_rois:
+            mask = labels == l
+            
             filtered_labels[mask] = 0
             filtered_out_rois.append(l)
+        else:
+            mask = labels == l
+
+            a = dilation(mask, disk(1))
+            b = erosion(mask, disk(1))
+
+            difference = np.mean(image[a - b]) - np.mean(image[b])
+
+            if (difference != np.nan and difference < 1.0):
+                filtered_labels[mask] = 0
+                filtered_out_rois.append(l)
 
     return filtered_labels, filtered_out_rois
 
