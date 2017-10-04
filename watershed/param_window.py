@@ -10,7 +10,6 @@ except:
 import os
 
 TITLE_STYLESHEET = "font-size: 16px; font-weight: bold;"
-MC_TITLE_STYLESHEET = "font-size: 16px; font-weight: bold;"
 
 class ParamWindow(QMainWindow):
     def __init__(self, controller):
@@ -377,7 +376,7 @@ class MainParamWidget(ParamWidget):
 
 class MotionCorrectionWidget(ParamWidget):
     def __init__(self, parent_widget, controller):
-        ParamWidget.__init__(self, parent_widget, controller, "Motion Correction Parameters", stylesheet=MC_TITLE_STYLESHEET)
+        ParamWidget.__init__(self, parent_widget, controller, "Motion Correction Parameters", stylesheet=TITLE_STYLESHEET)
 
         self.controller = controller.motion_correction_controller
 
