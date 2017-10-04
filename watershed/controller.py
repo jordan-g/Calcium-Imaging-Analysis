@@ -96,6 +96,10 @@ class Controller():
 
         self.closing = False
 
+        self.process_videos_thread     = None
+        self.processing_all_videos     = False
+        self.motion_correct_all_videos = False
+
     def select_and_open_video(self):
         # let user pick video file(s)
         if pyqt_version == 4:
@@ -178,6 +182,8 @@ class Controller():
 
         print("Loaded video with shape {}.".format(self.video.shape))
 
+        self.preview_window.title_label.setText(os.path.basename(self.video_path))
+
         self.param_widget.param_sliders["z"].setMaximum(self.video.shape[1]-1)
 
         self.video = np.nan_to_num(self.video).astype(np.float32)
@@ -206,8 +212,6 @@ class Controller():
             index = indices[i]
             del self.video_paths[index]
 
-        self.param_window.remove_selected_items()
-
         if len(self.video_paths) == 0:
             if self.mode == "motion_correct":
                 self.motion_correction_controller.cancel_motion_correction()
@@ -217,6 +221,9 @@ class Controller():
 
             self.show_motion_correction_params()
             self.param_window.toggle_initial_state(True)
+            self.preview_window.timer.stop()
+            self.preview_window.title_label.setText("")
+            self.preview_window.setWindowTitle("Preview")
             self.preview_window.plot_image(None)
         elif 0 in indices:
             self.open_video(self.video_paths[0])
@@ -224,6 +231,49 @@ class Controller():
     def process_all_videos(self):
         if self.mode == "motion_correct":
             self.motion_correction_controller.cancel_motion_correction()
+        elif self.mode == "watershed":
+            self.watershed_controller.cancel_watershed()
+
+        if self.roi_filtering_controller.labels is not None:
+            labels = utilities.filter_labels(self.roi_filtering_controller.labels, self.roi_filtering_controller.removed_rois)
+        else:
+            labels = utilities.filter_labels(self.watershed_controller.labels, self.watershed_controller.filtered_out_rois)
+
+        if not self.processing_all_videos:
+            if self.process_videos_thread is None:
+                self.process_videos_thread = ProcessVideosThread(self.param_window)
+                self.process_videos_thread.progress.connect(self.process_videos_progress)
+                self.process_videos_thread.finished.connect(self.process_videos_finished)
+            else:
+                self.process_videos_thread.running = False
+
+            self.process_videos_thread.set_parameters(self.video_paths, labels, self.motion_correct_all_videos, self.motion_correction_controller.params["max_shift"], self.motion_correction_controller.params["patch_stride"], self.motion_correction_controller.params["patch_overlap"])
+
+            self.process_videos_thread.start()
+
+            self.param_window.process_videos_started()
+
+            self.processing_all_videos = True
+        else:
+            self.cancel_processing_videos()
+
+    def process_videos_progress(self, percent):
+        self.param_window.update_process_videos_progress(percent)
+
+    def process_videos_finished(self):
+        self.param_window.update_process_videos_progress(100)
+
+    def cancel_processing_videos(self):
+        if self.process_videos_thread is not None:
+            self.process_videos_thread.running = False
+
+        self.param_window.update_process_videos_progress(-1)
+
+        self.processing_all_videos = False
+        self.process_videos_thread = None
+
+    def set_motion_correct(self, boolean):
+        self.motion_correct_all_videos = boolean
 
     def show_watershed_params(self, video=None, video_path=None):
         if video is None:
@@ -1201,5 +1251,81 @@ class WatershedThread(QThread):
 
         if labels is not None:
             self.finished.emit(labels, roi_areas, roi_circs, filtered_out_rois)
+
+        self.running = False
+
+class ProcessVideosThread(QThread):
+    finished = pyqtSignal()
+    progress = pyqtSignal(int)
+
+    def __init__(self, parent):
+        QThread.__init__(self, parent)
+
+        self.running = False
+
+    def set_parameters(self, video_paths, labels, motion_correct, max_shift, patch_stride, patch_overlap):
+        self.video_paths    = video_paths
+        self.labels         = labels
+        self.motion_correct = motion_correct
+        self.max_shift      = max_shift
+        self.patch_stride   = patch_stride
+        self.patch_overlap  = patch_overlap
+
+    def run(self):
+        self.running = True
+
+        for i in range(len(self.video_paths)):
+            video_path = self.video_paths[i]
+
+            # open video
+            base_name = os.path.basename(video_path)
+            if base_name.endswith('.npy'):
+                video = np.load(video_path)
+            elif base_name.endswith('.tif') or base_name.endswith('.tiff'):
+                video = imread(video_path)
+
+            if len(video.shape) == 3:
+                # add z dimension
+                video = video[:, np.newaxis, :, :]
+
+            print("Loaded video with shape {}.".format(video.shape))
+
+            video = np.nan_to_num(video).astype(np.float32)
+
+            if not self.running:
+                self.running = False
+
+                return
+
+            self.progress.emit(int(100.0*float(i + (1/3))/len(self.video_paths)))
+
+            if self.motion_correct:
+                mc_video, mc_video_path = utilities.motion_correct(video, video_path, self.max_shift, self.patch_stride, self.patch_overlap)
+
+            if not self.running:
+                self.running = False
+
+                return
+
+            self.progress.emit(int(100.0*float(i + (2/3))/len(self.video_paths)))
+
+            results = [ {} for z in range(video.shape[1]) ]
+
+            for z in range(video.shape[1]):
+                for l in np.unique(self.labels[z]):
+                    activity = utilities.calc_activity_of_roi(self.labels[z], video, l, z=z)
+
+                    results[z][l] = activity
+
+            if not self.running:
+                self.running = False
+
+                return
+
+            self.progress.emit(int(100.0*float(i + 1)/len(self.video_paths)))
+
+            np.savez(os.path.join(os.path.dirname(video_path), '{}_roi_traces.npz'.format(os.path.splitext(video_path)[0])), results)
+
+        self.finished.emit()
 
         self.running = False

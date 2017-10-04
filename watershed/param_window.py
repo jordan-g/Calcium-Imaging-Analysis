@@ -61,6 +61,9 @@ class ParamWindow(QMainWindow):
         self.roi_filtering_widget = ROIFilteringWidget(self, self.controller)
         self.stacked_widget.addWidget(self.roi_filtering_widget)
 
+        self.delete_shortcut = QShortcut(QKeySequence('Backspace'), self.videos_widget.videos_list)
+        self.delete_shortcut.activated.connect(self.remove_selected_items)
+
         self.toggle_initial_state(True)
 
         # set window title bar buttons
@@ -75,6 +78,12 @@ class ParamWindow(QMainWindow):
 
     def remove_selected_items(self):
         self.videos_widget.remove_selected_items()
+
+    def process_videos_started(self):
+        self.videos_widget.process_videos_started()
+
+    def update_process_videos_progress(self, percent):
+        self.videos_widget.update_process_videos_progress(percent)
 
     def rois_created(self):
         self.videos_widget.save_rois_button.setEnabled(True)
@@ -123,7 +132,7 @@ class VideosWidget(QWidget):
         self.remove_videos_button.setIcon(QIcon("trash_icon.png"))
         self.remove_videos_button.setIconSize(QSize(16,16))
         self.remove_videos_button.setDisabled(True)
-        self.remove_videos_button.clicked.connect(lambda:self.controller.remove_videos_at_indices([ x.row() for x in self.videos_list.selectedIndexes() ]))
+        self.remove_videos_button.clicked.connect(self.remove_selected_items)
         self.button_layout.addWidget(self.remove_videos_button)
 
         self.button_layout.addStretch()
@@ -141,14 +150,6 @@ class VideosWidget(QWidget):
         self.load_rois_button.setIconSize(QSize(16,16))
         self.load_rois_button.clicked.connect(self.controller.load_rois)
         self.button_layout.addWidget(self.load_rois_button)
-
-        self.process_all_button = HoverButton('Process All', None, self.parent_widget.statusBar())
-        self.process_all_button.setHoverMessage("Extract activities of current ROIs from all loaded videos.")
-        self.process_all_button.setStyleSheet('font-weight: bold;')
-        self.process_all_button.setIcon(QIcon("play_icon.png"))
-        self.process_all_button.setIconSize(QSize(16,16))
-        self.process_all_button.clicked.connect(self.controller.process_all_videos)
-        self.button_layout.addWidget(self.process_all_button)
 
         self.title_widget = QWidget(self)
         self.title_layout = QHBoxLayout(self.title_widget)
@@ -170,17 +171,51 @@ class VideosWidget(QWidget):
         self.videos_list.itemSelectionChanged.connect(self.item_selected)
         self.videos_list_layout.addWidget(self.videos_list)
 
+        # create secondary buttons
+        self.button_widget_2 = QWidget(self)
+        self.button_layout_2 = QHBoxLayout(self.button_widget_2)
+        self.button_layout_2.setContentsMargins(10, 0, 0, 0)
+        self.button_layout_2.setSpacing(5)
+        self.main_layout.addWidget(self.button_widget_2)
+
+        self.motion_correct_checkbox = QCheckBox("Motion-correct all videos")
+        self.motion_correct_checkbox.setObjectName("Motion-correct all videos")
+        self.motion_correct_checkbox.setChecked(False)
+        self.motion_correct_checkbox.setEnabled(False)
+        self.motion_correct_checkbox.clicked.connect(lambda:self.controller.set_motion_correct(self.motion_correct_checkbox.isChecked()))
+        self.button_layout_2.addWidget(self.motion_correct_checkbox)
+
+        self.button_layout_2.addStretch()
+
+        self.process_videos_progress_label = QLabel("")
+        self.process_videos_progress_label.setStyleSheet("font-size: 10px; font-style: italic;")
+        self.button_layout_2.addWidget(self.process_videos_progress_label)
+
+        self.process_all_button = HoverButton('Process All', None, self.parent_widget.statusBar())
+        self.process_all_button.setHoverMessage("Extract activities of current ROIs from all loaded videos.")
+        self.process_all_button.setStyleSheet('font-weight: bold;')
+        self.process_all_button.setIcon(QIcon("play_icon.png"))
+        self.process_all_button.setIconSize(QSize(16,16))
+        self.process_all_button.clicked.connect(self.controller.process_all_videos)
+        self.button_layout_2.addWidget(self.process_all_button)
+
         self.main_layout.addWidget(HLine())
 
     def videos_opened(self, video_paths):
+        self.motion_correct_checkbox.setEnabled(True)
         for video_path in video_paths:
             self.videos_list.addItem(os.path.basename(video_path))
 
     def remove_selected_items(self):
         selected_items = self.videos_list.selectedItems()
 
+        self.controller.remove_videos_at_indices([ x.row() for x in self.videos_list.selectedIndexes() ])
+
         for i in range(len(selected_items)-1, -1, -1):
             self.videos_list.takeItem(self.videos_list.row(selected_items[i]))
+        
+        if self.videos_list.count() == 0:
+            self.motion_correct_checkbox.setEnabled(False)
 
     def item_selected(self):
         selected_items = self.videos_list.selectedItems()
@@ -189,6 +224,29 @@ class VideosWidget(QWidget):
             self.remove_videos_button.setDisabled(False)
         else:
             self.remove_videos_button.setDisabled(True)
+
+    def process_videos_started(self):
+        self.process_videos_progress_label.setText("Processing videos... 0%.")
+        self.process_all_button.setText('Cancel')
+        self.process_all_button.setHoverMessage("Stop processing videos.")
+        self.motion_correct_checkbox.setEnabled(False)
+        self.save_rois_button.setEnabled(False)
+        self.load_rois_button.setEnabled(False)
+        self.open_file_button.setEnabled(False)
+        self.remove_videos_button.setEnabled(False)
+
+    def update_process_videos_progress(self, percent):
+        if percent == 100 or percent == -1:
+            self.process_videos_progress_label.setText("")
+            self.process_all_button.setText('Process All')
+            self.process_all_button.setHoverMessage("Extract activities of current ROIs from all loaded videos.")
+            self.motion_correct_checkbox.setEnabled(True)
+            self.save_rois_button.setEnabled(True)
+            self.load_rois_button.setEnabled(True)
+            self.open_file_button.setEnabled(True)
+            self.item_selected()
+        else:
+            self.process_videos_progress_label.setText("Processing videos... {}%.".format(int(percent)))
 
 class ParamWidget(QWidget):
     def __init__(self, parent_widget, controller, title, stylesheet=TITLE_STYLESHEET):
@@ -337,8 +395,8 @@ class MotionCorrectionWidget(ParamWidget):
         self.button_layout.setSpacing(5)
         self.main_layout.addWidget(self.button_widget)
 
-        self.use_mc_video_checkbox = QCheckBox("Use Motion-Corrected Video")
-        self.use_mc_video_checkbox.setObjectName("Use Motion-Corrected Video")
+        self.use_mc_video_checkbox = QCheckBox("Use motion-corrected video")
+        self.use_mc_video_checkbox.setObjectName("Use motion-corrected video")
         self.use_mc_video_checkbox.setChecked(False)
         self.use_mc_video_checkbox.clicked.connect(lambda:self.controller.set_use_mc_video(self.use_mc_video_checkbox.isChecked()))
         self.use_mc_video_checkbox.setDisabled(True)
@@ -528,7 +586,7 @@ class ROIFilteringWidget(ParamWidget):
         self.roi_button_layout.setSpacing(5)
         self.main_layout.addWidget(self.roi_button_widget)
 
-        self.erase_rois_button = HoverButton('Erase ROIs', None, self.parent_widget.statusBar())
+        self.erase_rois_button = HoverButton('Eraser', None, self.parent_widget.statusBar())
         self.erase_rois_button.setHoverMessage("Manually remove ROIs using an eraser tool.")
         self.erase_rois_button.setIcon(QIcon("eraser_icon.png"))
         self.erase_rois_button.setIconSize(QSize(16, 16))

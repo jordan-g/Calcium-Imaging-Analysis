@@ -183,6 +183,11 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
     c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
 
     if thread is not None and thread.running == False:
+        cm.stop_server()
+        log_files = glob.glob('Yr*_LOG_*')
+        for log_file in log_files:
+            os.remove(log_file)
+            
         return [None]*2
 
     if progress_signal:
@@ -256,6 +261,11 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         mc.motion_correct_rigid(save_movie=True)
 
         if thread is not None and thread.running == False:
+            cm.stop_server()
+            log_files = glob.glob('Yr*_LOG_*')
+            for log_file in log_files:
+                os.remove(log_file)
+
             return [None]*2
 
         if progress_signal:
@@ -274,6 +284,11 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         mc.motion_correct_pwrigid(save_movie=True, template=mc.total_template_rig, show_template=False)
 
         if thread is not None and thread.running == False:
+            cm.stop_server()
+            log_files = glob.glob('Yr*_LOG_*')
+            for log_file in log_files:
+                os.remove(log_file)
+
             return [None]*2
 
         if progress_signal:
@@ -330,6 +345,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
 
         mc_videos_list.append(np.nan_to_num(images))
 
+        cm.stop_server()
         log_files = glob.glob('Yr*_LOG_*')
         for log_file in log_files:
             os.remove(log_file)
@@ -484,6 +500,18 @@ def filter_rois(image, labels, min_area, max_area, min_circ, max_circ, roi_areas
                 filtered_out_rois.append(l)
 
     return filtered_labels, filtered_out_rois
+
+def filter_labels(labels, removed_rois):
+    if removed_rois is not None:
+        new_labels = labels.copy()
+
+        for i in range(len(new_labels)):
+            for roi in removed_rois[i]:
+                new_labels[i][new_labels[i] == roi] = 0
+
+        return new_labels
+    else:
+        return labels
 
 def get_roi_containing_point(labels, roi_point):
     roi = labels[roi_point[1], roi_point[0]]

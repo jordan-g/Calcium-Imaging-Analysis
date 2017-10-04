@@ -21,6 +21,8 @@ except:
 # color table to use for showing images
 gray_color_table = [qRgb(i, i, i) for i in range(256)]
 
+TITLE_STYLESHEET = "font-size: 20px; font-weight: bold; color: white;"
+
 class PreviewQLabel(QLabel):
     def __init__(self, preview_window):
         QLabel.__init__(self)
@@ -125,16 +127,22 @@ class PreviewWindow(QMainWindow):
         self.main_layout.setContentsMargins(10, 10, 10, 10)
         self.main_layout.setSpacing(0)
 
+        self.title_label = QLabel("")
+        self.title_label.setStyleSheet(TITLE_STYLESHEET)
+        self.title_label.setAlignment(Qt.AlignCenter)
+        self.main_layout.addWidget(self.title_label, 0, 0)
+
         # create label that shows frames
         self.image_widget = QWidget(self)
         self.image_layout = QHBoxLayout(self.image_widget)
         self.image_layout.setContentsMargins(0, 0, 0, 0)
+        self.image_layout.setSpacing(0)
         self.image_label = PreviewQLabel(self)
         self.image_label.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.MinimumExpanding)
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.hide()
         self.image_layout.addWidget(self.image_label)
-        self.main_layout.addWidget(self.image_widget, 0, 0)
+        self.main_layout.addWidget(self.image_widget, 1, 0)
 
         # initialize variables
         self.image     = None  # image to show
@@ -166,7 +174,7 @@ class PreviewWindow(QMainWindow):
 
     def get_available_pix_size(self):
         available_width  = self.width() - 20
-        available_height = self.height() - 20
+        available_height = self.height() - 60
 
         if available_height < available_width:
             return available_height
@@ -181,7 +189,7 @@ class PreviewWindow(QMainWindow):
             self.image_label.show()
 
             if self.image is None:
-                self.main_widget.setMinimumSize(QSize(image.shape[0] + 20, image.shape[1] + 20))
+                self.main_widget.setMinimumSize(QSize(image.shape[1] + 20, image.shape[0] + 60))
 
             normalized_image = utilities.normalize(image)
 
@@ -219,7 +227,7 @@ class PreviewWindow(QMainWindow):
         else:
             print(frames.shape)
             if self.frames is None:
-                self.main_widget.setMinimumSize(QSize(frames.shape[1] + 20, frames.shape[2] + 20))
+                self.main_widget.setMinimumSize(QSize(frames.shape[2] + 20, frames.shape[1] + 60))
 
             self.frame_num = 0
             self.image_label.show()
