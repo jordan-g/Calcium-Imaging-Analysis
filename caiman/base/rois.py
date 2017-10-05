@@ -14,8 +14,10 @@ from builtins import range
 from past.utils import old_div
 from scipy.ndimage.filters import gaussian_filter
 from scipy.ndimage import label,center_of_mass
+from skimage.morphology import remove_small_objects, opening, remove_small_holes, closing, dilation
 import scipy 
 import numpy as np
+import cv2
 import time
 from scipy.optimize import linear_sum_assignment   
 import json
@@ -59,6 +61,62 @@ def com(A, d1, d2):
 
     return cm
 
+#%% 
+def extract_binary_masks_from_structural_channel(Y,min_area_size = 30, min_hole_size = 15, gSig = 5, expand_method = 'closing', selem = np.ones((3,3))):
+    """Extract binary masks by using adaptive thresholding on a structural channel
+    
+    Inputs:
+    ------
+    Y:                  caiman movie object
+                        movie of the structural channel (assumed motion corrected)
+    
+    min_area_size:      int
+                        ignore components with smaller size
+
+    min_hole_size:      int
+                        fill in holes up to that size (donuts)
+                        
+    gSig:               int
+                        average radius of cell
+                        
+    expand_method:      string
+                        method to expand binary masks (morphological closing or dilation)
+                        
+    selem:              np.array
+                        morphological element with which to expand binary masks
+                        
+    Output:
+    -------
+    A:                  sparse column format matrix
+                        matrix of binary masks to be used for CNMF seeding
+                        
+    mR:                 np.array
+                        mean image used to detect cell boundaries
+    """
+    
+    mR = Y.mean(axis=0)
+    img = cv2.blur(mR,(gSig,gSig))
+    img = (img - np.min(img))/(np.max(img)-np.min(img))*255.
+    img = img.astype(np.uint8)
+    
+    th = cv2.adaptiveThreshold(img,np.max(img),cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY,gSig,0)
+    th = remove_small_holes(th>0,min_size = min_hole_size)
+    th = remove_small_objects(th, min_size = min_area_size)
+    areas = label(th)
+    
+    A = np.zeros((np.prod(th.shape),areas[1]),dtype=bool)
+    
+    for i in range(areas[1]):
+        temp = (areas[0]==i+1)
+        if expand_method is 'dilation':
+            temp = dilation(temp, selem = selem)
+        elif expand_method is 'closing':
+            temp = dilation(temp, selem = selem)
+            
+        A[:,i] = temp.flatten('F')
+    
+    return A, mR
+
 
 #%% 
 def mask_to_2d(mask):
@@ -87,7 +145,7 @@ def get_distance_from_A(masks_gt,masks_comp, min_dist = 10 ):
     return distance_masks([A_ben,A_cnmf],[cm_ben,cm_cnmf], min_dist )  
 #%%
 def nf_match_neurons_in_binary_masks(masks_gt,masks_comp,thresh_cost=.7, min_dist = 10, print_assignment= False,
-                                     plot_results = False, Cn=None, labels = None, cmap = 'viridis'):
+                                     plot_results = False, Cn=None, labels = None, cmap = 'viridis', D = None):
     """
     Match neurons expressed as binary masks. Uses Hungarian matching algorithm
 
@@ -113,6 +171,9 @@ def nf_match_neurons_in_binary_masks(masks_gt,masks_comp,thresh_cost=.7, min_dis
     Cn: 
         correlation image or median
 
+    D: list of ndarrays
+	list of distances matrices
+
     Returns:
     --------
     idx_tp_1:
@@ -130,6 +191,7 @@ def nf_match_neurons_in_binary_masks(masks_gt,masks_comp,thresh_cost=.7, min_dis
     performance:  
 
     """
+   
     ncomps,d1,d2 = np.shape(masks_gt)
     dims = d1,d2
 
@@ -141,9 +203,21 @@ def nf_match_neurons_in_binary_masks(masks_gt,masks_comp,thresh_cost=.7, min_dis
     cm_ben = [ scipy.ndimage.center_of_mass(mm) for mm in masks_gt]
     cm_cnmf = [ scipy.ndimage.center_of_mass(mm) for mm in masks_comp]
 
-    #%% find distances and matches
-    # find the distance between each masks
-    D=distance_masks([A_ben,A_cnmf],[cm_ben,cm_cnmf], min_dist )    
+    
+    if D is None:
+        #% find distances and matches
+        # find the distance between each masks
+        D=distance_masks([A_ben,A_cnmf],[cm_ben,cm_cnmf], min_dist )  
+        level = 0.98
+    else:
+        level = .98
+        
+        
+          
+    
+    
+        
+    
     
     matches,costs=find_matches(D,print_assignment=print_assignment)
     matches=matches[0]
@@ -184,8 +258,8 @@ def nf_match_neurons_in_binary_masks(masks_gt,masks_comp,thresh_cost=.7, min_dis
             lp,hp = np.nanpercentile(Cn,[5,95])
             pl.subplot(1,2,1)
             pl.imshow(Cn,vmin=lp,vmax=hp, cmap = cmap)
-            [pl.contour(mm,levels=[0],colors='w',linewidths=1) for mm in masks_comp[idx_tp_comp]]
-            [pl.contour(mm,levels=[0],colors='r',linewidths=1) for mm in masks_gt[idx_tp_gt]] 
+            [pl.contour(norm_nrg(mm),levels=[level],colors='w',linewidths=1) for mm in masks_comp[idx_tp_comp]]
+            [pl.contour(norm_nrg(mm),levels=[level],colors='r',linewidths=1) for mm in masks_gt[idx_tp_gt]] 
             if labels is None:
                 pl.title('MATCHES')
             else:
@@ -193,18 +267,30 @@ def nf_match_neurons_in_binary_masks(masks_gt,masks_comp,thresh_cost=.7, min_dis
             pl.axis('off')
             pl.subplot(1,2,2)
             pl.imshow(Cn,vmin=lp,vmax=hp, cmap = cmap)
-            [pl.contour(mm,levels=[0],colors='w',linewidths=1) for mm in masks_comp[idx_fp_comp]] 
-            [pl.contour(mm,levels=[0],colors='r',linewidths=1) for mm in masks_gt[idx_fn_gt]] 
+            [pl.contour(norm_nrg(mm),levels=[level],colors='w',linewidths=1) for mm in masks_comp[idx_fp_comp]] 
+            [pl.contour(norm_nrg(mm),levels=[level],colors='r',linewidths=1) for mm in masks_gt[idx_fn_gt]] 
             if labels is None:
                 pl.title('FALSE POSITIVE (w), FALSE NEGATIVE (r)')
             else:
                 pl.title(labels[1]+'(w), ' + labels[0] + '(r)')
             pl.axis('off')
-        except :
+        except Exception as e:
             print("not able to plot precision recall usually because we are on travis")
+            print(e)
     return  idx_tp_gt,idx_tp_comp, idx_fn_gt, idx_fp_comp, performance 
 
-
+#%% threshold
+def norm_nrg(a_):
+    
+    a = a_.copy()
+    dims = a.shape
+    a = a.reshape(-1,order = 'F')
+    indx = np.argsort(a, axis=None)[::-1]
+    cumEn = np.cumsum(a.flatten()[indx]**2)
+    cumEn /= cumEn[-1]
+    a = np.zeros(np.prod(dims))
+    a[indx] = cumEn
+    return a.reshape(dims,order = 'F')
 
 #%% compute mask distances
 def distance_masks(M_s,cm_s,max_dist):
@@ -422,19 +508,27 @@ def nf_masks_to_json(binary_masks,json_filename):
 
 
 def nf_read_roi(fileobj):
-    """
+    '''
     points = read_roi(fileobj)
-
     Read ImageJ's ROI format
     
     Addapted from https://gist.github.com/luispedro/3437255
-    Copyright: Luis Pedro Coelho <luis@luispedro.org>, 2012
-     License: MIT
-     This is based on:
-         http://rsbweb.nih.gov/ij/developer/source/ij/io/RoiDecoder.java.html
-         http://rsbweb.nih.gov/ij/developer/source/ij/io/RoiEncoder.java.html
-    """
+    '''
+# This is based on:
+# http://rsbweb.nih.gov/ij/developer/source/ij/io/RoiDecoder.java.html
+# http://rsbweb.nih.gov/ij/developer/source/ij/io/RoiEncoder.java.html
+
+
+    SPLINE_FIT = 1
+    DOUBLE_HEADED = 2
+    OUTLINE = 4
+    OVERLAY_LABELS = 8
+    OVERLAY_NAMES = 16
+    OVERLAY_BACKGROUNDS = 32
+    OVERLAY_BOLD = 64
     SUB_PIXEL_RESOLUTION = 128
+    DRAW_OFFSET = 256
+
 
     pos = [4]
     def get8():
@@ -461,17 +555,44 @@ def nf_read_roi(fileobj):
     magic = fileobj.read(4)
     if magic != 'Iout':
         raise IOError('Magic number not found')
+    version = get16()
 
     # It seems that the roi type field occupies 2 Bytes, but only one is used
+
+    roi_type = get8()
+    # Discard second Byte:
     get8()
+
+#    if not (0 <= roi_type < 11):
+#        print(('roireader: ROI type %s not supported' % roi_type))
+#
+#    if roi_type != 7:
+#
+#        print(('roireader: ROI type %s not supported (!= 7)' % roi_type))
+
     top = get16()
     left = get16()
-
+    bottom = get16()
+    right = get16()
     n_coordinates = get16()
+
+    x1 = getfloat() 
+    y1 = getfloat() 
+    x2 = getfloat() 
+    y2 = getfloat()
+    stroke_width = get16()
+    shape_roi_size = get32()
+    stroke_color = get32()
+    fill_color = get32()
     subtype = get16()
     if subtype != 0:
         raise ValueError('roireader: ROI subtype %s not supported (!= 0)' % subtype)
     options = get16()
+    arrow_style = get8()
+    arrow_head_size = get8()
+    rect_arc_size = get16()
+    position = get32()
+    header2offset = get32()
 
     if options & SUB_PIXEL_RESOLUTION:
         getc = getfloat
@@ -485,17 +606,19 @@ def nf_read_roi(fileobj):
     points[:,0] += top
     points -= 1
 
+
     return points
 
 
 
 #%%
-def nf_read_roi_zip(fname,dims):
+def nf_read_roi_zip(fname,dims,return_names = False):
     #todo todocument
 
     with zipfile.ZipFile(fname) as zf:
+        names = zf.namelist()
         coords = [nf_read_roi(zf.open(n))
-                    for n in zf.namelist()]
+                    for n in names]
 
     def tomask(coords):
         mask = np.zeros(dims)
@@ -506,9 +629,10 @@ def nf_read_roi_zip(fname,dims):
         return mask
 
     masks = np.array([tomask(s-1) for s in coords])
-    return masks
-
-
+    if return_names:
+        return masks,names
+    else:
+        return masks
 #%%
 def nf_merge_roi_zip(fnames, idx_to_keep, new_fold):    
 
@@ -534,7 +658,8 @@ def nf_merge_roi_zip(fnames, idx_to_keep, new_fold):
         dirpath = tempfile.mkdtemp()
         folders_rois.append(dirpath)        
         with zipfile.ZipFile(fn) as zf:
-            name_rois = zf.namelist()            
+            name_rois = zf.namelist() 
+            print(len(name_rois))
         zip_ref = zipfile.ZipFile(fn, 'r')
         zip_ref.extractall(dirpath)                
         files_to_keep.append([os.path.join(dirpath,ff) for ff in np.array(name_rois)[idx]])
@@ -747,9 +872,10 @@ def detect_duplicates(file_name,dist_thr = 0.1, FOV = (512,512)):
     
     Returns:
     --------
-        ind         : list of indeces with duplicate entries
-
+        duplicates  : list of indeces with duplicate entries
+        
         ind_keep    : list of kept indeces
+        
     """
     rois = nf_read_roi_zip(file_name,FOV)
     cm = [scipy.ndimage.center_of_mass(mm) for mm in rois]
@@ -757,6 +883,7 @@ def detect_duplicates(file_name,dist_thr = 0.1, FOV = (512,512)):
     D = distance_masks([sp_rois,sp_rois],[cm,cm], 10)[0]
     np.fill_diagonal(D,1)
     indeces = np.where(D<dist_thr)      # pairs of duplicate indeces
+
     ind = list(np.unique(indeces[1][indeces[1]>indeces[0]]))
     ind_keep = list(set(range(D.shape[0]))-set(ind))
     duplicates = list(np.unique(np.concatenate((indeces[0],indeces[1]))))

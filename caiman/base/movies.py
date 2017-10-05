@@ -703,7 +703,7 @@ class movie(ts.timeseries):
         return mask
 
 
-    def local_correlations(self,eight_neighbours=False,swap_dim=True):
+    def local_correlations(self,eight_neighbours=False,swap_dim=True, frames_per_chunk = 1500):
         """Computes the correlation image for the input dataset Y
 
             Parameters:
@@ -729,20 +729,20 @@ class movie(ts.timeseries):
         T = self.shape[0]
         Cn = np.zeros(self.shape[1:])
         if T<=3000:
-            Cn = si.local_correlations(self, eight_neighbours=eight_neighbours, swap_dim=swap_dim)
+            Cn = si.local_correlations(np.array(self), eight_neighbours=eight_neighbours, swap_dim=swap_dim)
         else:
-            n_chunks = T//1500
-            frames_per_chunk = 1500
+            
+            n_chunks = T//frames_per_chunk
             for jj,mv in enumerate(range(n_chunks-1)):
                 print('number of chunks:' + str(jj) + ' frames: ' + str([mv*frames_per_chunk,(mv+1)*frames_per_chunk]))
-                rho = si.local_correlations(self[mv*frames_per_chunk:(mv+1)*frames_per_chunk],
+                rho = si.local_correlations(np.array(self[mv*frames_per_chunk:(mv+1)*frames_per_chunk]),
                                             eight_neighbours=eight_neighbours, swap_dim=swap_dim)
                 Cn = np.maximum(Cn,rho)    
                 pl.imshow(Cn,cmap='gray')  
                 pl.pause(.1)
             
             print('number of chunks:' + str(n_chunks-1) + ' frames: ' + str([(n_chunks-1)*frames_per_chunk,T]))
-            rho = si.local_correlations(self[(n_chunks-1)*frames_per_chunk:], eight_neighbours=eight_neighbours,
+            rho = si.local_correlations(np.array(self[(n_chunks-1)*frames_per_chunk:]), eight_neighbours=eight_neighbours,
                                         swap_dim=swap_dim)
             Cn = np.maximum(Cn,rho)    
             pl.imshow(Cn,cmap='gray')  
@@ -1085,7 +1085,7 @@ class movie(ts.timeseries):
 
 
 
-def load(file_name,fr=30,start_time=0,meta_data=None,subindices=None,shape=None, var_name_hdf5 = 'mov', in_memory = False):
+def load(file_name,fr=30,start_time=0,meta_data=None,subindices=None,shape=None, var_name_hdf5 = 'mov', in_memory = False, is_behavior = False):
     """
     load movie from file. SUpports a variety of formats. tif, hdf5, npy and memory mapped. Matlab is experimental. 
 
@@ -1138,7 +1138,10 @@ def load(file_name,fr=30,start_time=0,meta_data=None,subindices=None,shape=None,
 
         if extension == '.tif' or extension == '.tiff':  # load avi file
             if subindices is not None:
-                input_arr = imread(file_name)[subindices, :, :]
+                if type(subindices) is list:
+                    input_arr = imread(file_name)[subindices[0], subindices[1], subindices[2]]
+                else:
+                    input_arr = imread(file_name)[subindices, :, :]
             else:
                 input_arr = imread(file_name)
             input_arr = np.squeeze(input_arr)
@@ -1222,19 +1225,31 @@ def load(file_name,fr=30,start_time=0,meta_data=None,subindices=None,shape=None,
                     return movie(f['quietBlock'][subindices],fr=fr)
             
         elif extension== '.h5':
-              with h5py.File(file_name, "r") as f:
-                if 'imaging' in f.keys():  
-                    if subindices is None:
-                        images = np.array(f['imaging']).squeeze()
-                        if images.ndim>3:
-                            images = images[:,0]
-                    else:
-                        images = np.array(f['imaging'][subindices]).squeeze()
-                        if images.ndim>3:
-                            images = images[:,0]
-                            
-                    return movie(images.astype(np.float32))
-                
+              if is_behavior:
+                  with h5py.File(file_name, "r") as f:
+                      kk = f.keys()
+                      kk.sort(key = lambda x: np.int(x.split('_')[-1]))
+                      input_arr = []
+                      for trial in kk:
+                          print('Loading ' + trial)
+                          input_arr.append(np.array(f[trial]['mov']))
+                          
+                      input_arr = np.vstack(input_arr)    
+                  
+              else:
+                  with h5py.File(file_name, "r") as f:
+                    if 'imaging' in f.keys():  
+                        if subindices is None:
+                            images = np.array(f['imaging']).squeeze()
+                            if images.ndim>3:
+                                images = images[:,0]
+                        else:
+                            images = np.array(f['imaging'][subindices]).squeeze()
+                            if images.ndim>3:
+                                images = images[:,0]
+                                
+                        return movie(images.astype(np.float32))
+                    
         elif extension == '.mmap':
 
             filename=os.path.split(file_name)[-1]
@@ -1284,7 +1299,7 @@ def load(file_name,fr=30,start_time=0,meta_data=None,subindices=None,shape=None,
 
 def load_movie_chain(file_list, fr=30, start_time=0,
                      meta_data=None, subindices=None,
-                     bottom=0, top=0, left=0, right=0):
+                     bottom=0, top=0, left=0, right=0, channel = None):
     """ load movies from list of file names
 
     Parameters:
@@ -1307,8 +1322,15 @@ def load_movie_chain(file_list, fr=30, start_time=0,
     for f in tqdm(file_list):
         m = load(f, fr=fr, start_time=start_time,
                  meta_data=meta_data, subindices=subindices, in_memory = True)
+        if channel is not None:
+            print(m.shape)
+            m = m[channel].squeeze()
+            print(m.shape)
+            
+            
         if m.ndim == 2:
             m = m[np.newaxis, :, :]
+        
         tm, h, w = np.shape(m)
         m = m[:, top:h-bottom, left:w-right]
         mov.append(m)

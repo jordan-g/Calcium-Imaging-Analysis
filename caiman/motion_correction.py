@@ -68,6 +68,11 @@ from cv2 import idft as ifftn
 opencv = True
 from numpy.fft import ifftshift
 import itertools
+try:
+    profile
+except:
+    profile = lambda a: a
+    
 #%%
 class MotionCorrect(object):
      """
@@ -194,7 +199,7 @@ class MotionCorrect(object):
 
         
     
-     def motion_correct_pwrigid(self,save_movie = True, template=None, show_template = True):  
+     def motion_correct_pwrigid(self,save_movie = True, template=None, show_template = False):  
         """Perform pw-rigid motion correction
 
         Parameters:
@@ -231,8 +236,8 @@ class MotionCorrect(object):
              print('generating template by rigid motion correction')
              self = self.motion_correct_rigid()   
              self.total_template_els = self.total_template_rig.copy()
-             pl.imshow(self.total_template_els)        
-             pl.pause(1)
+#             pl.imshow(self.total_template_els)        
+#             pl.pause(1)
         else:
              self.total_template_els = template
             
@@ -537,6 +542,45 @@ def motion_correct_iteration(img,template,frame_num,max_shift_w=25,
 
     return new_img,new_templ,shift,avg_corr
 
+#%%
+@profile
+def motion_correct_iteration_fast(img,template,max_shift_w=10,max_shift_h=10):
+    """ For using in online realtime scenarios """
+    h_i, w_i = template.shape
+    ms_h = max_shift_h
+    ms_w = max_shift_w
+
+    templ_crop=template[max_shift_h:h_i-max_shift_h,max_shift_w:w_i-max_shift_w].astype(np.float32)
+
+    h,w = templ_crop.shape
+
+    res = cv2.matchTemplate(img,templ_crop,cv2.TM_CCORR_NORMED)
+    top_left = cv2.minMaxLoc(res)[3]
+
+    sh_y,sh_x = top_left
+
+    if (0 < top_left[1] < 2 * ms_h-1) & (0 < top_left[0] < 2 * ms_w-1):
+        # if max is internal, check for subpixel shift using gaussian
+        # peak registration
+        log_xm1_y = np.log(res[sh_x-1,sh_y]);
+        log_xp1_y = np.log(res[sh_x+1,sh_y]);
+        log_x_ym1 = np.log(res[sh_x,sh_y-1]);
+        log_x_yp1 = np.log(res[sh_x,sh_y+1]);
+        four_log_xy = 4*np.log(res[sh_x,sh_y]);
+
+        sh_x_n = -(sh_x - ms_h + old_div((log_xm1_y - log_xp1_y), (2 * log_xm1_y - four_log_xy + 2 * log_xp1_y)))
+        sh_y_n = -(sh_y - ms_w + old_div((log_x_ym1 - log_x_yp1), (2 * log_x_ym1 - four_log_xy + 2 * log_x_yp1)))
+    else:
+        sh_x_n = -(sh_x - ms_h)
+        sh_y_n = -(sh_y - ms_w)
+
+    M = np.float32([[1,0,sh_y_n],[0,1,sh_x_n]])
+    
+    new_img = cv2.warpAffine(img,M,(w_i,h_i),flags=cv2.INTER_CUBIC)
+
+    shift=[sh_x_n,sh_y_n]
+
+    return new_img, shift
 
 #%%    
 def bin_median(mat,window=10,exclude_nans = False ):
@@ -805,7 +849,7 @@ def process_movie_parallel(arg_in):
 
     type_input = str(type(fname)) 
     if 'movie' in type_input:        
-        print((type(fname)))
+#        print((type(fname)))
         Yr=fname
 
     elif ('ndarray' in type_input):        
@@ -816,36 +860,37 @@ def process_movie_parallel(arg_in):
         raise Exception('Unkown input type:' + type_input)
 
     if Yr.ndim>1:
-        print('loaded')
+#        print('loaded')
         if apply_smooth:
-            print('applying smoothing')
+#            print('applying smoothing')
             Yr=Yr.bilateral_blur_2D(diameter=10,sigmaColor=10000,sigmaSpace=0)
 
-        print('Remove BL')
+#        print('Remove BL')
         if margins_out!=0:
             Yr=Yr[:,margins_out:-margins_out,margins_out:-margins_out] # borders create troubles
 
-        print('motion correcting')
+#        print('motion correcting')
 
         Yr,shifts,xcorrs,template=Yr.motion_correct(max_shift_w=max_shift_w, max_shift_h=max_shift_h,
                                                     method='opencv',template=template,remove_blanks=remove_blanks)
+        
         if ('movie' in type_input) or ('ndarray' in type_input):
-            print('Returning Values')
+#            print('Returning Values')
             return Yr, shifts, xcorrs, template
 
         else:     
 
-            print('median computing')
+#            print('median computing')
             template=Yr.bin_median()
-            print('saving')
+#            print('saving')
             idx_dot=len(fname.split('.')[-1])
             if save_hdf5:
                 Yr.save(fname[:-idx_dot]+'hdf5')
-            print('saving 2')
+#            print('saving 2')
             np.savez(fname[:-idx_dot]+'npz',shifts=shifts,xcorrs=xcorrs,template=template)
-            print('deleting')
+#            print('deleting')
             del Yr
-            print('done!')
+#            print('done!')
             return fname[:-idx_dot] 
     else:
         return None
@@ -1594,6 +1639,11 @@ def tile_and_correct(img,template, strides, overlaps,max_shifts, newoverlaps = N
             cv2.imshow('frame',old_div(img_show,np.percentile(template,99)))
             cv2.waitKey(int(1./500*1000))
 
+        else:
+            try:
+                cv2.destroyAllWindows()
+            except:
+                pass
         return new_img-add_to_movie, total_shifts,start_step,xy_grid
 #%%
 def compute_flow_single_frame(frame,templ,pyr_scale = .5,levels = 3, winsize = 100, iterations = 15, poly_n = 5,
@@ -1777,6 +1827,7 @@ def motion_correct_batch_rigid(fname, max_shifts, dview = None, splits = 56 ,num
     
     
     
+
         new_templ = np.nanmedian(np.dstack([r[-1] for r in res_rig ]),-1)
         print((old_div(np.linalg.norm(new_templ-old_templ),np.linalg.norm(old_templ))))
     
@@ -2019,7 +2070,6 @@ def motion_correction_piecewise(fname, splits, strides, overlaps, add_to_movie=0
 
     dims = d1,d2
     if num_splits is not None:
-        print(len(idxs), num_splits)
         idxs = np.array(idxs)[np.random.randint(0,len(idxs),num_splits)]
         save_movie = False
         print('**** MOVIE NOT SAVED BECAUSE num_splits is not None ****')
@@ -2038,10 +2088,11 @@ def motion_correction_piecewise(fname, splits, strides, overlaps, add_to_movie=0
       pars.append([fname,fname_tot,idx,shape_mov, template, strides, overlaps, max_shifts, np.array(
           add_to_movie,dtype = np.float32),max_deviation_rigid,upsample_factor_grid,
                    newoverlaps, newstrides, shifts_opencv,nonneg_movie  ])
-
-    if dview is not None:
-        res =dview.map_sync(tile_and_correct_wrapper,pars)
     
+    if dview is not None:
+        print('** Startting parallel motion correction **')
+        res =dview.map_sync(tile_and_correct_wrapper,pars)
+        print('** Finished parallel motion correction **')
     else:
         res = list(map(tile_and_correct_wrapper,pars))
 
