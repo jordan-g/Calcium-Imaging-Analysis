@@ -9,7 +9,8 @@ except:
 
 import os
 
-TITLE_STYLESHEET = "font-size: 16px; font-weight: bold;"
+TITLE_STYLESHEET    = "font-size: 16px; font-weight: bold;"
+SUBTITLE_STYLESHEET = "font-size: 14px; font-weight: bold;"
 
 class ParamWindow(QMainWindow):
     def __init__(self, controller):
@@ -188,6 +189,8 @@ class VideosWidget(QWidget):
 
         self.process_videos_progress_label = QLabel("")
         self.process_videos_progress_label.setStyleSheet("font-size: 10px; font-style: italic;")
+        self.process_videos_progress_label.setMinimumWidth(200)
+        self.process_videos_progress_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.button_layout_2.addWidget(self.process_videos_progress_label)
 
         self.process_all_button = HoverButton('Process All', None, self.parent_widget.statusBar())
@@ -405,6 +408,8 @@ class MotionCorrectionWidget(ParamWidget):
 
         self.mc_progress_label = QLabel("")
         self.mc_progress_label.setStyleSheet("font-size: 10px; font-style: italic;")
+        self.mc_progress_label.setMinimumWidth(200)
+        self.mc_progress_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.button_layout.addWidget(self.mc_progress_label)
 
         self.motion_correct_button = HoverButton('Motion Correct', None, self.parent_widget.statusBar())
@@ -513,6 +518,8 @@ class WatershedWidget(ParamWidget):
 
         self.watershed_progress_label = QLabel("")
         self.watershed_progress_label.setStyleSheet("font-size: 10px; font-style: italic;")
+        self.watershed_progress_label.setMinimumWidth(200)
+        self.watershed_progress_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.button_layout.addWidget(self.watershed_progress_label)
 
         self.motion_correct_button = HoverButton('Motion Correction', None, self.parent_widget.statusBar())
@@ -576,20 +583,26 @@ class ROIFilteringWidget(ParamWidget):
         
         self.main_layout.addWidget(HLine())
 
-        self.title_widget = QWidget(self)
-        self.title_layout = QHBoxLayout(self.title_widget)
-        self.title_layout.setContentsMargins(10, 10, 0, 0)
-        self.main_layout.addWidget(self.title_widget)
+        # self.title_widget = QWidget(self)
+        # self.title_layout = QHBoxLayout(self.title_widget)
+        # self.title_layout.setContentsMargins(10, 10, 0, 0)
+        # self.main_layout.addWidget(self.title_widget)
 
-        self.title_label = QLabel("Manual Controls")
-        self.title_label.setStyleSheet(TITLE_STYLESHEET)
-        self.title_layout.addWidget(self.title_label)
+        # self.title_label = QLabel("Manual Controls")
+        # self.title_label.setStyleSheet(TITLE_STYLESHEET)
+        # self.title_layout.addWidget(self.title_label)
 
         self.roi_button_widget = QWidget(self)
         self.roi_button_layout = QHBoxLayout(self.roi_button_widget)
-        self.roi_button_layout.setContentsMargins(0, 0, 0, 0)
+        self.roi_button_layout.setContentsMargins(10, 0, 0, 0)
         self.roi_button_layout.setSpacing(5)
         self.main_layout.addWidget(self.roi_button_widget)
+
+        label = QLabel("Manual Controls")
+        label.setStyleSheet(SUBTITLE_STYLESHEET)
+        self.roi_button_layout.addWidget(label)
+
+        self.roi_button_layout.addStretch()
 
         self.erase_rois_button = HoverButton('Eraser', None, self.parent_widget.statusBar())
         self.erase_rois_button.setHoverMessage("Manually remove ROIs using an eraser tool.")
@@ -614,15 +627,25 @@ class ROIFilteringWidget(ParamWidget):
         self.reset_button.clicked.connect(self.controller.reset_erase)
         self.roi_button_layout.addWidget(self.reset_button)
 
+        self.roi_button_widget_2 = QWidget(self)
+        self.roi_button_layout_2 = QHBoxLayout(self.roi_button_widget_2)
+        self.roi_button_layout_2.setContentsMargins(10, 0, 0, 0)
+        self.roi_button_layout_2.setSpacing(5)
+        self.main_layout.addWidget(self.roi_button_widget_2)
+
+        label = QLabel("Selected ROI")
+        label.setStyleSheet(SUBTITLE_STYLESHEET)
+        self.roi_button_layout_2.addWidget(label)
+
+        self.roi_button_layout_2.addStretch()
+
         self.erase_selected_roi_button = HoverButton('Erase', None, self.parent_widget.statusBar())
         self.erase_selected_roi_button.setHoverMessage("Erase the selected ROI.")
         self.erase_selected_roi_button.setIcon(QIcon("icons/trash_icon.png"))
         self.erase_selected_roi_button.setIconSize(QSize(16, 16))
         self.erase_selected_roi_button.clicked.connect(self.controller.erase_selected_roi)
         self.erase_selected_roi_button.setEnabled(False)
-        self.roi_button_layout.addWidget(self.erase_selected_roi_button)
-
-        self.roi_button_layout.addStretch()
+        self.roi_button_layout_2.addWidget(self.erase_selected_roi_button)
 
         self.lock_roi_button = HoverButton('Lock', None, self.parent_widget.statusBar())
         self.lock_roi_button.setHoverMessage("Lock the currently selected ROI. This prevents it from being filtered out or erased.")
@@ -630,7 +653,7 @@ class ROIFilteringWidget(ParamWidget):
         self.lock_roi_button.setIconSize(QSize(16, 16))
         self.lock_roi_button.clicked.connect(self.controller.lock_roi)
         self.lock_roi_button.setEnabled(False)
-        self.roi_button_layout.addWidget(self.lock_roi_button)
+        self.roi_button_layout_2.addWidget(self.lock_roi_button)
 
         self.shrink_roi_button = HoverButton('Shrink', None, self.parent_widget.statusBar())
         self.shrink_roi_button.setHoverMessage("Shrink the currently selected ROI.")
@@ -638,7 +661,7 @@ class ROIFilteringWidget(ParamWidget):
         self.shrink_roi_button.setIconSize(QSize(16, 16))
         self.shrink_roi_button.clicked.connect(self.controller.shrink_roi)
         self.shrink_roi_button.setEnabled(False)
-        self.roi_button_layout.addWidget(self.shrink_roi_button)
+        self.roi_button_layout_2.addWidget(self.shrink_roi_button)
 
         self.enlarge_roi_button = HoverButton('Enlarge', None, self.parent_widget.statusBar())
         self.enlarge_roi_button.setHoverMessage("Enlarge the currently selected ROI.")
@@ -646,7 +669,7 @@ class ROIFilteringWidget(ParamWidget):
         self.enlarge_roi_button.setIconSize(QSize(16, 16))
         self.enlarge_roi_button.clicked.connect(self.controller.enlarge_roi)
         self.enlarge_roi_button.setEnabled(False)
-        self.roi_button_layout.addWidget(self.enlarge_roi_button)
+        self.roi_button_layout_2.addWidget(self.enlarge_roi_button)
 
         self.main_layout.addWidget(HLine())
 
