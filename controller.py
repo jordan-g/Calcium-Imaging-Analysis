@@ -290,7 +290,7 @@ class Controller():
     def set_motion_correct(self, boolean):
         self.motion_correct_all_videos = boolean
 
-    def show_watershed_params(self, video=None, video_path=None):
+    def show_watershed_params(self, video=None, video_path=None, roi_overlay=None):
         if video is None:
             video = self.normalized_video
 
@@ -302,7 +302,7 @@ class Controller():
         self.param_window.stacked_widget.setCurrentIndex(1)
         self.mode = "watershed"
         self.preview_window.controller = self.watershed_controller
-        self.watershed_controller.video_opened(video, video_path)
+        self.watershed_controller.video_opened(video, video_path, roi_overlay)
         self.param_window.statusBar().showMessage("")
 
         self.preview_window.setWindowTitle("Preview")
@@ -314,11 +314,11 @@ class Controller():
         self.motion_correction_controller.video_opened(self.normalized_video, self.video_path)
         self.param_window.statusBar().showMessage("")
 
-    def show_roi_filtering_params(self, labels, roi_areas, roi_circs, mean_images, normalized_images, filtered_out_rois, loading_rois=False):
+    def show_roi_filtering_params(self, labels, roi_areas, roi_circs, mean_images, normalized_images, filtered_out_rois, roi_overlay, loading_rois=False):
         self.param_window.stacked_widget.setCurrentIndex(2)
         self.mode = "filter"
         self.preview_window.controller = self.roi_filtering_controller
-        self.roi_filtering_controller.video_opened(self.normalized_video, self.video_path, labels, roi_areas, roi_circs, mean_images, normalized_images, filtered_out_rois, loading_rois=loading_rois)
+        self.roi_filtering_controller.video_opened(self.normalized_video, self.video_path, labels, roi_areas, roi_circs, mean_images, normalized_images, filtered_out_rois, roi_overlay, loading_rois=loading_rois)
         self.param_window.statusBar().showMessage("")
 
     def rois_created(self):
@@ -636,7 +636,7 @@ class WatershedController():
 
         self.preview_window.plot_image(self.adjusted_image)
 
-    def video_opened(self, video, video_path):
+    def video_opened(self, video, video_path, roi_overlay):
         if video_path != self.video_path:
             self.video       = video
             self.video_path  = video_path
@@ -656,6 +656,10 @@ class WatershedController():
             self.background_mask      = utilities.calculate_background_mask(self.adjusted_image, self.params['background_threshold'])
             self.equalized_image      = utilities.calculate_equalized_image(self.adjusted_image, self.background_mask, self.params['window_size'])
             self.soma_mask, self.I_mod, self.soma_threshold_image = utilities.calculate_soma_threshold_image(self.equalized_image, self.params['soma_threshold'])
+
+        if roi_overlay is not None:
+            self.roi_overlay = roi_overlay
+            self.calculate_watershed_image(z=self.z, update_overlay=False)
 
         self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
 
@@ -835,7 +839,7 @@ class WatershedController():
     def filter_rois(self):
         self.cancel_watershed()
 
-        self.main_controller.show_roi_filtering_params(self.labels, self.roi_areas, self.roi_circs, self.mean_images, self.normalized_images, self.filtered_out_rois)
+        self.main_controller.show_roi_filtering_params(self.labels, self.roi_areas, self.roi_circs, self.mean_images, self.normalized_images, self.filtered_out_rois, self.roi_overlay)
 
     def save_params(self):
         json.dump(self.params, open(WATERSHED_PARAMS_FILENAME, "w"))
@@ -885,7 +889,7 @@ class ROIFilteringController():
 
         self.z = 0
 
-    def video_opened(self, video, video_path, labels, roi_areas, roi_circs, mean_images, normalized_images, filtered_out_rois, loading_rois=False):
+    def video_opened(self, video, video_path, labels, roi_areas, roi_circs, mean_images, normalized_images, filtered_out_rois, roi_overlay, loading_rois=False):
         if labels is not self.original_labels:
             self.video      = video
             self.video_path = video_path
@@ -909,6 +913,7 @@ class ROIFilteringController():
             self.roi_areas         = roi_areas
             self.roi_circs         = roi_circs
             self.filtered_out_rois = filtered_out_rois
+            self.roi_overlay       = roi_overlay
 
             if not loading_rois:
                 self.erased_rois = [ [] for i in range(video.shape[1]) ]
@@ -929,7 +934,7 @@ class ROIFilteringController():
             if self.filtered_out_rois is None:
                 self.filter_rois(z=self.z)
 
-            self.calculate_watershed_image(z=self.z, update_overlay=True)
+            self.calculate_watershed_image(z=self.z, update_overlay=False)
 
             self.param_widget.show_watershed_checkbox.setDisabled(False)
             self.param_widget.show_watershed_checkbox.setChecked(True)
@@ -1161,7 +1166,7 @@ class ROIFilteringController():
         self.main_controller.show_motion_correction_params()
 
     def watershed(self):
-        self.main_controller.show_watershed_params()
+        self.main_controller.show_watershed_params(roi_overlay=self.roi_overlay)
 
     def save_params(self):
         json.dump(self.params, open(ROI_FILTERING_PARAMS_FILENAME, "w"))
