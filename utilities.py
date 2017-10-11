@@ -538,6 +538,10 @@ def calc_activity_of_roi(labels, video, roi, z=0):
 
     return np.mean(z_video*mask, axis=(1, 2))
 
+def add_roi_to_overlay(overlay, roi_mask, labels):
+    l = np.amax(labels[roi_mask > 0])
+    overlay[roi_mask > 0] = colors[l]
+
 def draw_rois(rgb_image, labels, selected_roi, removed_rois, locked_rois, roi_overlay=None):
     global colors
     image = rgb_image.copy()

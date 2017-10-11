@@ -5,6 +5,7 @@ import json
 
 import numpy as np
 import cv2
+from mahotas.labeled import bwperim
 
 import utilities
 import matplotlib.pyplot as plt
@@ -145,13 +146,15 @@ class PreviewWindow(QMainWindow):
         self.main_layout.addWidget(self.image_widget, 1, 0)
 
         # initialize variables
-        self.image     = None  # image to show
-        self.frames    = None  # frames to play
-        self.frame_num = 0
-        self.n_frames  = 1
+        self.image                 = None  # image to show
+        self.frames                = None  # frames to play
+        self.frame_num             = 0
+        self.n_frames              = 1
+        self.drawn_roi_start_point = None
 
         self.drawing_mask = False
         self.erasing_rois = False
+        self.drawing_rois = False
         self.mask_points = []
 
         self.done_creating_mask_shortcut = QShortcut(QKeySequence('Return'), self)
@@ -378,15 +381,45 @@ class PreviewWindow(QMainWindow):
     def select_mask(self, roi_point):
         self.controller.select_mask(roi_point)
 
+    def set_roi_start_point(self, roi_point):
+        self.drawn_roi_start_point = roi_point
+
+    def draw_tentative_roi(self, roi_point):
+        if self.drawn_roi_start_point is not None and roi_point != self.drawn_roi_start_point:
+            mask = np.zeros((self.image.shape[0], self.image.shape[1])).astype(np.uint8)
+            image = self.image.copy()
+
+            center_point = (int(round((roi_point[0] + self.drawn_roi_start_point[0])/2)), int(round((roi_point[1] + self.drawn_roi_start_point[1])/2)))
+            axis_1 = np.abs(center_point[0] - roi_point[0])
+            axis_2 = np.abs(center_point[1] - roi_point[1])
+            cv2.ellipse(mask, center_point, (axis_1, axis_2), 0, 0, 360, 1, -1)
+
+            # get the boundary of this ellipse
+            perim = bwperim((mask == 1).astype(int), n=1)
+
+            # draw the boundary on the image
+            image[perim > 0] = np.array([255, 255, 0]).astype(np.uint8)
+
+            self.update_image_label(image)
+
+    def draw_roi(self, roi_point):
+        self.controller.create_roi(roi_point, self.drawn_roi_start_point)
+
+        self.drawn_roi_start_point = None
+
     def mouse_pressed(self, point):
         if self.main_controller.mode == "watershed" and self.drawing_mask:
             self.add_mask_point(point)
+        elif self.main_controller.mode == "filter" and self.drawing_rois:
+            self.set_roi_start_point(point)
 
     def mouse_moved(self, point, clicked=False):
         if self.drawing_mask:
             self.add_tentative_mask_point(point)
         elif self.erasing_rois and clicked:
             self.erase_roi_at_point(point)
+        elif self.drawing_rois and clicked:
+            self.draw_tentative_roi(point)
 
     def mouse_released(self, point, mouse_moved=False):
         if self.main_controller.mode == "watershed":
@@ -395,6 +428,8 @@ class PreviewWindow(QMainWindow):
         elif self.main_controller.mode == "filter":
             if self.erasing_rois:
                 self.end_erase_rois()
+            elif self.drawing_rois:
+                self.draw_roi(point)
             elif not mouse_moved:
                 self.select_roi(point)
 

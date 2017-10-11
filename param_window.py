@@ -627,6 +627,13 @@ class ROIFilteringWidget(ParamWidget):
         self.reset_button.clicked.connect(self.controller.reset_erase)
         self.roi_button_layout.addWidget(self.reset_button)
 
+        self.draw_rois_button = HoverButton('Draw', None, self.parent_widget.statusBar())
+        self.draw_rois_button.setHoverMessage("Manually draw circular ROIs.")
+        self.draw_rois_button.setIcon(QIcon("icons/draw_icon.png"))
+        self.draw_rois_button.setIconSize(QSize(16, 16))
+        self.draw_rois_button.clicked.connect(self.controller.draw_rois)
+        self.roi_button_layout.addWidget(self.draw_rois_button)
+
         self.roi_button_widget_2 = QWidget(self)
         self.roi_button_layout_2 = QHBoxLayout(self.roi_button_widget_2)
         self.roi_button_layout_2.setContentsMargins(10, 0, 0, 0)

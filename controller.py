@@ -992,6 +992,43 @@ class ROIFilteringController():
 
             self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
 
+    def draw_rois(self):
+        if not self.preview_window.drawing_rois:
+            self.preview_window.drawing_rois = True
+
+            self.param_widget.draw_rois_button.setText("Finished")
+        else:
+            self.preview_window.drawing_rois = False
+
+            self.param_widget.draw_rois_button.setText("Draw")
+
+    def create_roi(self, start_point, end_point):
+        center_point = (int(round((start_point[0] + end_point[0])/2)), int(round((start_point[1] + end_point[1])/2)))
+        axis_1 = np.abs(center_point[0] - end_point[0])
+        axis_2 = np.abs(center_point[1] - end_point[1])
+
+        print(start_point, end_point)
+
+        l = np.amax(self.labels[self.z])+1
+
+        # print(l)
+        # print(self.labels[self.z].shape, self.labels[self.z].dtype)
+
+        mask = np.zeros(self.labels[self.z].shape).astype(np.uint8)
+
+        # add to ROI mask
+        cv2.ellipse(mask, center_point, (axis_1, axis_2), 0, 0, 360, 1, -1)
+
+        self.labels[self.z][mask == 1] = l
+
+        utilities.add_roi_to_overlay(self.roi_overlay, self.labels[self.z] == l, self.labels[self.z])
+
+        self.locked_rois.append(l)
+
+        self.calculate_watershed_image(z=self.z, update_overlay=False)
+
+        self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
+
     def erase_rois(self):
         self.rois_erased = False
 
