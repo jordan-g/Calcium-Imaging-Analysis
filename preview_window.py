@@ -356,7 +356,7 @@ class PreviewWindow(QMainWindow):
         overlay = image.copy()
 
         cv2.circle(overlay, roi_point, 10, (255, 0, 0), -1)
-        cv2.addWeighted(overlay, 0.2, image, 0.8, 0, image)
+        cv2.addWeighted(overlay, 0.5, image, 0.5, 0, image)
 
         self.update_image_label(image)
 

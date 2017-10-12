@@ -1069,7 +1069,7 @@ class ROIFilteringController():
 
             self.add_to_history()
 
-    def erase_rois_near_point(self, roi_point, radius=5):
+    def erase_rois_near_point(self, roi_point, radius=10):
         if not self.rois_erased:
             self.last_erased_rois[self.z].append([])
             self.rois_erased = True
@@ -1544,8 +1544,11 @@ class ProcessVideosThread(QThread):
                 with open(os.path.join(video_dir_path, 'z_{}_traces.csv'.format(z)), 'w') as file:
                     writer = csv.writer(file)
 
+                    writer.writerow(['ROI #'] + [ 'Frame {}'.format(i) for i in range(video.shape[0]) ])
+
                     for l in np.unique(self.labels[z]):
                         writer.writerow([l] + results[z][l].tolist())
+                print("Done.")
 
             if not self.running:
                 self.running = False
