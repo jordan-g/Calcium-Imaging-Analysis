@@ -372,6 +372,8 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
 
     # print(mc_video.shape)
 
+    offset = ((video.shape[2] - max_height)//2, (video.shape[3] - max_width)//2)
+
     for z in range(len(mc_videos_list)):
         a = mc_videos_list[z]
         height_pad = max_height - a.shape[1]
@@ -398,7 +400,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
     motion_corrected_video_path = os.path.splitext(os.path.basename(full_video_path))[0] + "_mc.npy"
     np.save(motion_corrected_video_path, mc_video)
 
-    return mc_video, motion_corrected_video_path
+    return mc_video, motion_corrected_video_path, offset
 
 def calculate_adjusted_image(normalized_image, contrast, gamma):
     return adjust_gamma(adjust_contrast(normalized_image, contrast), gamma)/255.0
@@ -521,6 +523,15 @@ def get_roi_containing_point(labels, roi_point):
 
     return roi
 
+def get_rois_near_point(labels, roi_point, radius):
+    mask = np.zeros(labels.shape)
+
+    cv2.circle(mask, roi_point, radius, 1, -1)
+
+    rois = np.unique(labels[mask == 1]).tolist()
+
+    return rois
+
 def get_mask_containing_point(masks, mask_point, inverted=False):
     for i in range(len(masks)):
         mask = masks[i]
@@ -542,7 +553,7 @@ def add_roi_to_overlay(overlay, roi_mask, labels):
     l = np.amax(labels[roi_mask > 0])
     overlay[roi_mask > 0] = colors[l]
 
-def draw_rois(rgb_image, labels, selected_roi, removed_rois, locked_rois, roi_overlay=None):
+def draw_rois(rgb_image, labels, selected_roi, erased_rois, filtered_out_rois, locked_rois, newly_erased_rois=None, roi_overlay=None):
     global colors
     image = rgb_image.copy()
 
@@ -551,10 +562,19 @@ def draw_rois(rgb_image, labels, selected_roi, removed_rois, locked_rois, roi_ov
         roi_overlay = np.zeros(image.shape).astype(np.uint8)
 
         for l in np.unique(labels):
-            if l <= 1 or l in removed_rois:
+            if l <= 1 or l in filtered_out_rois:
                 continue
 
             roi_overlay[labels == l] = colors[l]
+
+    if newly_erased_rois is not None:
+        for l in newly_erased_rois:
+            mask = labels == l
+            roi_overlay[mask] = 0
+    elif erased_rois is not None:
+        for l in erased_rois:
+            mask = labels == l
+            roi_overlay[mask] = 0
 
     final_roi_overlay = image.copy()
     mask = roi_overlay != 0

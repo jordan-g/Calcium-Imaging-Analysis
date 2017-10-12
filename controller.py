@@ -16,6 +16,7 @@ from skimage.restoration import (denoise_tv_chambolle, denoise_bilateral,
                                  denoise_wavelet, estimate_sigma)
 import cv2
 import matplotlib.pyplot as plt
+import csv
 
 # import the Qt library
 try:
@@ -745,7 +746,7 @@ class WatershedController():
 
         rgb_image = cv2.cvtColor((self.adjusted_image*255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
 
-        self.watershed_image, self.roi_overlay = utilities.draw_rois(rgb_image, self.labels[z], None, self.filtered_out_rois[z], None, roi_overlay=roi_overlay)
+        self.watershed_image, self.roi_overlay = utilities.draw_rois(rgb_image, self.labels[z], None, None, self.filtered_out_rois[z], None, roi_overlay=roi_overlay)
 
     def show_watershed_image(self, show):
         if show:
@@ -788,7 +789,7 @@ class WatershedController():
         self.param_widget.filter_rois_button.setDisabled(False)
 
         rgb_image = cv2.cvtColor((self.adjusted_image*255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
-        self.watershed_image, self.roi_overlay = utilities.draw_rois(rgb_image, self.labels[self.z], None, self.filtered_out_rois[self.z], None)
+        self.watershed_image, self.roi_overlay = utilities.draw_rois(rgb_image, self.labels[self.z], None, None, self.filtered_out_rois[self.z], None)
 
         self.main_controller.rois_created()
 
@@ -927,6 +928,17 @@ class ROIFilteringController():
             
             self.last_erased_rois  = [ [] for i in range(video.shape[1]) ]
 
+            self.previous_labels            = [ [] for i in range(video.shape[1]) ]
+            self.previous_roi_overlays      = [ [] for i in range(video.shape[1]) ]
+            self.previous_erased_rois       = [ [] for i in range(video.shape[1]) ]
+            self.previous_filtered_out_rois = [ [] for i in range(video.shape[1]) ]
+            self.previous_adjusted_images   = [ [] for i in range(video.shape[1]) ]
+            self.previous_watershed_images  = [ [] for i in range(video.shape[1]) ]
+            self.previous_selected_rois     = [ [] for i in range(video.shape[1]) ]
+            self.previous_removed_rois      = [ [] for i in range(video.shape[1]) ]
+            self.previous_locked_rois       = [ [] for i in range(video.shape[1]) ]
+            self.previous_params            = [ [] for i in range(video.shape[1]) ]
+
             self.rois_erased = False
 
             self.adjusted_image = utilities.calculate_adjusted_image(self.normalized_images[self.z], self.main_controller.params['contrast'], self.main_controller.params['gamma'])
@@ -941,10 +953,12 @@ class ROIFilteringController():
 
             self.show_watershed_image(True)
 
+            self.add_to_history()
+
     def calculate_adjusted_image(self, normalized_image):
         return utilities.adjust_gamma(utilities.adjust_contrast(normalized_image, self.main_controller.params['contrast']), self.main_controller.params['gamma'])/255.0
 
-    def calculate_watershed_image(self, z, update_overlay=True):
+    def calculate_watershed_image(self, z, update_overlay=True, newly_erased_rois=None):
         if update_overlay:
             roi_overlay = None
         else:
@@ -952,7 +966,7 @@ class ROIFilteringController():
 
         rgb_image = cv2.cvtColor((self.adjusted_image*255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
 
-        self.watershed_image, self.roi_overlay = utilities.draw_rois(rgb_image, self.labels[z], self.selected_roi, self.removed_rois[z], self.locked_rois[z], roi_overlay=roi_overlay)
+        self.watershed_image, self.roi_overlay = utilities.draw_rois(rgb_image, self.labels[z], self.selected_roi, self.erased_rois[z], self.filtered_out_rois[z], self.locked_rois[z], newly_erased_rois=newly_erased_rois, roi_overlay=roi_overlay)
 
     def update_param(self, param, value):
         if param in self.params.keys():
@@ -974,6 +988,8 @@ class ROIFilteringController():
             self.calculate_watershed_image(z=self.z, update_overlay=True)
 
             self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
+
+            self.add_to_history()
         elif param in ("min_area", "max_area", "min_circ", "max_circ"):
             pass
 
@@ -996,9 +1012,13 @@ class ROIFilteringController():
         if not self.preview_window.drawing_rois:
             self.preview_window.drawing_rois = True
 
+            self.main_controller.param_window.roi_drawing_started()
+
             self.param_widget.draw_rois_button.setText("Finished")
         else:
             self.preview_window.drawing_rois = False
+
+            self.main_controller.param_window.roi_drawing_ended()
 
             self.param_widget.draw_rois_button.setText("Draw")
 
@@ -1006,8 +1026,6 @@ class ROIFilteringController():
         center_point = (int(round((start_point[0] + end_point[0])/2)), int(round((start_point[1] + end_point[1])/2)))
         axis_1 = np.abs(center_point[0] - end_point[0])
         axis_2 = np.abs(center_point[1] - end_point[1])
-
-        print(start_point, end_point)
 
         l = np.amax(self.labels[self.z])+1
 
@@ -1029,31 +1047,46 @@ class ROIFilteringController():
 
         self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
 
+        self.add_to_history()
+
     def erase_rois(self):
         self.rois_erased = False
 
         if not self.preview_window.erasing_rois:
             self.preview_window.erasing_rois = True
 
+            self.selected_roi = None
+
+            self.main_controller.param_window.roi_erasing_started()
+
             self.param_widget.erase_rois_button.setText("Finished")
         else:
             self.preview_window.erasing_rois = False
 
+            self.main_controller.param_window.roi_erasing_ended()
+
             self.param_widget.erase_rois_button.setText("Erase ROIs")
 
-    def erase_roi_at_point(self, roi_point, radius=1):
+            self.add_to_history()
+
+    def erase_rois_near_point(self, roi_point, radius=5):
         if not self.rois_erased:
             self.last_erased_rois[self.z].append([])
             self.rois_erased = True
 
-        roi_to_erase = utilities.get_roi_containing_point(self.labels[self.z], roi_point)
+        rois_to_erase = utilities.get_rois_near_point(self.labels[self.z], roi_point, radius)
 
-        if roi_to_erase is not None and roi_to_erase not in self.erased_rois[self.z] and roi_to_erase not in self.locked_rois[self.z]:
-            self.erased_rois[self.z].append(roi_to_erase)
-            self.last_erased_rois[self.z][-1].append(roi_to_erase)
+        for i in range(len(rois_to_erase)):
+            roi = rois_to_erase[i]
+            if roi in self.locked_rois or roi in self.erased_rois:
+                del rois_to_erase[i]
+
+        if len(rois_to_erase) > 0:
+            self.erased_rois[self.z] += rois_to_erase
+            self.last_erased_rois[self.z][-1] += rois_to_erase
             self.removed_rois[self.z] = self.filtered_out_rois[self.z] + self.erased_rois[self.z]
             
-            self.calculate_watershed_image(z=self.z, update_overlay=True)
+            self.calculate_watershed_image(z=self.z, update_overlay=False, newly_erased_rois=rois_to_erase)
 
             self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
 
@@ -1100,15 +1133,79 @@ class ROIFilteringController():
             self.param_widget.shrink_roi_button.setEnabled(False)
             self.param_widget.lock_roi_button.setText("Lock ROI")
 
+    def add_to_history(self):
+        print("Adding to history")
+        if len(self.previous_labels[self.z]) > 20:
+            del self.previous_labels[self.z][0]
+        if len(self.previous_roi_overlays[self.z]) > 20:
+            del self.previous_roi_overlays[self.z][0]
+        if len(self.previous_erased_rois[self.z]) > 20:
+            del self.previous_erased_rois[self.z][0]
+        if len(self.previous_filtered_out_rois[self.z]) > 20:
+            del self.previous_filtered_out_rois[self.z][0]
+        if len(self.previous_adjusted_images[self.z]) > 20:
+            del self.previous_adjusted_images[self.z][0]
+        if len(self.previous_watershed_images[self.z]) > 20:
+            del self.previous_watershed_images[self.z][0]
+        if len(self.previous_selected_rois[self.z]) > 20:
+            del self.previous_selected_rois[self.z][0]
+        if len(self.previous_removed_rois[self.z]) > 20:
+            del self.previous_removed_rois[self.z][0]
+        if len(self.previous_locked_rois[self.z]) > 20:
+            del self.previous_locked_rois[self.z][0]
+
+        self.previous_labels[self.z].append(self.labels[self.z].copy())
+        self.previous_roi_overlays[self.z].append(self.roi_overlay.copy())
+        self.previous_erased_rois[self.z].append(self.erased_rois[self.z].copy())
+        self.previous_filtered_out_rois[self.z].append(self.filtered_out_rois[self.z].copy())
+        self.previous_adjusted_images[self.z].append(self.adjusted_image.copy())
+        self.previous_watershed_images[self.z].append(self.watershed_image.copy())
+        if self.selected_roi is not None:
+            self.previous_selected_rois[self.z].append(self.selected_roi.copy())
+        self.previous_removed_rois[self.z].append(self.removed_rois[self.z].copy())
+        self.previous_locked_rois[self.z].append(self.locked_rois[self.z].copy())
+
+    def undo(self):
+        if len(self.previous_labels[self.z]) > 1:
+            del self.previous_labels[self.z][-1]
+            self.labels[self.z]            = self.previous_labels[self.z][-1].copy()
+        if len(self.previous_roi_overlays[self.z]) > 1:
+            del self.previous_roi_overlays[self.z][-1]
+            self.roi_overlay               = self.previous_roi_overlays[self.z][-1].copy()
+        if len(self.previous_erased_rois[self.z]) > 1:
+            del self.previous_erased_rois[self.z][-1]
+            self.erased_rois[self.z]       = self.previous_erased_rois[self.z][-1].copy()
+        if len(self.previous_adjusted_images[self.z]) > 1:
+            del self.previous_adjusted_images[self.z][-1]
+            self.adjusted_image    = self.previous_adjusted_images[self.z][-1].copy()
+        if len(self.previous_watershed_images[self.z]) > 1:
+            del self.previous_watershed_images[self.z][-1]
+            self.watershed_image   = self.previous_watershed_images[self.z][-1].copy()
+        if len(self.previous_selected_rois[self.z]) > 1:
+            del self.previous_selected_rois[self.z][-1]
+            self.selected_roi    = self.previous_selected_rois[self.z][-1].copy()
+        if len(self.previous_locked_rois[self.z]) > 1:
+            del self.previous_locked_rois[self.z][-1]
+            self.locked_rois[self.z]       = self.previous_locked_rois[self.z][-1].copy()
+
+        print(self.erased_rois)
+
+        self.removed_rois[self.z] = self.filtered_out_rois[self.z] + self.erased_rois[self.z]
+
+        self.calculate_watershed_image(z=self.z, update_overlay=False)
+
+        self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
+
     def undo_erase(self):
-        if len(self.last_erased_rois[self.z]) > 0:
-            self.erased_rois[self.z] = self.erased_rois[self.z][:-len(self.last_erased_rois[self.z][-1])]
-            del self.last_erased_rois[self.z][-1]
-            self.removed_rois[self.z] = self.filtered_out_rois[self.z] + self.erased_rois[self.z]
+        self.undo()
+        # if len(self.last_erased_rois[self.z]) > 0:
+        #     self.erased_rois[self.z] = self.erased_rois[self.z][:-len(self.last_erased_rois[self.z][-1])]
+        #     del self.last_erased_rois[self.z][-1]
+        #     self.removed_rois[self.z] = self.filtered_out_rois[self.z] + self.erased_rois[self.z]
 
-            self.calculate_watershed_image(z=self.z, update_overlay=True)
+        #     self.calculate_watershed_image(z=self.z, update_overlay=True)
 
-            self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
+        #     self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
 
     def reset_erase(self):
         self.labels[self.z]           = self.original_labels[self.z].copy()
@@ -1132,6 +1229,8 @@ class ROIFilteringController():
 
         self.param_widget.erase_selected_roi_button.setEnabled(False)
 
+        self.add_to_history()
+
     def lock_roi(self):
         if self.selected_roi not in self.locked_rois[self.z]:
             self.locked_rois[self.z].append(self.selected_roi)
@@ -1144,6 +1243,8 @@ class ROIFilteringController():
         self.calculate_watershed_image(z=self.z, update_overlay=True)
 
         self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
+
+        self.add_to_history()
 
     def enlarge_roi(self):
         if self.selected_roi >= 1:
@@ -1168,6 +1269,8 @@ class ROIFilteringController():
             self.axis.clear()
             self.axis.plot(activity, c="#FF6666")
             self.figure.canvas.set_window_title('ROI {} Activity'.format(self.selected_roi))
+
+            self.add_to_history()
 
     def shrink_roi(self):
         if self.selected_roi >= 1:
@@ -1198,6 +1301,8 @@ class ROIFilteringController():
             self.axis.clear()
             self.axis.plot(activity, c="#FF6666")
             self.figure.canvas.set_window_title('ROI {} Activity'.format(self.selected_roi))
+
+            self.add_to_history()
 
     def motion_correct(self):
         self.main_controller.show_motion_correction_params()
@@ -1347,6 +1452,8 @@ class ProcessVideosThread(QThread):
     def run(self):
         self.running = True
 
+        video_shape = None
+
         for i in range(len(self.video_paths)):
             video_path = self.video_paths[i]
 
@@ -1361,9 +1468,24 @@ class ProcessVideosThread(QThread):
                 # add z dimension
                 video = video[:, np.newaxis, :, :]
 
+            if video_shape is None and not self.motion_correct:
+                video_shape = video.shape
+
+            elif (video.shape[2], video.shape[3]) != video_shape:
+                print("Skipping {} due to shape mismatch.".format(video_path))
+                continue
+
             print("Loaded video with shape {}.".format(video.shape))
 
             video = np.nan_to_num(video).astype(np.float32)
+
+            name = os.path.splitext(base_name)[0]
+            directory = os.path.dirname(video_path)
+            video_dir_path = os.path.join(directory, name)
+
+            # make a folder to hold the results
+            if not os.path.exists(video_dir_path):
+                os.makedirs(video_dir_path)
 
             if not self.running:
                 self.running = False
@@ -1373,7 +1495,10 @@ class ProcessVideosThread(QThread):
             self.progress.emit(int(100.0*float(i + (1/3))/len(self.video_paths)))
 
             if self.motion_correct:
-                mc_video, mc_video_path = utilities.motion_correct(video, video_path, self.max_shift, self.patch_stride, self.patch_overlap)
+                mc_video, mc_video_path, offset = utilities.motion_correct(video, video_path, self.max_shift, self.patch_stride, self.patch_overlap)
+
+                if video_shape is None:
+                    video_shape = mc_video.shape
 
             if not self.running:
                 self.running = False
@@ -1384,11 +1509,43 @@ class ProcessVideosThread(QThread):
 
             results = [ {} for z in range(video.shape[1]) ]
 
+            labels = self.labels.copy()
+
+            if self.motion_correct:
+                vid = mc_video
+            else:
+                vid = video
+
+            if video_shape[2] > vid.shape[2] or video_shape[3] > vid.shape[3]:
+                height_pad =  (video_shape[2] - vid.shape[2])//2
+                width_pad  =  (video_shape[3] - vid.shape[3])//2
+
+                for i in range(len(labels)):
+                    labels[i] = labels[i][height_pad:, width_pad:]
+                    labels[i] = labels[i][:vid.shape[0], :vid.shape[1]]
+            elif video_shape[2] < vid.shape[2] or video_shape[3] < vid.shape[3]:
+                height_pad_pre =  (video_shape[2] - vid.shape[2])//2
+                width_pad_pre  =  (video_shape[3] - vid.shape[3])//2
+
+                height_pad_post = vid.shape[2] - height_pad_pre
+                width_pad_post  = vid.shape[3] - width_pad_pre
+
+                for i in range(len(labels)):
+                    labels[i] = np.pad(labels[i], ((0, 0), (height_pad_pre, height_pad_post), (width_pad_pre, width_pad_post)), 'constant')
+
             for z in range(video.shape[1]):
                 for l in np.unique(self.labels[z]):
                     activity = utilities.calc_activity_of_roi(self.labels[z], video, l, z=z)
 
                     results[z][l] = activity
+
+                # add CSV saving here
+                print("Saving CSV...")
+                with open(os.path.join(video_dir_path, 'z_{}_traces.csv'.format(z)), 'w') as file:
+                    writer = csv.writer(file)
+
+                    for l in np.unique(self.labels[z]):
+                        writer.writerow([l] + results[z][l].tolist())
 
             if not self.running:
                 self.running = False
@@ -1397,7 +1554,7 @@ class ProcessVideosThread(QThread):
 
             self.progress.emit(int(100.0*float(i + 1)/len(self.video_paths)))
 
-            np.savez(os.path.join(os.path.dirname(video_path), '{}_roi_traces.npz'.format(os.path.splitext(video_path)[0])), results)
+            np.savez(os.path.join(video_dir_path, '{}_roi_traces.npz'.format(os.path.splitext(video_path)[0])), results)
 
         self.finished.emit()
 

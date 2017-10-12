@@ -350,15 +350,15 @@ class PreviewWindow(QMainWindow):
         self.update_image_label(image)
 
     def erase_roi_at_point(self, roi_point):
-        self.controller.erase_roi_at_point(roi_point)
+        self.controller.erase_rois_near_point(roi_point)
 
-        # image = self.image.copy()
-        # overlay = image.copy()
+        image = self.image.copy()
+        overlay = image.copy()
 
-        # cv2.circle(overlay, roi_point, 10, (255, 0, 0), -1)
-        # cv2.addWeighted(overlay, 0.2, image, 0.8, 0, image)
+        cv2.circle(overlay, roi_point, 10, (255, 0, 0), -1)
+        cv2.addWeighted(overlay, 0.2, image, 0.8, 0, image)
 
-        # self.update_image_label(image)
+        self.update_image_label(image)
 
     def end_erase_rois(self):
         self.image_label.erased_rois = []

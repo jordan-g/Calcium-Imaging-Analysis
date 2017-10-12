@@ -82,6 +82,30 @@ class ParamWindow(QMainWindow):
     def process_videos_started(self):
         self.videos_widget.process_videos_started()
 
+    def roi_erasing_started(self):
+        self.main_param_widget.setEnabled(False)
+        self.videos_widget.setEnabled(False)
+
+        self.roi_filtering_widget.roi_erasing_started()
+
+    def roi_erasing_ended(self):
+        self.main_param_widget.setEnabled(True)
+        self.videos_widget.setEnabled(True)
+
+        self.roi_filtering_widget.roi_erasing_ended()
+
+    def roi_drawing_started(self):
+        self.main_param_widget.setEnabled(False)
+        self.videos_widget.setEnabled(False)
+
+        self.roi_filtering_widget.roi_drawing_started()
+
+    def roi_drawing_ended(self):
+        self.main_param_widget.setEnabled(True)
+        self.videos_widget.setEnabled(True)
+
+        self.roi_filtering_widget.roi_drawing_ended()
+
     def update_process_videos_progress(self, percent):
         self.videos_widget.update_process_videos_progress(percent)
 
@@ -716,6 +740,50 @@ class ROIFilteringWidget(ParamWidget):
         self.filter_rois_button.setStyleSheet('font-weight: bold;')
         self.filter_rois_button.clicked.connect(lambda:self.controller.filter_rois(self.main_controller.params['z'], update_overlay=True))
         self.button_layout.addWidget(self.filter_rois_button)
+
+    def roi_erasing_started(self):
+        self.filter_rois_button.setEnabled(False)
+        self.watershed_button.setEnabled(False)
+        self.motion_correct_button.setEnabled(False)
+        self.enlarge_roi_button.setEnabled(False)
+        self.shrink_roi_button.setEnabled(False)
+        self.lock_roi_button.setEnabled(False)
+        self.erase_selected_roi_button.setEnabled(False)
+        self.reset_button.setEnabled(False)
+        self.undo_button.setEnabled(False)
+        self.param_widget.setEnabled(False)
+        self.draw_rois_button.setEnabled(False)
+
+    def roi_erasing_ended(self):
+        self.filter_rois_button.setEnabled(True)
+        self.watershed_button.setEnabled(True)
+        self.motion_correct_button.setEnabled(True)
+        self.reset_button.setEnabled(True)
+        self.undo_button.setEnabled(True)
+        self.param_widget.setEnabled(True)
+        self.draw_rois_button.setEnabled(True)
+
+    def roi_drawing_started(self):
+        self.filter_rois_button.setEnabled(False)
+        self.watershed_button.setEnabled(False)
+        self.motion_correct_button.setEnabled(False)
+        self.enlarge_roi_button.setEnabled(False)
+        self.shrink_roi_button.setEnabled(False)
+        self.lock_roi_button.setEnabled(False)
+        self.erase_selected_roi_button.setEnabled(False)
+        self.reset_button.setEnabled(False)
+        self.undo_button.setEnabled(False)
+        self.param_widget.setEnabled(False)
+        self.erase_rois_button.setEnabled(False)
+
+    def roi_drawing_ended(self):
+        self.filter_rois_button.setEnabled(True)
+        self.watershed_button.setEnabled(True)
+        self.motion_correct_button.setEnabled(True)
+        self.reset_button.setEnabled(True)
+        self.undo_button.setEnabled(True)
+        self.param_widget.setEnabled(True)
+        self.erase_rois_button.setEnabled(True)
 
 class HoverButton(QPushButton):
     def __init__(self, text, parent=None, status_bar=None):
