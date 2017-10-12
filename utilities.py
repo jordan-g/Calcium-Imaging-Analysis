@@ -9,13 +9,7 @@ from skimage.filters import rank
 from skimage.external.tifffile import imread, imsave
 
 import caiman as cm
-from caiman.motion_correction import tile_and_correct, motion_correction_piecewise
-from caiman.source_extraction.cnmf import cnmf as cnmf
-from caiman.motion_correction import MotionCorrect
-from caiman.components_evaluation import evaluate_components
-from caiman.utils.visualization import plot_contours, view_patches_bar
-from caiman.base.rois import extract_binary_masks_blob
-from caiman.utils.utils import download_demo
+from caiman.motion_correction import tile_and_correct, motion_correction_piecewise, MotionCorrect
 from mahotas.labeled import bwperim
 from imimposemin import imimposemin
 import math
@@ -400,7 +394,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
     motion_corrected_video_path = os.path.splitext(os.path.basename(full_video_path))[0] + "_mc.npy"
     np.save(motion_corrected_video_path, mc_video)
 
-    return mc_video, motion_corrected_video_path, offset
+    return mc_video, motion_corrected_video_path
 
 def calculate_adjusted_image(normalized_image, contrast, gamma):
     return adjust_gamma(adjust_contrast(normalized_image, contrast), gamma)/255.0
