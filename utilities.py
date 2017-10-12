@@ -544,10 +544,7 @@ def get_mask_containing_point(masks, mask_point, inverted=False):
     return None, -1
 
 def calc_activity_of_roi(labels, video, roi, z=0):
-    z_video = video[:, z, :, :]
-    mask = (labels == roi)[np.newaxis, :, :].repeat(z_video.shape[0], 0)
-
-    return np.mean(z_video*mask, axis=(1, 2))
+    return np.mean(video[:, z, :, :].transpose(1, 2, 0) * ((labels == roi)[:, :, np.newaxis]), axis=(0, 1))
 
 def add_roi_to_overlay(overlay, roi_mask, labels):
     l = np.amax(labels[roi_mask > 0])

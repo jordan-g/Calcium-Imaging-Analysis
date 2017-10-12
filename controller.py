@@ -818,7 +818,7 @@ class WatershedController():
 
             self.param_widget.erase_selected_mask_button.setEnabled(False)
 
-        self.preview_window.plot_image(self.adjusted_image)
+        self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
 
     def erase_selected_mask(self):
         if self.selected_mask is not None:
@@ -1115,6 +1115,7 @@ class ROIFilteringController():
             if self.figure is None:
                 plt.close('all')
                 self.figure, self.axis = plt.subplots(figsize=(5, 3))
+                self.figure.canvas.mpl_connect('close_event', self.figure_closed)
                 self.figure.canvas.set_window_title('ROI Activity')
                 self.figure.tight_layout()
 
@@ -1263,6 +1264,7 @@ class ROIFilteringController():
             if self.figure is None:
                 plt.close('all')
                 self.figure, self.axis = plt.subplots(figsize=(5, 3))
+                self.figure.canvas.mpl_connect('close_event', self.figure_closed)
                 self.figure.canvas.set_window_title('ROI Activity')
                 self.figure.tight_layout()
 
@@ -1295,6 +1297,7 @@ class ROIFilteringController():
             if self.figure is None:
                 plt.close('all')
                 self.figure, self.axis = plt.subplots(figsize=(5, 3))
+                self.figure.canvas.mpl_connect('close_event', self.figure_closed)
                 self.figure.canvas.set_window_title('ROI Activity')
                 self.figure.tight_layout()
 
@@ -1303,6 +1306,9 @@ class ROIFilteringController():
             self.figure.canvas.set_window_title('ROI {} Activity'.format(self.selected_roi))
 
             self.add_to_history()
+
+    def figure_closed(self, event):
+        self.figure = None
 
     def motion_correct(self):
         self.main_controller.show_motion_correction_params()
@@ -1464,6 +1470,8 @@ class ProcessVideosThread(QThread):
             elif base_name.endswith('.tif') or base_name.endswith('.tiff'):
                 video = imread(video_path)
 
+            print("Processing {}.".format(base_name))
+
             if len(video.shape) == 3:
                 # add z dimension
                 video = video[:, np.newaxis, :, :]
@@ -1471,11 +1479,11 @@ class ProcessVideosThread(QThread):
             if video_shape is None and not self.motion_correct:
                 video_shape = video.shape
 
-            elif (video.shape[2], video.shape[3]) != video_shape:
-                print("Skipping {} due to shape mismatch.".format(video_path))
-                continue
+            # elif (video.shape[2], video.shape[3]) != video_shape:
+            #     print("Skipping {} due to shape mismatch.".format(video_path))
+            #     continue
 
-            print("Loaded video with shape {}.".format(video.shape))
+            # print("Loaded video with shape {}.".format(video.shape))
 
             video = np.nan_to_num(video).astype(np.float32)
 
@@ -1495,6 +1503,7 @@ class ProcessVideosThread(QThread):
             self.progress.emit(int(100.0*float(i + (1/3))/len(self.video_paths)))
 
             if self.motion_correct:
+                print("Performing motion correction...")
                 mc_video, mc_video_path, offset = utilities.motion_correct(video, video_path, self.max_shift, self.patch_stride, self.patch_overlap)
 
                 if video_shape is None:
@@ -1516,31 +1525,40 @@ class ProcessVideosThread(QThread):
             else:
                 vid = video
 
+            # print(labels[0].shape, vid.shape, video_shape)
+
             if video_shape[2] > vid.shape[2] or video_shape[3] > vid.shape[3]:
+                print("Cropping labels...")
                 height_pad =  (video_shape[2] - vid.shape[2])//2
                 width_pad  =  (video_shape[3] - vid.shape[3])//2
 
                 for i in range(len(labels)):
                     labels[i] = labels[i][height_pad:, width_pad:]
-                    labels[i] = labels[i][:vid.shape[0], :vid.shape[1]]
+                    labels[i] = labels[i][:vid.shape[2], :vid.shape[3]]
             elif video_shape[2] < vid.shape[2] or video_shape[3] < vid.shape[3]:
-                height_pad_pre =  (video_shape[2] - vid.shape[2])//2
-                width_pad_pre  =  (video_shape[3] - vid.shape[3])//2
+                print("Padding labels...")
+                height_pad_pre =  (vid.shape[2] - video_shape[2])//2
+                width_pad_pre  =  (vid.shape[3] - video_shape[3])//2
 
-                height_pad_post = vid.shape[2] - height_pad_pre
-                width_pad_post  = vid.shape[3] - width_pad_pre
+                height_pad_post = vid.shape[2] - video_shape[2] - height_pad_pre
+                width_pad_post  = vid.shape[3] - video_shape[3] - width_pad_pre
+
+                # print(height_pad_pre, height_pad_post, width_pad_pre, width_pad_post)
 
                 for i in range(len(labels)):
-                    labels[i] = np.pad(labels[i], ((0, 0), (height_pad_pre, height_pad_post), (width_pad_pre, width_pad_post)), 'constant')
+                    labels[i] = np.pad(labels[i], ((height_pad_pre, height_pad_post), (width_pad_pre, width_pad_post)), 'constant')
+
+            # print(labels[0].shape, vid.shape, video_shape)
 
             for z in range(video.shape[1]):
-                for l in np.unique(self.labels[z]):
-                    activity = utilities.calc_activity_of_roi(self.labels[z], video, l, z=z)
+                print("Calculating ROI activities for z={}...".format(z))
+                for l in np.unique(labels[z]):
+                    activity = utilities.calc_activity_of_roi(labels[z], video, l, z=z)
 
                     results[z][l] = activity
 
                 # add CSV saving here
-                print("Saving CSV...")
+                print("Saving CSV for z={}...".format(z))
                 with open(os.path.join(video_dir_path, 'z_{}_traces.csv'.format(z)), 'w') as file:
                     writer = csv.writer(file)
 
