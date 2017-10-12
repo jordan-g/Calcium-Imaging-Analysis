@@ -5,10 +5,10 @@ import json
 
 import numpy as np
 import cv2
-from mahotas.labeled import bwperim
 
 import utilities
 import matplotlib.pyplot as plt
+from skimage.morphology import *
 
 # import the Qt library
 try:
@@ -394,11 +394,12 @@ class PreviewWindow(QMainWindow):
             axis_2 = np.abs(center_point[1] - roi_point[1])
             cv2.ellipse(mask, center_point, (axis_1, axis_2), 0, 0, 360, 1, -1)
 
-            # get the boundary of this ellipse
-            perim = bwperim((mask == 1).astype(int), n=1)
+            b = erosion(mask, disk(1))
+
+            mask = mask - b
 
             # draw the boundary on the image
-            image[perim > 0] = np.array([255, 255, 0]).astype(np.uint8)
+            image[mask == 1] = np.array([255, 255, 0]).astype(np.uint8)
 
             self.update_image_label(image)
 

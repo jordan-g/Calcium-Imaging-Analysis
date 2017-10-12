@@ -10,7 +10,6 @@ from skimage.external.tifffile import imread, imsave
 
 import caiman as cm
 from caiman.motion_correction import tile_and_correct, motion_correction_piecewise, MotionCorrect
-from mahotas.labeled import bwperim
 from imimposemin import imimposemin
 import math
 
@@ -574,14 +573,22 @@ def draw_rois(rgb_image, labels, selected_roi, erased_rois, filtered_out_rois, l
     cv2.addWeighted(final_roi_overlay, 0.5, image, 0.5, 0, image)
 
     if selected_roi is not None:
-        perim = bwperim((labels == selected_roi).astype(int), n=4) == 1
+        mask = labels == selected_roi
 
-        image[perim > 0] = np.array([0, 255, 0]).astype(np.uint8)
-    
+        b = erosion(mask, disk(1))
+
+        mask = mask - b
+
+        image[mask] = np.array([0, 255, 0]).astype(np.uint8)
+
     if locked_rois is not None:
         for l in locked_rois:
-            perim = bwperim((labels == l).astype(int), n=4) == 1
+            mask = labels == l
 
-            image[perim > 0] = np.array([255, 255, 0]).astype(np.uint8)
+            b = erosion(mask, disk(1))
+
+            mask = mask - b
+
+            image[mask] = np.array([255, 255, 0]).astype(np.uint8)
 
     return image, roi_overlay
