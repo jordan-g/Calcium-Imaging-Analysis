@@ -14,10 +14,12 @@ from skimage.morphology import *
 try:
     from PyQt4.QtCore import *
     from PyQt4.QtGui import *
+    pyqt_version = 4
 except:
     from PyQt5.QtCore import *
     from PyQt5.QtGui import *
     from PyQt5.QtWidgets import *
+    pyqt_version = 5
 
 # color table to use for showing images
 gray_color_table = [qRgb(i, i, i) for i in range(256)]
@@ -163,7 +165,10 @@ class PreviewWindow(QMainWindow):
         self.setCentralWidget(self.main_widget)
 
         # set window buttons
-        self.setWindowFlags(Qt.CustomizeWindowHint | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint | Qt.WindowFullscreenButtonHint)
+        if pyqt_version == 5:
+            self.setWindowFlags(Qt.CustomizeWindowHint | Qt.WindowCloseButtonHint | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint | Qt.WindowFullscreenButtonHint)
+        else:
+            self.setWindowFlags(Qt.CustomizeWindowHint | Qt.WindowCloseButtonHint | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint)
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_frame)

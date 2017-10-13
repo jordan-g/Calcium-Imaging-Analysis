@@ -15,6 +15,12 @@ import math
 
 import os
 import glob
+import sys
+
+if sys.version_info[0] < 3:
+    python_version = 2
+else:
+    python_version = 3
 
 colors = [ np.random.randint(50, 255, size=3) for i in range(100000) ]
 
@@ -259,7 +265,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
             for log_file in log_files:
                 os.remove(log_file)
 
-            return [None]*2
+            return None
 
         if progress_signal:
             # send an update signal to the GUI
@@ -282,7 +288,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
             for log_file in log_files:
                 os.remove(log_file)
 
-            return [None]*2
+            return None
 
         if progress_signal:
             # send an update signal to the GUI
@@ -310,7 +316,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         # idx_xy = None
         add_to_movie = -np.nanmin(m_els) + 1  # movie must be positive
 
-        print(m_els.shape)
+        # print(m_els.shape)
         images = m_els[:, idx_xy[0], idx_xy[1]].copy()
         images += add_to_movie
 
@@ -343,18 +349,22 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         for log_file in log_files:
             os.remove(log_file)
 
+        os.remove(video_path)
+
         # out = np.zeros(m_els.shape)
         # out[:] = m_els[:]
 
         # out = np.nan_to_num(out)
 
         if thread is not None and thread.running == False:
-            return [None]*2
+            return None
+            
 
         if progress_signal:
             # send an update signal to the GUI
             percent_complete = int(100.0*float(z + 1)/video.shape[1])
             progress_signal.emit(percent_complete)
+
 
     max_height = max([ a.shape[1] for a in mc_videos_list ])
     max_width  = max([ a.shape[2] for a in mc_videos_list ])
@@ -388,12 +398,9 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         # print(np.amax(mc_video), np.amin(mc_video))
 
     if thread is not None and thread.running == False:
-        return [None]*2
+        return None
 
-    motion_corrected_video_path = os.path.splitext(os.path.basename(full_video_path))[0] + "_mc.npy"
-    np.save(motion_corrected_video_path, mc_video)
-
-    return mc_video, motion_corrected_video_path
+    return mc_video
 
 def calculate_adjusted_image(normalized_image, contrast, gamma):
     return adjust_gamma(adjust_contrast(normalized_image, contrast), gamma)/255.0
@@ -430,8 +437,13 @@ def calculate_soma_threshold_image(equalized_image, soma_threshold):
 
     I_mod = imimposemin(nuclei_image_c.astype(float), soma_mask)
 
+    try:
+        inf = math.inf
+    except:
+        inf = float("inf")
+
     soma_threshold_image = I_mod/np.amax(I_mod)
-    soma_threshold_image[soma_threshold_image == -math.inf] = 0
+    soma_threshold_image[soma_threshold_image == -inf] = 0
 
     return soma_mask, I_mod, soma_threshold_image
 
@@ -498,7 +510,10 @@ def filter_rois(image, labels, min_area, max_area, min_circ, max_circ, roi_areas
 
 def filter_labels(labels, removed_rois):
     if removed_rois is not None:
-        new_labels = labels.copy()
+        if python_version == 3:
+            new_labels = labels.copy()
+        else:
+            new_labels = labels[:]
 
         for i in range(len(new_labels)):
             for roi in removed_rois[i]:

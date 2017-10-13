@@ -29,6 +29,11 @@ except:
     from PyQt5.QtWidgets import *
     pyqt_version = 5
 
+if sys.version_info[0] < 3:
+    python_version = 2
+else:
+    python_version = 3
+
 DEFAULT_VIEWING_PARAMS = {'gamma'   : 1.0,
                           'contrast': 1.0,
                           'fps'     : 60,
@@ -100,6 +105,8 @@ class Controller():
         # let user pick video file(s)
         if pyqt_version == 4:
             video_paths = QFileDialog.getOpenFileNames(self.param_window, 'Select videos to process.', '', 'Videos (*.tif *.tiff *.npy)')
+
+            video_paths = [ str(path) for path in video_paths ]
         elif pyqt_version == 5:
             video_paths = QFileDialog.getOpenFileNames(self.param_window, 'Select videos to process.', '', 'Videos (*.tif *.tiff *.npy)')[0]
 
@@ -155,7 +162,7 @@ class Controller():
         self.roi_filtering_controller.locked_rois       = roi_data['locked_rois']
 
         # show ROI filtering parameters
-        self.show_roi_filtering_params(self.watershed_controller.labels, self.watershed_controller.roi_areas, self.watershed_controller.roi_circs, None, None, None, loading_rois=True)
+        self.show_roi_filtering_params(self.watershed_controller.labels, self.watershed_controller.roi_areas, self.watershed_controller.roi_circs, None, None, None, None, loading_rois=True)
 
     def open_videos(self, video_paths):
         # add the new video paths to the currently loaded video paths
@@ -308,11 +315,14 @@ class Controller():
 
         self.preview_window.setWindowTitle("Preview")
 
-    def show_motion_correction_params(self):
+    def show_motion_correction_params(self, switched_to=False):
         self.param_window.stacked_widget.setCurrentIndex(0)
         self.mode = "motion_correct"
         self.preview_window.controller = self.motion_correction_controller
-        self.motion_correction_controller.video_opened(self.normalized_video, self.video_path)
+        if switched_to:
+            self.motion_correction_controller.switched_to()
+        else:
+            self.motion_correction_controller.video_opened(self.normalized_video, self.video_path)
         self.param_window.statusBar().showMessage("")
 
     def show_roi_filtering_params(self, labels, roi_areas, roi_circs, mean_images, normalized_images, filtered_out_rois, roi_overlay, loading_rois=False):
@@ -398,7 +408,6 @@ class MotionCorrectionController():
         self.adjusted_mc_frame = None
         
         self.video_path    = None
-        self.mc_video_path = None
 
         self.use_mc_video = False
 
@@ -523,9 +532,8 @@ class MotionCorrectionController():
     def motion_correction_progress(self, percent):
         self.param_widget.update_motion_correction_progress(percent)
 
-    def motion_correction_finished(self, mc_video, mc_video_path):
+    def motion_correction_finished(self, mc_video):
         self.mc_video      = mc_video
-        self.mc_video_path = mc_video_path
 
         self.param_widget.update_motion_correction_progress(100)
 
@@ -569,7 +577,7 @@ class MotionCorrectionController():
         self.preview_window.timer.stop()
 
         if self.use_mc_video:
-            self.main_controller.show_watershed_params(video=self.mc_video, video_path=self.mc_video_path)
+            self.main_controller.show_watershed_params(video=self.mc_video, video_path=self.video_path)
         else:
             self.main_controller.show_watershed_params(video=self.video, video_path=self.video_path)
 
@@ -835,7 +843,7 @@ class WatershedController():
     def motion_correct(self):
         self.cancel_watershed()
 
-        self.main_controller.show_motion_correction_params()
+        self.main_controller.show_motion_correction_params(switched_to=True)
 
     def filter_rois(self):
         self.cancel_watershed()
@@ -909,8 +917,12 @@ class ROIFilteringController():
             else:
                 self.normalized_images = [ utilities.normalize(mean_image).astype(np.uint8) for mean_image in self.mean_images ]
 
-            self.original_labels   = labels.copy()
-            self.labels            = self.original_labels.copy()
+            if python_version == 3:
+                self.original_labels   = labels.copy()
+                self.labels            = self.original_labels.copy()
+            else:
+                self.original_labels   = labels[:]
+                self.labels            = self.original_labels[:]
             self.roi_areas         = roi_areas
             self.roi_circs         = roi_circs
             self.filtered_out_rois = filtered_out_rois
@@ -921,10 +933,16 @@ class ROIFilteringController():
                 self.locked_rois = [ [] for i in range(video.shape[1]) ]
 
                 if self.filtered_out_rois is None:
-                    self.filtered_out_rois = filtered_out_rois.copy()
+                    if python_version == 3:
+                        self.filtered_out_rois = filtered_out_rois.copy()
+                    else:
+                        self.filtered_out_rois = filtered_out_rois[:]
 
                 if self.removed_rois is None:
-                    self.removed_rois = filtered_out_rois.copy()
+                    if python_version == 3:
+                        self.removed_rois = filtered_out_rois.copy()
+                    else:
+                        self.removed_rois = filtered_out_rois[:]
             
             self.last_erased_rois  = [ [] for i in range(video.shape[1]) ]
 
@@ -946,7 +964,7 @@ class ROIFilteringController():
             if self.filtered_out_rois is None:
                 self.filter_rois(z=self.z)
 
-            self.calculate_watershed_image(z=self.z, update_overlay=False)
+            self.calculate_watershed_image(z=self.z, update_overlay=self.roi_overlay is None)
 
             self.param_widget.show_watershed_checkbox.setDisabled(False)
             self.param_widget.show_watershed_checkbox.setChecked(True)
@@ -1155,39 +1173,63 @@ class ROIFilteringController():
         if len(self.previous_locked_rois[self.z]) > 20:
             del self.previous_locked_rois[self.z][0]
 
-        self.previous_labels[self.z].append(self.labels[self.z].copy())
+        if python_version == 3:
+            self.previous_labels[self.z].append(self.labels[self.z].copy())
+            self.previous_erased_rois[self.z].append(self.erased_rois[self.z].copy())
+            self.previous_filtered_out_rois[self.z].append(self.filtered_out_rois[self.z].copy())
+            self.previous_removed_rois[self.z].append(self.removed_rois[self.z].copy())
+            self.previous_locked_rois[self.z].append(self.locked_rois[self.z].copy())
+        else:
+            self.previous_labels[self.z].append(self.labels[self.z][:])
+            self.previous_erased_rois[self.z].append(self.erased_rois[self.z][:])
+            self.previous_filtered_out_rois[self.z].append(self.filtered_out_rois[self.z][:])
+            self.previous_removed_rois[self.z].append(self.removed_rois[self.z][:])
+            self.previous_locked_rois[self.z].append(self.locked_rois[self.z][:])
+        
         self.previous_roi_overlays[self.z].append(self.roi_overlay.copy())
-        self.previous_erased_rois[self.z].append(self.erased_rois[self.z].copy())
-        self.previous_filtered_out_rois[self.z].append(self.filtered_out_rois[self.z].copy())
         self.previous_adjusted_images[self.z].append(self.adjusted_image.copy())
         self.previous_watershed_images[self.z].append(self.watershed_image.copy())
         if self.selected_roi is not None:
             self.previous_selected_rois[self.z].append(self.selected_roi.copy())
-        self.previous_removed_rois[self.z].append(self.removed_rois[self.z].copy())
-        self.previous_locked_rois[self.z].append(self.locked_rois[self.z].copy())
 
     def undo(self):
         if len(self.previous_labels[self.z]) > 1:
             del self.previous_labels[self.z][-1]
-            self.labels[self.z]            = self.previous_labels[self.z][-1].copy()
+
+            if python_version == 3:
+                self.labels[self.z] = self.previous_labels[self.z][-1].copy()
+            else:
+                self.labels[self.z] = self.previous_labels[self.z][-1][:]
         if len(self.previous_roi_overlays[self.z]) > 1:
             del self.previous_roi_overlays[self.z][-1]
-            self.roi_overlay               = self.previous_roi_overlays[self.z][-1].copy()
+
+            self.roi_overlay = self.previous_roi_overlays[self.z][-1].copy()
         if len(self.previous_erased_rois[self.z]) > 1:
             del self.previous_erased_rois[self.z][-1]
-            self.erased_rois[self.z]       = self.previous_erased_rois[self.z][-1].copy()
+
+            if python_version == 3:
+                self.erased_rois[self.z] = self.previous_erased_rois[self.z][-1].copy()
+            else:
+                self.erased_rois[self.z] = self.previous_erased_rois[self.z][-1][:]
         if len(self.previous_adjusted_images[self.z]) > 1:
             del self.previous_adjusted_images[self.z][-1]
-            self.adjusted_image    = self.previous_adjusted_images[self.z][-1].copy()
+
+            self.adjusted_image  = self.previous_adjusted_images[self.z][-1].copy()
         if len(self.previous_watershed_images[self.z]) > 1:
             del self.previous_watershed_images[self.z][-1]
-            self.watershed_image   = self.previous_watershed_images[self.z][-1].copy()
+
+            self.watershed_image = self.previous_watershed_images[self.z][-1].copy()
         if len(self.previous_selected_rois[self.z]) > 1:
             del self.previous_selected_rois[self.z][-1]
-            self.selected_roi    = self.previous_selected_rois[self.z][-1].copy()
+
+            self.selected_roi = self.previous_selected_rois[self.z][-1].copy()
         if len(self.previous_locked_rois[self.z]) > 1:
             del self.previous_locked_rois[self.z][-1]
-            self.locked_rois[self.z]       = self.previous_locked_rois[self.z][-1].copy()
+
+            if python_version == 3:
+                self.locked_rois[self.z] = self.previous_locked_rois[self.z][-1].copy()
+            else:
+                self.locked_rois[self.z] = self.previous_locked_rois[self.z][-1][:]
 
         print(self.erased_rois)
 
@@ -1199,20 +1241,16 @@ class ROIFilteringController():
 
     def undo_erase(self):
         self.undo()
-        # if len(self.last_erased_rois[self.z]) > 0:
-        #     self.erased_rois[self.z] = self.erased_rois[self.z][:-len(self.last_erased_rois[self.z][-1])]
-        #     del self.last_erased_rois[self.z][-1]
-        #     self.removed_rois[self.z] = self.filtered_out_rois[self.z] + self.erased_rois[self.z]
-
-        #     self.calculate_watershed_image(z=self.z, update_overlay=True)
-
-        #     self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
 
     def reset_erase(self):
-        self.labels[self.z]           = self.original_labels[self.z].copy()
+        if pyqt_version == 3:
+            self.labels[self.z]           = self.original_labels[self.z].copy()
+            self.removed_rois[self.z]     = self.filtered_out_rois[self.z].copy()
+        else:
+            self.labels[self.z]           = self.original_labels[self.z][:]
+            self.removed_rois[self.z]     = self.filtered_out_rois[self.z][:]
         self.erased_rois[self.z]      = []
         self.last_erased_rois[self.z] = []
-        self.removed_rois[self.z]     = self.filtered_out_rois[self.z].copy()
 
         self.calculate_watershed_image(z=self.z, update_overlay=True)
 
@@ -1249,7 +1287,6 @@ class ROIFilteringController():
 
     def enlarge_roi(self):
         if self.selected_roi >= 1:
-            prev_labels = self.labels[self.z].copy()
             mask = self.labels[self.z] == self.selected_roi
             mask = binary_dilation(mask, disk(1))
 
@@ -1276,13 +1313,10 @@ class ROIFilteringController():
 
     def shrink_roi(self):
         if self.selected_roi >= 1:
-            prev_labels = self.labels[self.z].copy()
-            
             labels = self.labels[self.z].copy()
-            mask = prev_labels == self.selected_roi
+            mask = self.labels[self.z] == self.selected_roi
             labels[mask] = 0
 
-            mask = self.labels[self.z] == self.selected_roi
             mask = erosion(mask, disk(1))
             labels[mask] = self.selected_roi
 
@@ -1311,7 +1345,7 @@ class ROIFilteringController():
         self.figure = None
 
     def motion_correct(self):
-        self.main_controller.show_motion_correction_params()
+        self.main_controller.show_motion_correction_params(switched_to=True)
 
     def watershed(self):
         self.main_controller.show_watershed_params(roi_overlay=self.roi_overlay)
@@ -1320,7 +1354,7 @@ class ROIFilteringController():
         json.dump(self.params, open(ROI_FILTERING_PARAMS_FILENAME, "w"))
 
 class MotionCorrectThread(QThread):
-    finished = pyqtSignal(np.ndarray, str)
+    finished = pyqtSignal(np.ndarray)
     progress = pyqtSignal(int)
 
     def __init__(self, parent):
@@ -1338,10 +1372,10 @@ class MotionCorrectThread(QThread):
     def run(self):
         self.running = True
 
-        mc_video, mc_video_path = utilities.motion_correct(self.video, self.video_path, self.max_shift, self.patch_stride, self.patch_overlap, progress_signal=self.progress, thread=self)
+        mc_video = utilities.motion_correct(self.video, self.video_path, self.max_shift, self.patch_stride, self.patch_overlap, progress_signal=self.progress, thread=self)
 
         if mc_video is not None:
-            self.finished.emit(mc_video, mc_video_path)
+            self.finished.emit(mc_video)
 
         self.running = False
 
@@ -1504,10 +1538,12 @@ class ProcessVideosThread(QThread):
 
             if self.motion_correct:
                 print("Performing motion correction...")
-                mc_video, mc_video_path, offset = utilities.motion_correct(video, video_path, self.max_shift, self.patch_stride, self.patch_overlap)
+                mc_video = utilities.motion_correct(video, video_path, self.max_shift, self.patch_stride, self.patch_overlap)
 
                 if video_shape is None:
                     video_shape = mc_video.shape
+
+                np.save(os.path.join(video_dir_path, '{}_motion_corrected.npy'.format(name)), mc_video)
 
             if not self.running:
                 self.running = False
@@ -1518,7 +1554,10 @@ class ProcessVideosThread(QThread):
 
             results = [ {} for z in range(video.shape[1]) ]
 
-            labels = self.labels.copy()
+            if python_version == 3:
+                labels = self.labels.copy()
+            else:
+                labels = self.labels[:]
 
             if self.motion_correct:
                 vid = mc_video
@@ -1527,21 +1566,21 @@ class ProcessVideosThread(QThread):
 
             # print(labels[0].shape, vid.shape, video_shape)
 
-            if video_shape[2] > vid.shape[2] or video_shape[3] > vid.shape[3]:
+            if labels[0].shape[0] > vid.shape[2] or labels[0].shape[1] > vid.shape[3]:
                 print("Cropping labels...")
-                height_pad =  (video_shape[2] - vid.shape[2])//2
-                width_pad  =  (video_shape[3] - vid.shape[3])//2
+                height_pad =  (labels[0].shape[0] - vid.shape[2])//2
+                width_pad  =  (labels[0].shape[1] - vid.shape[3])//2
 
                 for i in range(len(labels)):
                     labels[i] = labels[i][height_pad:, width_pad:]
                     labels[i] = labels[i][:vid.shape[2], :vid.shape[3]]
-            elif video_shape[2] < vid.shape[2] or video_shape[3] < vid.shape[3]:
+            elif labels[0].shape[0] < vid.shape[2] or labels[0].shape[1] < vid.shape[3]:
                 print("Padding labels...")
-                height_pad_pre =  (vid.shape[2] - video_shape[2])//2
-                width_pad_pre  =  (vid.shape[3] - video_shape[3])//2
+                height_pad_pre =  (vid.shape[2] - labels[0].shape[0])//2
+                width_pad_pre  =  (vid.shape[3] - labels[0].shape[1])//2
 
-                height_pad_post = vid.shape[2] - video_shape[2] - height_pad_pre
-                width_pad_post  = vid.shape[3] - video_shape[3] - width_pad_pre
+                height_pad_post = vid.shape[2] - labels[0].shape[0] - height_pad_pre
+                width_pad_post  = vid.shape[3] - labels[0].shape[1] - width_pad_pre
 
                 # print(height_pad_pre, height_pad_post, width_pad_pre, width_pad_post)
 
@@ -1551,9 +1590,11 @@ class ProcessVideosThread(QThread):
             # print(labels[0].shape, vid.shape, video_shape)
 
             for z in range(video.shape[1]):
+                np.save(os.path.join(video_dir_path, 'z_{}_rois.npy'.format(z)), labels[z])
+
                 print("Calculating ROI activities for z={}...".format(z))
                 for l in np.unique(labels[z]):
-                    activity = utilities.calc_activity_of_roi(labels[z], video, l, z=z)
+                    activity = utilities.calc_activity_of_roi(labels[z], vid, l, z=z)
 
                     results[z][l] = activity
 

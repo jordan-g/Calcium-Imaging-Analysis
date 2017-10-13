@@ -1,11 +1,14 @@
 # import the Qt library
+
 try:
     from PyQt4.QtCore import *
     from PyQt4.QtGui import *
+    pyqt_version = 4
 except:
     from PyQt5.QtCore import *
     from PyQt5.QtGui import *
     from PyQt5.QtWidgets import *
+    pyqt_version = 5
 
 import os
 
@@ -67,7 +70,10 @@ class ParamWindow(QMainWindow):
         self.toggle_initial_state(True)
 
         # set window title bar buttons
-        self.setWindowFlags(Qt.CustomizeWindowHint | Qt.WindowCloseButtonHint | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint | Qt.WindowFullscreenButtonHint)
+        if pyqt_version == 5:
+            self.setWindowFlags(Qt.CustomizeWindowHint | Qt.WindowCloseButtonHint | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint | Qt.WindowFullscreenButtonHint)
+        else:
+            self.setWindowFlags(Qt.CustomizeWindowHint | Qt.WindowCloseButtonHint | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint)
 
         self.show()
 
