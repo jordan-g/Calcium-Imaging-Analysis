@@ -41,7 +41,8 @@ DEFAULT_VIEWING_PARAMS = {'gamma'   : 1.0,
 
 DEFAULT_WATERSHED_PARAMS = {'window_size'         : 7,
                             'background_threshold': 10,
-                            'invert_masks'        : False}
+                            'invert_masks'        : False,
+                            'soma_threshold'      : 1}
 
 DEFAULT_MOTION_CORRECTION_PARAMS = {'max_shift'    : 6,
                                     'patch_stride' : 24,
@@ -673,7 +674,7 @@ class WatershedController():
         self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
 
     def draw_mask(self):
-        print(self.preview_window.drawing_mask)
+        # print(self.preview_window.drawing_mask)
         if not self.preview_window.drawing_mask:
             self.preview_window.plot_image(self.adjusted_image)
 
@@ -771,7 +772,7 @@ class WatershedController():
             else:
                 self.watershed_thread.running = False
 
-            self.watershed_thread.set_parameters(self.video, self.mean_images, self.masks, self.filtering_params["min_area"], self.filtering_params["max_area"], self.filtering_params["min_circ"], self.filtering_params["max_circ"], self.params['soma_threshold'], self.params['window_size'], self.params['background_threshold'], self.params['contrast'], self.params['gamma'])
+            self.watershed_thread.set_parameters(self.video, self.mean_images, self.masks, self.filtering_params["min_area"], self.filtering_params["max_area"], self.filtering_params["min_circ"], self.filtering_params["max_circ"], self.params['soma_threshold'], self.params['window_size'], self.params['background_threshold'], self.main_controller.params['contrast'], self.main_controller.params['gamma'])
 
             self.watershed_thread.start()
 
@@ -1231,7 +1232,7 @@ class ROIFilteringController():
             else:
                 self.locked_rois[self.z] = self.previous_locked_rois[self.z][-1][:]
 
-        print(self.erased_rois)
+        # print(self.erased_rois)
 
         self.removed_rois[self.z] = self.filtered_out_rois[self.z] + self.erased_rois[self.z]
 
@@ -1402,7 +1403,7 @@ class WatershedThread(QThread):
         self.contrast             = contrast
         self.gamma                = gamma
 
-        print(self.min_area, self.max_area, self.min_circ, self.max_circ)
+        # print(self.min_area, self.max_area, self.min_circ, self.max_circ)
 
     def run(self):
         labels            = [ [] for i in range(self.video.shape[1]) ]

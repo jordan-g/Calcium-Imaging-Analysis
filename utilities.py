@@ -195,6 +195,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         progress_signal.emit(percent_complete)
 
     for z in range(video.shape[1]):
+    	print(z)
         video_path = os.path.join(directory, os.path.splitext(filename)[0] + "_z_{}.tif".format(z))
         imsave(video_path, video[:, z, :, :])
 
@@ -471,16 +472,18 @@ def apply_watershed(original_image, cells_mask, starting_image):
 
         # detect contours in the mask and grab the largest one
         cnts = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
-        c = max(cnts, key=cv2.contourArea)
 
-        area = cv2.contourArea(c)
+        if len(cnts) > 0:
+        	c = max(cnts, key=cv2.contourArea)
 
-        perimeter = cv2.arcLength(c, True)
+        	area = cv2.contourArea(c)
 
-        if area > 0:
-            roi_circs[l-1] = (perimeter**2)/(4*np.pi*area)
+        	perimeter = cv2.arcLength(c, True)
 
-        roi_areas[l-1] = area
+        	if area > 0:
+        	    roi_circs[l-1] = (perimeter**2)/(4*np.pi*area)
+
+        	roi_areas[l-1] = area
 
     return labels, roi_areas, roi_circs
 
