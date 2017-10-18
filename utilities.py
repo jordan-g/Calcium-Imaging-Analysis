@@ -195,7 +195,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         progress_signal.emit(percent_complete)
 
     for z in range(video.shape[1]):
-    	print(z)
+        print(z)
         video_path = os.path.join(directory, os.path.splitext(filename)[0] + "_z_{}.tif".format(z))
         imsave(video_path, video[:, z, :, :])
 
@@ -345,11 +345,6 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
 
         mc_videos_list.append(np.nan_to_num(images))
 
-        cm.stop_server()
-        log_files = glob.glob('Yr*_LOG_*')
-        for log_file in log_files:
-            os.remove(log_file)
-
         os.remove(video_path)
 
         # out = np.zeros(m_els.shape)
@@ -397,6 +392,11 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         mc_video[:, z, :, :] = b
 
         # print(np.amax(mc_video), np.amin(mc_video))
+
+    cm.stop_server()
+    log_files = glob.glob('Yr*_LOG_*')
+    for log_file in log_files:
+        os.remove(log_file)
 
     if thread is not None and thread.running == False:
         return None
@@ -474,16 +474,16 @@ def apply_watershed(original_image, cells_mask, starting_image):
         cnts = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
 
         if len(cnts) > 0:
-        	c = max(cnts, key=cv2.contourArea)
+            c = max(cnts, key=cv2.contourArea)
 
-        	area = cv2.contourArea(c)
+            area = cv2.contourArea(c)
 
-        	perimeter = cv2.arcLength(c, True)
+            perimeter = cv2.arcLength(c, True)
 
-        	if area > 0:
-        	    roi_circs[l-1] = (perimeter**2)/(4*np.pi*area)
+            if area > 0:
+                roi_circs[l-1] = (perimeter**2)/(4*np.pi*area)
 
-        	roi_areas[l-1] = area
+            roi_areas[l-1] = area
 
     return labels, roi_areas, roi_circs
 
