@@ -608,6 +608,7 @@ class ROIFilteringWidget(ParamWidget):
         self.add_param_slider(label_name="Maximum Area", name="max_area", minimum=1, maximum=500, moved=self.update_param, multiplier=1, released=self.update_param, description="Maximum ROI area.")
         self.add_param_slider(label_name="Minimum Circulature", name="min_circ", minimum=0, maximum=500, moved=self.update_param, multiplier=100, released=self.update_param, description="Minimum ROI circulature.")
         self.add_param_slider(label_name="Maximum Circulature", name="max_circ", minimum=0, maximum=500, moved=self.update_param, multiplier=100, released=self.update_param, description="Maximum ROI circulature.")
+        self.add_param_slider(label_name="Minimum Correlation", name="min_correlation", minimum=0, maximum=1000, moved=self.update_param, multiplier=1000, released=self.update_param, description="Minimum mean pixel correlation of ROI.")
 
         self.main_layout.addStretch()
         

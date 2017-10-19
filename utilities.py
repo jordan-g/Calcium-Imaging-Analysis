@@ -103,6 +103,9 @@ def calculate_local_correlations(movie):
 def mean(movie, z=0):
     return np.mean(movie[:, z, :, :], axis=0)
 
+def correlation(movie, z=0):
+    return np.abs(cm.local_correlations_fft(movie[:, z, :, :], swap_dim=False))
+
 def std(movie):
     return np.median(movie, axis=0)
 
@@ -487,7 +490,7 @@ def apply_watershed(original_image, cells_mask, starting_image):
 
     return labels, roi_areas, roi_circs
 
-def filter_rois(image, labels, min_area, max_area, min_circ, max_circ, roi_areas, roi_circs, locked_rois=[]):
+def filter_rois(image, labels, min_area, max_area, min_circ, max_circ, roi_areas, roi_circs, correlations, min_correlation, locked_rois=[]):
     filtered_labels = labels.copy()
     filtered_out_rois = []
 
@@ -500,12 +503,18 @@ def filter_rois(image, labels, min_area, max_area, min_circ, max_circ, roi_areas
         else:
             mask = labels == l
 
-            a = dilation(mask, disk(1))
-            b = erosion(mask, disk(1))
+            # a = dilation(mask, disk(1))
+            # b = erosion(mask, disk(1))
 
-            difference = np.mean(image[a - b]) - np.mean(image[b])
+            # difference = np.mean(image[a - b]) - np.mean(image[b])
 
-            if (difference != np.nan and difference < 4.0):
+            # if (difference != np.nan and difference < 4.0):
+            #     filtered_labels[mask] = 0
+            #     filtered_out_rois.append(l)
+
+            correlation = np.mean(correlations[mask])
+
+            if correlation < min_correlation:
                 filtered_labels[mask] = 0
                 filtered_out_rois.append(l)
 
