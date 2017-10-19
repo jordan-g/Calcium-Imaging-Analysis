@@ -1067,17 +1067,28 @@ class ROIFilteringController():
         # add to ROI mask
         cv2.ellipse(mask, center_point, (axis_1, axis_2), 0, 0, 360, 1, -1)
 
-        self.labels[self.z][mask == 1] = l
+        # detect contours in the mask and grab the largest one
+        c = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2][0]
 
-        utilities.add_roi_to_overlay(self.roi_overlay, self.labels[self.z] == l, self.labels[self.z])
+        area = cv2.contourArea(c)
 
-        self.locked_rois.append(l)
+        if area > 0:
+            perimeter = cv2.arcLength(c, True)
 
-        self.calculate_watershed_image(z=self.z, update_overlay=False)
+            self.roi_circs[self.z] = np.append(self.roi_circs[self.z], [(perimeter**2)/(4*np.pi*area)])
+            self.roi_areas[self.z] = np.append(self.roi_areas[self.z], [area])
 
-        self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
+            self.labels[self.z][mask == 1] = l
 
-        self.add_to_history()
+            utilities.add_roi_to_overlay(self.roi_overlay, self.labels[self.z] == l, self.labels[self.z])
+
+            self.locked_rois[self.z].append(l)
+
+            self.calculate_watershed_image(z=self.z, update_overlay=False)
+
+            self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
+
+            self.add_to_history()
 
     def erase_rois(self):
         self.rois_erased = False
@@ -1108,7 +1119,7 @@ class ROIFilteringController():
 
         for i in range(len(rois_to_erase)):
             roi = rois_to_erase[i]
-            if roi in self.locked_rois or roi in self.erased_rois:
+            if roi in self.locked_rois[self.z] or roi in self.erased_rois[self.z]:
                 del rois_to_erase[i]
 
         if len(rois_to_erase) > 0:
