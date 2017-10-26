@@ -665,6 +665,28 @@ class WatershedController():
 
             self.normalized_images = [ utilities.normalize(mean_image).astype(np.uint8) for mean_image in self.mean_images ]
 
+            if self.video.shape[1] > 1:
+                window_size = 100
+                mean_vals = [ np.mean(self.normalized_images[0][:window_size, :window_size]), np.mean(self.normalized_images[0][:window_size, -window_size:]), np.mean(self.normalized_images[0][-window_size:, :window_size]), np.mean(self.normalized_images[0][-window_size:, -window_size:]) ]
+                bg_brightness_0 = min(mean_vals)
+                bg_window_index = mean_vals.index(bg_brightness_0)
+
+                # print(bg_window_index)
+
+                for z in range(1, self.video.shape[1]):
+                    if bg_window_index == 0:
+                        bg_brightness = np.mean(self.normalized_images[z][:window_size, :window_size])
+                    elif bg_window_index == 1:
+                        bg_brightness = np.mean(self.normalized_images[z][:window_size, -window_size:])
+                    elif bg_window_index == 2:
+                        bg_brightness = np.mean(self.normalized_images[z][-window_size:, :window_size])
+                    else:
+                        bg_brightness = np.mean(self.normalized_images[z][-window_size:, -window_size:])
+
+                    difference = round(bg_brightness - bg_brightness_0).astype(int)
+
+                    self.normalized_images[z] = np.maximum(self.normalized_images[z].astype(int) - difference, 0).astype(np.uint8)
+
             self.masks             = [ [] for i in range(video.shape[1]) ]
             self.mask_points       = [ [] for i in range(video.shape[1]) ]
             
@@ -924,6 +946,28 @@ class ROIFilteringController():
             else:
                 self.normalized_images = [ utilities.normalize(mean_image).astype(np.uint8) for mean_image in self.mean_images ]
 
+                if self.video.shape[1] > 1:
+                    window_size = 100
+                    mean_vals = [ np.mean(self.normalized_images[0][:window_size, :window_size]), np.mean(self.normalized_images[0][:window_size, -window_size:]), np.mean(self.normalized_images[0][-window_size:, :window_size]), np.mean(self.normalized_images[0][-window_size:, -window_size:]) ]
+                    bg_brightness_0 = min(mean_vals)
+                    bg_window_index = mean_vals.index(bg_brightness_0)
+
+                    # print(bg_window_index)
+
+                    for z in range(1, self.video.shape[1]):
+                        if bg_window_index == 0:
+                            bg_brightness = np.mean(self.normalized_images[z][:window_size, :window_size])
+                        elif bg_window_index == 1:
+                            bg_brightness = np.mean(self.normalized_images[z][:window_size, -window_size:])
+                        elif bg_window_index == 2:
+                            bg_brightness = np.mean(self.normalized_images[z][-window_size:, :window_size])
+                        else:
+                            bg_brightness = np.mean(self.normalized_images[z][-window_size:, -window_size:])
+
+                        difference = round(bg_brightness - bg_brightness_0).astype(int)
+
+                        self.normalized_images[z] = np.maximum(self.normalized_images[z].astype(int) - difference, 0).astype(np.uint8)
+
             if correlation_images is not None:
                 self.correlation_images = correlation_images
             else:
@@ -1117,7 +1161,7 @@ class ROIFilteringController():
 
         rois_to_erase = utilities.get_rois_near_point(self.labels[self.z], roi_point, radius)
 
-        for i in range(len(rois_to_erase)):
+        for i in range(len(rois_to_erase)-1, -1, -1):
             roi = rois_to_erase[i]
             if roi in self.locked_rois[self.z] or roi in self.erased_rois[self.z]:
                 del rois_to_erase[i]
@@ -1213,7 +1257,7 @@ class ROIFilteringController():
         self.previous_adjusted_images[self.z].append(self.adjusted_image.copy())
         self.previous_watershed_images[self.z].append(self.watershed_image.copy())
         if self.selected_roi is not None:
-            self.previous_selected_rois[self.z].append(self.selected_roi.copy())
+            self.previous_selected_rois[self.z].append(self.selected_roi)
 
     def undo(self):
         if len(self.previous_labels[self.z]) > 1:
@@ -1245,7 +1289,7 @@ class ROIFilteringController():
         if len(self.previous_selected_rois[self.z]) > 1:
             del self.previous_selected_rois[self.z][-1]
 
-            self.selected_roi = self.previous_selected_rois[self.z][-1].copy()
+            self.selected_roi = self.previous_selected_rois[self.z][-1]
         if len(self.previous_locked_rois[self.z]) > 1:
             del self.previous_locked_rois[self.z][-1]
 
