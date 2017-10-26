@@ -666,7 +666,7 @@ class WatershedController():
             self.normalized_images = [ utilities.normalize(mean_image).astype(np.uint8) for mean_image in self.mean_images ]
 
             if self.video.shape[1] > 1:
-                window_size = 100
+                window_size = 50
                 mean_vals = [ np.mean(self.normalized_images[0][:window_size, :window_size]), np.mean(self.normalized_images[0][:window_size, -window_size:]), np.mean(self.normalized_images[0][-window_size:, :window_size]), np.mean(self.normalized_images[0][-window_size:, -window_size:]) ]
                 bg_brightness_0 = min(mean_vals)
                 bg_window_index = mean_vals.index(bg_brightness_0)
@@ -947,12 +947,10 @@ class ROIFilteringController():
                 self.normalized_images = [ utilities.normalize(mean_image).astype(np.uint8) for mean_image in self.mean_images ]
 
                 if self.video.shape[1] > 1:
-                    window_size = 100
+                    window_size = 50
                     mean_vals = [ np.mean(self.normalized_images[0][:window_size, :window_size]), np.mean(self.normalized_images[0][:window_size, -window_size:]), np.mean(self.normalized_images[0][-window_size:, :window_size]), np.mean(self.normalized_images[0][-window_size:, -window_size:]) ]
                     bg_brightness_0 = min(mean_vals)
                     bg_window_index = mean_vals.index(bg_brightness_0)
-
-                    # print(bg_window_index)
 
                     for z in range(1, self.video.shape[1]):
                         if bg_window_index == 0:
