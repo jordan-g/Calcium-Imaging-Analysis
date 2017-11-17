@@ -22,7 +22,7 @@ from past.utils import old_div
 import numpy as np
 from scipy.ndimage.filters import correlate, convolve
 import cv2
-from caiman.source_extraction.cnmf.pre_processing import get_noise_fft, get_noise_fft_parallel
+# from caiman.source_extraction.cnmf.pre_processing import get_noise_fft, get_noise_fft_parallel
 import pdb
 #%%
 

@@ -209,12 +209,12 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
 
         params_movie = {'fname': video_path,
                         'max_shifts': (max_shift, max_shift),  # maximum allow rigid shift (2,2)
-                        'niter_rig': 2,
-                        'splits_rig': 20,  # for parallelization split the movies in  num_splits chuncks across time
+                        'niter_rig': 1,
+                        'splits_rig': 4,  # for parallelization split the movies in  num_splits chuncks across time
                         'num_splits_to_process_rig': None,  # if none all the splits are processed and the movie is saved
                         'strides': (patch_stride, patch_stride),  # intervals at which patches are laid out for motion correction
                         'overlaps': (patch_overlap, patch_overlap),  # overlap between pathes (size of patch strides+overlaps)
-                        'splits_els': 20,  # for parallelization split the movies in  num_splits chuncks across time
+                        'splits_els': 4,  # for parallelization split the movies in  num_splits chuncks across time
                         'num_splits_to_process_els': [None],  # if none all the splits are processed and the movie is saved
                         'upsample_factor_grid': 4,  # upsample factor to avoid smearing when merging patches
                         'max_deviation_rigid': 10,  # maximum deviation allowed for patch with respect to rigid shift         
@@ -357,7 +357,6 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
 
         if thread is not None and thread.running == False:
             return None
-            
 
         if progress_signal:
             # send an update signal to the GUI

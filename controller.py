@@ -404,13 +404,13 @@ class MotionCorrectionController():
 
         self.video    = None
         self.mc_video = None
-        
+
         self.adjusted_video    = None
         self.adjusted_mc_video = None
-        
+
         self.adjusted_frame    = None
         self.adjusted_mc_frame = None
-        
+
         self.video_path    = None
 
         self.use_mc_video = False
@@ -460,7 +460,7 @@ class MotionCorrectionController():
             adjusted_frame = self.calculate_adjusted_frame(self.mc_video)
         else:
             adjusted_frame = self.calculate_adjusted_frame(self.video)
-          
+
         self.preview_window.show_frame(adjusted_frame)
 
     def preview_gamma(self, gamma):
@@ -623,7 +623,7 @@ class WatershedController():
 
         if clear_progress:
             self.roi_overlay          = None
-        
+
             self.masks             = None
             self.mask_points       = None
             self.selected_mask     = None
@@ -683,13 +683,13 @@ class WatershedController():
                     else:
                         bg_brightness = np.mean(self.normalized_images[z][-window_size:, -window_size:])
 
-                    difference = round(bg_brightness - bg_brightness_0).astype(int)
+                    difference = int(round(bg_brightness - bg_brightness_0))
 
                     self.normalized_images[z] = np.maximum(self.normalized_images[z].astype(int) - difference, 0).astype(np.uint8)
 
             self.masks             = [ [] for i in range(video.shape[1]) ]
             self.mask_points       = [ [] for i in range(video.shape[1]) ]
-            
+
             self.adjusted_image       = utilities.calculate_adjusted_image(self.normalized_images[self.z], self.main_controller.params['contrast'], self.main_controller.params['gamma'])
             self.background_mask      = utilities.calculate_background_mask(self.adjusted_image, self.params['background_threshold'])
             self.equalized_image      = utilities.calculate_equalized_image(self.adjusted_image, self.background_mask, self.params['window_size'])
@@ -800,7 +800,7 @@ class WatershedController():
             else:
                 self.watershed_thread.running = False
 
-            self.watershed_thread.set_parameters(self.video, self.mean_images, self.masks, self.filtering_params["min_area"], self.filtering_params["max_area"], self.filtering_params["min_circ"], self.filtering_params["max_circ"], self.filtering_params['min_correlation'], self.params['soma_threshold'], self.params['window_size'], self.params['background_threshold'], self.main_controller.params['contrast'], self.main_controller.params['gamma'], self.correlation_images)
+            self.watershed_thread.set_parameters(self.video, self.normalized_images, self.masks, self.filtering_params["min_area"], self.filtering_params["max_area"], self.filtering_params["min_circ"], self.filtering_params["max_circ"], self.filtering_params['min_correlation'], self.params['soma_threshold'], self.params['window_size'], self.params['background_threshold'], self.main_controller.params['contrast'], self.main_controller.params['gamma'], self.correlation_images)
 
             self.watershed_thread.start()
 
@@ -866,7 +866,7 @@ class WatershedController():
             self.selected_mask_num = -1
 
             self.param_widget.erase_selected_mask_button.setEnabled(False)
-            
+
             self.preview_window.plot_image(self.adjusted_image)
 
     def motion_correct(self):
@@ -935,7 +935,7 @@ class ROIFilteringController():
             self.z = self.main_controller.params['z']
 
             self.preview_window.timer.stop()
-            
+
             if mean_images is not None:
                 self.mean_images = mean_images
             else:
@@ -997,7 +997,7 @@ class ROIFilteringController():
                         self.removed_rois = filtered_out_rois.copy()
                     else:
                         self.removed_rois = filtered_out_rois[:]
-            
+
             self.last_erased_rois  = [ [] for i in range(video.shape[1]) ]
 
             self.previous_labels            = [ [] for i in range(video.shape[1]) ]
@@ -1168,7 +1168,7 @@ class ROIFilteringController():
             self.erased_rois[self.z] += rois_to_erase
             self.last_erased_rois[self.z][-1] += rois_to_erase
             self.removed_rois[self.z] = self.filtered_out_rois[self.z] + self.erased_rois[self.z]
-            
+
             self.calculate_watershed_image(z=self.z, update_overlay=False, newly_erased_rois=rois_to_erase)
 
             self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
@@ -1250,7 +1250,7 @@ class ROIFilteringController():
             self.previous_filtered_out_rois[self.z].append(self.filtered_out_rois[self.z][:])
             self.previous_removed_rois[self.z].append(self.removed_rois[self.z][:])
             self.previous_locked_rois[self.z].append(self.locked_rois[self.z][:])
-        
+
         self.previous_roi_overlays[self.z].append(self.roi_overlay.copy())
         self.previous_adjusted_images[self.z].append(self.adjusted_image.copy())
         self.previous_watershed_images[self.z].append(self.watershed_image.copy())
@@ -1526,7 +1526,7 @@ class WatershedThread(QThread):
                 labels[z] = out.copy()
 
             _, filtered_out_rois[z] = utilities.filter_rois(self.mean_images[z], labels[z], self.min_area, self.max_area, self.min_circ, self.max_circ, roi_areas[z], roi_circs[z], self.correlation_images[z], self.min_correlation)
-            
+
             if not self.running:
                 self.running = False
 
