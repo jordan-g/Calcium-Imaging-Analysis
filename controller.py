@@ -120,9 +120,9 @@ class Controller():
         if self.motion_correction_controller.mc_video is not None:
             # let the user pick where to save the video
             if pyqt_version == 4:
-                save_path = str(QFileDialog.getSaveFileName(self.param_window, 'Save Video', '{}_mc'.format(os.path.splitext(self.video_path)[0]), 'Videos (*.tif *.tiff *.npy)'))
+                save_path = str(QFileDialog.getSaveFileName(self.param_window, 'Save Video', '{}_motion_corrected'.format(os.path.splitext(self.video_path)[0]), 'Videos (*.tif *.tiff *.npy)'))
             elif pyqt_version == 5:
-                save_path = str(QFileDialog.getSaveFileName(self.param_window, 'Save Video', '{}_mc'.format(os.path.splitext(self.video_path)[0]), 'Videos (*.tif *.tiff *.npy)')[0])
+                save_path = str(QFileDialog.getSaveFileName(self.param_window, 'Save Video', '{}_motion_corrected'.format(os.path.splitext(self.video_path)[0]), 'Videos (*.tif *.tiff *.npy)')[0])
             if not (save_path.endswith('.npy') or save_path.endswith('.tif') or save_path.endswith('.tiff')):
                 save_path += ".tif"
 
@@ -188,21 +188,31 @@ class Controller():
             # show ROI filtering parameters
             self.show_roi_filtering_params(self.watershed_controller.labels, self.watershed_controller.roi_areas, self.watershed_controller.roi_circs, None, None, None, roi_data['filtered_out_rois'], None, loading_rois=True)
 
+            self.rois_created()
+
     def open_videos(self, video_paths):
+        if self.video_path is None:
+            # open the first video for previewing
+            success = self.open_video(video_paths[0])
+        else:
+            success = True
+
+        while not success:
+            del video_paths[0]
+
+            if len(video_paths) == 0:
+                return
+
+            # open the first video for previewing
+            success = self.open_video(video_paths[0])
+
         # add the new video paths to the currently loaded video paths
         self.video_paths += video_paths
 
         # notify the param window
         self.param_window.videos_opened(video_paths)
 
-        if self.video_path is None:
-            # open the first video for previewing
-            self.open_video(self.video_paths[0])
-
     def open_video(self, video_path):
-        # set the path to the previewed video
-        self.video_path = video_path
-
         # get the shape of the previously-previewed video, if any
         if self.video is None:
             previous_video_shape = None
@@ -210,13 +220,22 @@ class Controller():
             previous_video_shape = self.video.shape
 
         # open the video
-        base_name = os.path.basename(self.video_path)
+        base_name = os.path.basename(video_path)
         if base_name.endswith('.npy'):
-            self.video = np.load(self.video_path)
+            video = np.load(video_path)
         elif base_name.endswith('.tif') or base_name.endswith('.tiff'):
-            self.video = imread(self.video_path)
+            video = imread(video_path)
 
-        self.video = self.video[1:]
+        if len(video.shape) < 3:
+            print("Error: Opened file is not a video -- not enough dimensions.")
+            return False
+
+        # self.video = video[1:]
+
+        self.video = video
+
+        # set the path to the previewed video
+        self.video_path = video_path
 
         if len(self.video.shape) == 3:
             # add a z dimension
@@ -225,8 +244,6 @@ class Controller():
         # set z parameter to 0 if necessary
         if self.params['z'] >= self.video.shape[1]:
             self.params['z'] = 0
-
-        print(self.video.shape)
 
         # remove nans
         self.video = np.nan_to_num(self.video).astype(np.float32)
@@ -258,6 +275,8 @@ class Controller():
 
         # update the motion correction controller
         self.motion_correction_controller.video_opened(self.normalized_video, self.video_path)
+
+        return True
 
     def remove_videos_at_indices(self, indices):
         indices = sorted(indices)
@@ -985,7 +1004,7 @@ class ROIFilteringController():
                 # self.mean_images = [ ndi.median_filter(denoise_tv_chambolle(utilities.mean(self.video, z).astype(np.float32), weight=0.01, multichannel=False), 3) for z in range(video.shape[1]) ]
 
                 self.mean_images = [ ndi.median_filter(utilities.sharpen(ndi.gaussian_filter(denoise_tv_chambolle(utilities.mean(self.video, z).astype(np.float32), weight=0.01, multichannel=False), 1)), 3) for z in range(video.shape[1]) ]
-            
+
             if normalized_images is not None:
                 self.normalized_images = normalized_images
             else:
@@ -1650,6 +1669,8 @@ class ProcessVideosThread(QThread):
 
         video_shape = None
 
+        mean_images_list = []
+
         for i in range(len(self.video_paths)):
             video_path = self.video_paths[i]
 
@@ -1661,6 +1682,10 @@ class ProcessVideosThread(QThread):
                 video = imread(video_path)
 
             print("Processing {}.".format(base_name))
+
+            if len(video.shape) < 3:
+                print("Skipping, this file is not a video -- not enough dimensions.")
+                continue
 
             if len(video.shape) == 3:
                 # add z dimension
@@ -1708,8 +1733,6 @@ class ProcessVideosThread(QThread):
 
             self.progress.emit(int(100.0*float(i + (2/3))/len(self.video_paths)))
 
-            results = [ {} for z in range(video.shape[1]) ]
-
             if python_version == 3:
                 labels = self.labels.copy()
             else:
@@ -1722,28 +1745,55 @@ class ProcessVideosThread(QThread):
 
             # print(labels[0].shape, vid.shape, video_shape)
 
-            if labels[0].shape[0] > vid.shape[2] or labels[0].shape[1] > vid.shape[3]:
-                print("Cropping labels...")
-                height_pad =  (labels[0].shape[0] - vid.shape[2])//2
-                width_pad  =  (labels[0].shape[1] - vid.shape[3])//2
+            # if labels[0].shape[0] > vid.shape[2] or labels[0].shape[1] > vid.shape[3]:
+            #     print("Cropping labels...")
+            #     height_pad =  (labels[0].shape[0] - vid.shape[2])//2
+            #     width_pad  =  (labels[0].shape[1] - vid.shape[3])//2
 
-                for i in range(len(labels)):
-                    labels[i] = labels[i][height_pad:, width_pad:]
-                    labels[i] = labels[i][:vid.shape[2], :vid.shape[3]]
-            elif labels[0].shape[0] < vid.shape[2] or labels[0].shape[1] < vid.shape[3]:
-                print("Padding labels...")
-                height_pad_pre =  (vid.shape[2] - labels[0].shape[0])//2
-                width_pad_pre  =  (vid.shape[3] - labels[0].shape[1])//2
+            #     for i in range(len(labels)):
+            #         labels[i] = labels[i][height_pad:, width_pad:]
+            #         labels[i] = labels[i][:vid.shape[2], :vid.shape[3]]
+            # elif labels[0].shape[0] < vid.shape[2] or labels[0].shape[1] < vid.shape[3]:
+            #     print("Padding labels...")
+            #     height_pad_pre =  (vid.shape[2] - labels[0].shape[0])//2
+            #     width_pad_pre  =  (vid.shape[3] - labels[0].shape[1])//2
 
-                height_pad_post = vid.shape[2] - labels[0].shape[0] - height_pad_pre
-                width_pad_post  = vid.shape[3] - labels[0].shape[1] - width_pad_pre
+            #     height_pad_post = vid.shape[2] - labels[0].shape[0] - height_pad_pre
+            #     width_pad_post  = vid.shape[3] - labels[0].shape[1] - width_pad_pre
 
-                # print(height_pad_pre, height_pad_post, width_pad_pre, width_pad_post)
+            #     # print(height_pad_pre, height_pad_post, width_pad_pre, width_pad_post)
 
-                for i in range(len(labels)):
-                    labels[i] = np.pad(labels[i], ((height_pad_pre, height_pad_post), (width_pad_pre, width_pad_post)), 'constant')
+            #     for i in range(len(labels)):
+            #         labels[i] = np.pad(labels[i], ((height_pad_pre, height_pad_post), (width_pad_pre, width_pad_post)), 'constant')
 
             # print(labels[0].shape, vid.shape, video_shape)
+
+            # shift the labels to match the first video
+            mean_images_list.append([ ndi.median_filter(utilities.sharpen(ndi.gaussian_filter(denoise_tv_chambolle(utilities.mean(vid, z).astype(np.float32), weight=0.01, multichannel=False), 1)), 3) for z in range(vid.shape[1]) ])
+            if len(mean_images_list) > 0:
+                for z in range(vid.shape[1]):
+                    y_shift, x_shift = utilities.calculate_shift(mean_images_list[0][z], mean_images_list[i][z])
+
+                    if np.abs(y_shift) < 20 and np.abs(x_shift) < 20:
+                        labels[z] = np.roll(labels[z], -y_shift, axis=0)
+                        labels[z] = np.roll(labels[z], -x_shift, axis=1)
+
+                        if y_shift >= 0 and x_shift >= 0:
+                            labels[z][:y_shift, :] = 0
+                            labels[z][:, :x_shift] = 0
+                        elif y_shift < 0 and x_shift >= 0:
+                            labels[z][y_shift:, :] = 0
+                            labels[z][:, :x_shift] = 0
+                        elif y_shift >= 0 and x_shift < 0:
+                            labels[z][:y_shift, :] = 0
+                            labels[z][:, x_shift:] = 0
+                        else:
+                            labels[z][y_shift:, :] = 0
+                            labels[z][:, x_shift:] = 0
+
+            np.save(os.path.join(video_dir_path, '_rois.npy'), labels)
+
+            results = [ {} for z in range(video.shape[1]) ]
 
             for z in range(video.shape[1]):
                 np.save(os.path.join(video_dir_path, 'z_{}_rois.npy'.format(z)), labels[z])
