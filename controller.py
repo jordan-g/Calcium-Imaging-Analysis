@@ -224,6 +224,8 @@ class Controller():
         if self.params['z'] >= self.video.shape[1]:
             self.params['z'] = 0
 
+        print(self.video.shape)
+
         # remove nans
         self.video = np.nan_to_num(self.video).astype(np.float32)
 

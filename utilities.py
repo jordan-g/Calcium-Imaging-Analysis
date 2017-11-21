@@ -367,18 +367,23 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
     max_height = max([ a.shape[1] for a in mc_videos_list ])
     max_width  = max([ a.shape[2] for a in mc_videos_list ])
 
+    height = video.shape[2]
+    width  = video.shape[3]
+
+    mc_video = np.zeros(video.shape)
+
     # print("Max", max_height, max_width)
 
-    mc_video = np.zeros((video.shape[0], video.shape[1], max_height, max_width))
+    # mc_video = np.zeros((video.shape[0], video.shape[1], max_height, max_width))
 
     # print(mc_video.shape)
 
-    offset = ((video.shape[2] - max_height)//2, (video.shape[3] - max_width)//2)
+    # offset = ((video.shape[2] - max_height)//2, (video.shape[3] - max_width)//2)
 
     for z in range(len(mc_videos_list)):
         a = mc_videos_list[z]
-        height_pad = max_height - a.shape[1]
-        width_pad  = max_width - a.shape[2]
+        height_pad = height - a.shape[1]
+        width_pad  = width - a.shape[2]
 
         # print("Pad", height_pad, width_pad)
 
@@ -392,6 +397,8 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         # print(b.shape)
 
         mc_video[:, z, :, :] = b
+
+        print(mc_video.shape)
 
         # print(np.amax(mc_video), np.amin(mc_video))
 
