@@ -141,22 +141,23 @@ class Controller():
             if not save_path.endswith('.npy'):
                 save_path += ".npy"
 
-            if self.roi_filtering_controller.filtered_out_rois is None:
-                filtered_out_rois = self.watershed_controller.filtered_out_rois
-            else:
-                filtered_out_rois = self.roi_filtering_controller.filtered_out_rois
+            if save_path is not None and len(save_path) > 0:
+                if self.roi_filtering_controller.filtered_out_rois is None:
+                    filtered_out_rois = self.watershed_controller.filtered_out_rois
+                else:
+                    filtered_out_rois = self.roi_filtering_controller.filtered_out_rois
 
-            # create a dictionary to hold the ROI data
-            roi_data = {'labels'           : self.watershed_controller.labels,
-                        'roi_areas'        : self.watershed_controller.roi_areas,
-                        'roi_circs'        : self.watershed_controller.roi_circs,
-                        'filtered_out_rois': filtered_out_rois,
-                        'erased_rois'      : self.roi_filtering_controller.erased_rois,
-                        'removed_rois'     : self.roi_filtering_controller.removed_rois,
-                        'locked_rois'      : self.roi_filtering_controller.locked_rois}
+                # create a dictionary to hold the ROI data
+                roi_data = {'labels'           : self.watershed_controller.labels,
+                            'roi_areas'        : self.watershed_controller.roi_areas,
+                            'roi_circs'        : self.watershed_controller.roi_circs,
+                            'filtered_out_rois': filtered_out_rois,
+                            'erased_rois'      : self.roi_filtering_controller.erased_rois,
+                            'removed_rois'     : self.roi_filtering_controller.removed_rois,
+                            'locked_rois'      : self.roi_filtering_controller.locked_rois}
 
-            # save the ROI data
-            np.save(save_path, roi_data)
+                # save the ROI data
+                np.save(save_path, roi_data)
 
     def load_rois(self):
         # let the user pick saved ROIs
@@ -165,26 +166,27 @@ class Controller():
         elif pyqt_version == 5:
             load_path = QFileDialog.getOpenFileName(self.param_window, 'Select saved ROI data.', '', 'Numpy (*.npy)')[0]
 
-        # load the saved ROIs
-        roi_data = np.load(load_path)[()]
+        if load_path is not None and len(load_path) > 0:
+            # load the saved ROIs
+            roi_data = np.load(load_path)[()]
 
-        # stop any motion correction or watershed process
-        if self.mode == "motion_correct":
-            self.motion_correction_controller.cancel_motion_correction()
-        elif self.mode == "watershed":
-            self.watershed_controller.cancel_watershed()
+            # stop any motion correction or watershed process
+            if self.mode == "motion_correct":
+                self.motion_correction_controller.cancel_motion_correction()
+            elif self.mode == "watershed":
+                self.watershed_controller.cancel_watershed()
 
-        # set parameters of watershed & ROI filtering controllers
-        self.watershed_controller.labels                = roi_data['labels']
-        self.watershed_controller.roi_areas             = roi_data['roi_areas']
-        self.watershed_controller.roi_circs             = roi_data['roi_circs']
-        self.watershed_controller.filtered_out_rois     = roi_data['filtered_out_rois']
-        self.roi_filtering_controller.erased_rois       = roi_data['erased_rois']
-        self.roi_filtering_controller.removed_rois      = roi_data['removed_rois']
-        self.roi_filtering_controller.locked_rois       = roi_data['locked_rois']
+            # set parameters of watershed & ROI filtering controllers
+            self.watershed_controller.labels                = roi_data['labels']
+            self.watershed_controller.roi_areas             = roi_data['roi_areas']
+            self.watershed_controller.roi_circs             = roi_data['roi_circs']
+            self.watershed_controller.filtered_out_rois     = roi_data['filtered_out_rois']
+            self.roi_filtering_controller.erased_rois       = roi_data['erased_rois']
+            self.roi_filtering_controller.removed_rois      = roi_data['removed_rois']
+            self.roi_filtering_controller.locked_rois       = roi_data['locked_rois']
 
-        # show ROI filtering parameters
-        self.show_roi_filtering_params(self.watershed_controller.labels, self.watershed_controller.roi_areas, self.watershed_controller.roi_circs, None, None, None, roi_data['filtered_out_rois'], None, loading_rois=True)
+            # show ROI filtering parameters
+            self.show_roi_filtering_params(self.watershed_controller.labels, self.watershed_controller.roi_areas, self.watershed_controller.roi_circs, None, None, None, roi_data['filtered_out_rois'], None, loading_rois=True)
 
     def open_videos(self, video_paths):
         # add the new video paths to the currently loaded video paths
