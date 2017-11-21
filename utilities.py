@@ -124,7 +124,6 @@ def std(movie):
 #     return new_image
 
 def sharpen(image):
-    print(np.amin(image), np.amax(image))
     kernel      = np.ones((3,3))*(-1)
     kernel[1,1] = 8
     Lap         = ndi.filters.convolve(image, kernel)
@@ -133,13 +132,9 @@ def sharpen(image):
 
     A           = image + Laps
 
-    print(np.amin(A), np.amax(A))
-
     A = abs(A)
 
     A           *= 255.0/np.amax(A)
-
-    print(np.amin(A), np.amax(A))
 
     A_cv2       = A
     A_cv2       = A_cv2.astype(np.uint8)
@@ -207,7 +202,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
     counter = 0
 
     for z in z_range:
-        print(z)
+        # print(z)
         video_path = os.path.join(directory, os.path.splitext(filename)[0] + "_z_{}_temp.tif".format(z))
         imsave(video_path, video[:, z, :, :])
 
@@ -594,7 +589,7 @@ def calculate_shift(mean_image_1, mean_image_2):
 
     shift, error, diffphase = register_translation(image_1, image_2)
 
-    print("shift", shift)
+    # print("shift", shift)
 
     return shift
 

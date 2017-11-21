@@ -1770,7 +1770,7 @@ class ProcessVideosThread(QThread):
 
             # shift the labels to match the first video
             mean_images_list.append([ ndi.median_filter(utilities.sharpen(ndi.gaussian_filter(denoise_tv_chambolle(utilities.mean(vid, z).astype(np.float32), weight=0.01, multichannel=False), 1)), 3) for z in range(vid.shape[1]) ])
-            if len(mean_images_list) > 0:
+            if len(mean_images_list) > 1:
                 for z in range(vid.shape[1]):
                     y_shift, x_shift = utilities.calculate_shift(mean_images_list[0][z], mean_images_list[i][z])
 
