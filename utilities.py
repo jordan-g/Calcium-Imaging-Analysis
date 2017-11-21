@@ -170,16 +170,14 @@ def adjust_gamma(image, gamma):
     # apply gamma correction using the lookup table
     return cv2.LUT(image, table.astype(np.uint8))
 
-def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, progress_signal=None, thread=None):
+def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, progress_signal=None, thread=None, mc_z=-1):
     full_video_path = video_path
 
     directory = os.path.dirname(full_video_path)
     filename  = os.path.basename(full_video_path)
 
-    mc_videos_list = []
-
     if thread is not None and thread.running == False:
-        return [None]*2
+        return np.zeros(1)
 
     # Create the cluster
     c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
@@ -190,14 +188,23 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         for log_file in log_files:
             os.remove(log_file)
 
-        return [None]*2
+        return np.zeros(1)
+
+    if mc_z == -1:
+        z_range = list(range(video.shape[1]))
+    else:
+        z_range = [mc_z]
 
     if progress_signal:
         # send an update signal to the GUI
-        percent_complete = int(100.0*float(0.1)/video.shape[1])
+        percent_complete = int(100.0*float(0.1)/len(z_range))
         progress_signal.emit(percent_complete)
 
-    for z in range(video.shape[1]):
+    mc_video = video.copy()
+
+    counter = 0
+
+    for z in z_range:
         print(z)
         video_path = os.path.join(directory, os.path.splitext(filename)[0] + "_z_{}_temp.tif".format(z))
         imsave(video_path, video[:, z, :, :])
@@ -209,7 +216,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
 
         params_movie = {'fname': video_path,
                         'max_shifts': (max_shift, max_shift),  # maximum allow rigid shift (2,2)
-                        'niter_rig': 1,
+                        'niter_rig': 2,
                         'splits_rig': 4,  # for parallelization split the movies in  num_splits chuncks across time
                         'num_splits_to_process_rig': None,  # if none all the splits are processed and the movie is saved
                         'strides': (patch_stride, patch_stride),  # intervals at which patches are laid out for motion correction
@@ -217,7 +224,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
                         'splits_els': 4,  # for parallelization split the movies in  num_splits chuncks across time
                         'num_splits_to_process_els': [None],  # if none all the splits are processed and the movie is saved
                         'upsample_factor_grid': 4,  # upsample factor to avoid smearing when merging patches
-                        'max_deviation_rigid': 10,  # maximum deviation allowed for patch with respect to rigid shift         
+                        'max_deviation_rigid': int(max_shift/2) - 1,  # maximum deviation allowed for patch with respect to rigid shift         
                         }
 
         # load movie (in memory!)
@@ -269,11 +276,17 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
             for log_file in log_files:
                 os.remove(log_file)
 
-            return None
+            try:
+                os.remove(mc.fname_tot_rig)
+                os.remove(mc.fname_tot_els)
+            except:
+                pass
+
+            return np.zeros(1)
 
         if progress_signal:
             # send an update signal to the GUI
-            percent_complete = int(100.0*float(z + (1/3))/video.shape[1])
+            percent_complete = int(100.0*float(counter + (1/3))/len(z_range))
             progress_signal.emit(percent_complete)
 
         # print(mc.fname_tot_rig)
@@ -292,11 +305,17 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
             for log_file in log_files:
                 os.remove(log_file)
 
-            return None
+            try:
+                os.remove(mc.fname_tot_rig)
+                os.remove(mc.fname_tot_els)
+            except:
+                pass
+
+            return np.zeros(1)
 
         if progress_signal:
             # send an update signal to the GUI
-            percent_complete = int(100.0*float(z + (2/3))/video.shape[1])
+            percent_complete = int(100.0*float(counter + (2/3))/len(z_range))
             progress_signal.emit(percent_complete)
 
         # # Save elastic shift border
@@ -346,44 +365,10 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         # images = np.reshape(Yr.T, [T] + list(dims), order='F')
         # Y = np.reshape(Yr, dims + (T,), order='F')
 
-        mc_videos_list.append(np.nan_to_num(images))
+        a = np.nan_to_num(images)
 
-        os.remove(video_path)
-
-        # out = np.zeros(m_els.shape)
-        # out[:] = m_els[:]
-
-        # out = np.nan_to_num(out)
-
-        if thread is not None and thread.running == False:
-            return None
-
-        if progress_signal:
-            # send an update signal to the GUI
-            percent_complete = int(100.0*float(z + 1)/video.shape[1])
-            progress_signal.emit(percent_complete)
-
-
-    max_height = max([ a.shape[1] for a in mc_videos_list ])
-    max_width  = max([ a.shape[2] for a in mc_videos_list ])
-
-    height = video.shape[2]
-    width  = video.shape[3]
-
-    mc_video = np.zeros(video.shape)
-
-    # print("Max", max_height, max_width)
-
-    # mc_video = np.zeros((video.shape[0], video.shape[1], max_height, max_width))
-
-    # print(mc_video.shape)
-
-    # offset = ((video.shape[2] - max_height)//2, (video.shape[3] - max_width)//2)
-
-    for z in range(len(mc_videos_list)):
-        a = mc_videos_list[z]
-        height_pad = height - a.shape[1]
-        width_pad  = width - a.shape[2]
+        height_pad = video.shape[2] - a.shape[1]
+        width_pad  = video.shape[3] - a.shape[2]
 
         # print("Pad", height_pad, width_pad)
 
@@ -398,9 +383,28 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
 
         mc_video[:, z, :, :] = b
 
-        print(mc_video.shape)
+        os.remove(video_path)
 
-        # print(np.amax(mc_video), np.amin(mc_video))
+        # out = np.zeros(m_els.shape)
+        # out[:] = m_els[:]
+
+        # out = np.nan_to_num(out)
+
+        if thread is not None and thread.running == False:
+            return np.zeros(1)
+
+        if progress_signal:
+            # send an update signal to the GUI
+            percent_complete = int(100.0*float(counter + 1)/len(z_range))
+            progress_signal.emit(percent_complete)
+
+        try:
+            os.remove(mc.fname_tot_rig)
+            os.remove(mc.fname_tot_els)
+        except:
+            pass
+
+        counter += 1
 
     cm.stop_server()
     log_files = glob.glob('Yr*_LOG_*')
@@ -408,7 +412,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         os.remove(log_file)
 
     if thread is not None and thread.running == False:
-        return None
+        return np.zeros(1)
 
     return mc_video
 

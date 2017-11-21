@@ -445,6 +445,7 @@ class MotionCorrectionController():
         self.video_path    = None
 
         self.use_mc_video = False
+        self.mc_current_z = False
 
         self.z = 0
 
@@ -554,7 +555,12 @@ class MotionCorrectionController():
             else:
                 self.motion_correct_thread.running = False
 
-            self.motion_correct_thread.set_parameters(self.video, self.video_path, int(self.params["max_shift"]), int(self.params["patch_stride"]), int(self.params["patch_overlap"]))
+            if self.mc_current_z:
+                mc_z = self.z
+            else:
+                mc_z = -1
+
+            self.motion_correct_thread.set_parameters(self.video, self.video_path, int(self.params["max_shift"]), int(self.params["patch_stride"]), int(self.params["patch_overlap"]), mc_z=mc_z)
 
             self.motion_correct_thread.start()
 
@@ -568,22 +574,23 @@ class MotionCorrectionController():
         self.param_widget.update_motion_correction_progress(percent)
 
     def motion_correction_finished(self, mc_video):
-        self.mc_video      = mc_video
-
         self.param_widget.update_motion_correction_progress(100)
 
-        self.main_controller.param_window.videos_widget.save_mc_video_button.setEnabled(True)
+        if np.sum(mc_video) != 0:
+            self.mc_video      = mc_video
 
-        self.mc_video = utilities.normalize(self.mc_video).astype(np.uint8)
+            self.main_controller.param_window.videos_widget.save_mc_video_button.setEnabled(True)
 
-        self.use_mc_video = True
+            self.mc_video = utilities.normalize(self.mc_video).astype(np.uint8)
 
-        self.adjusted_mc_video = self.calculate_adjusted_video(self.mc_video, self.z)
+            self.use_mc_video = True
 
-        self.param_widget.use_mc_video_checkbox.setEnabled(True)
-        self.param_widget.use_mc_video_checkbox.setChecked(True)
+            self.adjusted_mc_video = self.calculate_adjusted_video(self.mc_video, self.z)
 
-        self.set_use_mc_video(True)
+            self.param_widget.use_mc_video_checkbox.setEnabled(True)
+            self.param_widget.use_mc_video_checkbox.setChecked(True)
+
+            self.set_use_mc_video(True)
 
     def cancel_motion_correction(self):
         if self.motion_correct_thread is not None:
@@ -607,6 +614,9 @@ class MotionCorrectionController():
             if self.adjusted_video is None:
                 self.adjusted_video = self.calculate_adjusted_video(self.video, self.z)
             self.preview_window.play_movie(self.adjusted_video, fps=self.main_controller.params['fps'])
+
+    def set_mc_current_z(self, mc_current_z):
+        self.mc_current_z = mc_current_z
 
     def accept(self):
         self.cancel_motion_correction()
@@ -1469,20 +1479,20 @@ class MotionCorrectThread(QThread):
 
         self.running = False
 
-    def set_parameters(self, video, video_path, max_shift, patch_stride, patch_overlap):
+    def set_parameters(self, video, video_path, max_shift, patch_stride, patch_overlap, mc_z=-1):
         self.video         = video
         self.video_path    = video_path
         self.max_shift     = max_shift
         self.patch_stride  = patch_stride
         self.patch_overlap = patch_overlap
+        self.mc_z          = mc_z
 
     def run(self):
         self.running = True
 
-        mc_video = utilities.motion_correct(self.video, self.video_path, self.max_shift, self.patch_stride, self.patch_overlap, progress_signal=self.progress, thread=self)
+        mc_video = utilities.motion_correct(self.video, self.video_path, self.max_shift, self.patch_stride, self.patch_overlap, progress_signal=self.progress, thread=self, mc_z=self.mc_z)
 
-        if mc_video is not None:
-            self.finished.emit(mc_video)
+        self.finished.emit(mc_video)
 
         self.running = False
 

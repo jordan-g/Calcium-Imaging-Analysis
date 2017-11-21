@@ -299,7 +299,7 @@ class ParamWidget(QWidget):
 
         self.title_widget = QWidget(self)
         self.title_layout = QHBoxLayout(self.title_widget)
-        self.title_layout.setContentsMargins(10, 10, 0, 0)
+        self.title_layout.setContentsMargins(5, 5, 0, 0)
         self.main_layout.addWidget(self.title_widget)
 
         self.title_label = QLabel(title)
@@ -309,7 +309,7 @@ class ParamWidget(QWidget):
         
         self.param_widget = QWidget(self)
         self.param_layout = QGridLayout(self.param_widget)
-        self.param_layout.setContentsMargins(10, 10, 10, 10)
+        self.param_layout.setContentsMargins(5, 5, 5, 5)
         self.param_layout.setSpacing(5)
         self.main_layout.addWidget(self.param_widget)
 
@@ -431,24 +431,38 @@ class MotionCorrectionWidget(ParamWidget):
 
         self.button_widget = QWidget(self)
         self.button_layout = QHBoxLayout(self.button_widget)
-        self.button_layout.setContentsMargins(10, 0, 0, 0)
+        self.button_layout.setContentsMargins(5, 0, 0, 0)
         self.button_layout.setSpacing(5)
         self.main_layout.addWidget(self.button_widget)
+
+        self.mc_current_z_checkbox = HoverCheckBox("Motion-correct only this z plane", None, self.parent_widget.statusBar())
+        self.mc_current_z_checkbox.setHoverMessage("Apply motion correction only to the current z plane. Useful for quick troubleshooting.")
+        self.mc_current_z_checkbox.setChecked(False)
+        self.mc_current_z_checkbox.clicked.connect(lambda:self.controller.set_mc_current_z(self.mc_current_z_checkbox.isChecked()))
+        self.button_layout.addWidget(self.mc_current_z_checkbox)
+
+        self.main_layout.addWidget(HLine())
+
+        self.button_widget_2 = QWidget(self)
+        self.button_layout_2 = QHBoxLayout(self.button_widget_2)
+        self.button_layout_2.setContentsMargins(5, 0, 0, 0)
+        self.button_layout_2.setSpacing(5)
+        self.main_layout.addWidget(self.button_widget_2)
 
         self.use_mc_video_checkbox = QCheckBox("Use motion-corrected video")
         self.use_mc_video_checkbox.setObjectName("Use motion-corrected video")
         self.use_mc_video_checkbox.setChecked(False)
         self.use_mc_video_checkbox.clicked.connect(lambda:self.controller.set_use_mc_video(self.use_mc_video_checkbox.isChecked()))
         self.use_mc_video_checkbox.setDisabled(True)
-        self.button_layout.addWidget(self.use_mc_video_checkbox)
+        self.button_layout_2.addWidget(self.use_mc_video_checkbox)
 
-        self.button_layout.addStretch()
+        self.button_layout_2.addStretch()
 
         self.mc_progress_label = QLabel("")
         self.mc_progress_label.setStyleSheet("font-size: 10px; font-style: italic;")
         self.mc_progress_label.setMinimumWidth(200)
         self.mc_progress_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.button_layout.addWidget(self.mc_progress_label)
+        self.button_layout_2.addWidget(self.mc_progress_label)
 
         self.motion_correct_button = HoverButton('Motion Correct', None, self.parent_widget.statusBar())
         self.motion_correct_button.setHoverMessage("Perform motion correction on the video.")
@@ -456,7 +470,7 @@ class MotionCorrectionWidget(ParamWidget):
         self.motion_correct_button.setIconSize(QSize(16,16))
         self.motion_correct_button.setStyleSheet('font-weight: bold;')
         self.motion_correct_button.clicked.connect(self.controller.motion_correct_video)
-        self.button_layout.addWidget(self.motion_correct_button)
+        self.button_layout_2.addWidget(self.motion_correct_button)
         
         self.accept_button = HoverButton('ROI Finding', None, self.parent_widget.statusBar())
         self.accept_button.setHoverMessage("Automatically find ROIs.")
@@ -464,7 +478,7 @@ class MotionCorrectionWidget(ParamWidget):
         self.accept_button.setIconSize(QSize(16,16))
         # self.accept_button.setMaximumWidth(100)
         self.accept_button.clicked.connect(self.controller.accept)
-        self.button_layout.addWidget(self.accept_button)
+        self.button_layout_2.addWidget(self.accept_button)
 
     def preview_contrast(self):
         contrast = self.param_sliders["contrast"].sliderPosition()/float(self.param_slider_multipliers["contrast"])
@@ -509,7 +523,7 @@ class WatershedWidget(ParamWidget):
 
         self.mask_button_widget = QWidget(self)
         self.mask_button_layout = QHBoxLayout(self.mask_button_widget)
-        self.mask_button_layout.setContentsMargins(10, 0, 0, 0)
+        self.mask_button_layout.setContentsMargins(5, 0, 0, 0)
         self.mask_button_layout.setSpacing(5)
         self.main_layout.addWidget(self.mask_button_widget)
 
@@ -541,7 +555,7 @@ class WatershedWidget(ParamWidget):
 
         self.button_widget = QWidget(self)
         self.button_layout = QHBoxLayout(self.button_widget)
-        self.button_layout.setContentsMargins(10, 0, 0, 0)
+        self.button_layout.setContentsMargins(5, 0, 0, 0)
         self.button_layout.setSpacing(5)
         self.main_layout.addWidget(self.button_widget)
 
@@ -633,7 +647,7 @@ class ROIFilteringWidget(ParamWidget):
 
         self.roi_button_widget = QWidget(self)
         self.roi_button_layout = QHBoxLayout(self.roi_button_widget)
-        self.roi_button_layout.setContentsMargins(10, 0, 0, 0)
+        self.roi_button_layout.setContentsMargins(5, 0, 0, 0)
         self.roi_button_layout.setSpacing(5)
         self.main_layout.addWidget(self.roi_button_widget)
 
@@ -675,7 +689,7 @@ class ROIFilteringWidget(ParamWidget):
 
         self.roi_button_widget_2 = QWidget(self)
         self.roi_button_layout_2 = QHBoxLayout(self.roi_button_widget_2)
-        self.roi_button_layout_2.setContentsMargins(10, 0, 0, 0)
+        self.roi_button_layout_2.setContentsMargins(5, 0, 0, 0)
         self.roi_button_layout_2.setSpacing(5)
         self.main_layout.addWidget(self.roi_button_widget_2)
 
@@ -721,7 +735,7 @@ class ROIFilteringWidget(ParamWidget):
 
         self.button_widget = QWidget(self)
         self.button_layout = QHBoxLayout(self.button_widget)
-        self.button_layout.setContentsMargins(10, 0, 0, 0)
+        self.button_layout.setContentsMargins(5, 0, 0, 0)
         self.button_layout.setSpacing(5)
         self.main_layout.addWidget(self.button_widget)
 
@@ -799,6 +813,25 @@ class ROIFilteringWidget(ParamWidget):
         self.undo_button.setEnabled(True)
         self.param_widget.setEnabled(True)
         self.erase_rois_button.setEnabled(True)
+
+class HoverCheckBox(QCheckBox):
+    def __init__(self, text, parent=None, status_bar=None):
+        QCheckBox.__init__(self, text, parent)
+        self.setMouseTracking(True)
+
+        self.status_bar = status_bar
+        self.hover_message = ""
+
+    def setHoverMessage(self, message):
+        self.hover_message = message
+
+    def enterEvent(self, event):
+        self.previous_message = self.status_bar.currentMessage()
+        self.status_bar.showMessage(self.hover_message)
+
+    def leaveEvent(self, event):
+        if self.status_bar.currentMessage() != "":
+            self.status_bar.showMessage(self.previous_message)
 
 class HoverButton(QPushButton):
     def __init__(self, text, parent=None, status_bar=None):
