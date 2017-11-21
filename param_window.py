@@ -167,6 +167,14 @@ class VideosWidget(QWidget):
 
         self.button_layout.addStretch()
 
+        self.save_mc_video_button = HoverButton('Save Motion-Corrected Video...', None, self.parent_widget.statusBar())
+        self.save_mc_video_button.setHoverMessage("Save the current motion-corrected video.")
+        self.save_mc_video_button.setIcon(QIcon("icons/save_icon.png"))
+        self.save_mc_video_button.setIconSize(QSize(16,16))
+        self.save_mc_video_button.setEnabled(False)
+        self.save_mc_video_button.clicked.connect(self.controller.save_mc_video)
+        self.button_layout.addWidget(self.save_mc_video_button)
+
         self.save_rois_button = HoverButton('Save ROIs...', None, self.parent_widget.statusBar())
         self.save_rois_button.setHoverMessage("Save the current ROIs.")
         self.save_rois_button.setIcon(QIcon("icons/save_icon.png"))

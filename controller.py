@@ -116,6 +116,21 @@ class Controller():
         if video_paths is not None and len(video_paths) > 0:
             self.open_videos(video_paths)
 
+    def save_mc_video(self):
+        if self.motion_correction_controller.mc_video is not None:
+            # let the user pick where to save the video
+            if pyqt_version == 4:
+                save_path = str(QFileDialog.getSaveFileName(self.param_window, 'Save Video', '{}_mc'.format(os.path.splitext(self.video_path)[0]), 'Videos (*.tif *.tiff *.npy)'))
+            elif pyqt_version == 5:
+                save_path = str(QFileDialog.getSaveFileName(self.param_window, 'Save Video', '{}_mc'.format(os.path.splitext(self.video_path)[0]), 'Videos (*.tif *.tiff *.npy)')[0])
+            if not (save_path.endswith('.npy') or save_path.endswith('.tif') or save_path.endswith('.tiff')):
+                save_path += ".tif"
+
+            if save_path.endswith('.npy'):
+                np.save(save_path, self.motion_correction_controller.mc_video)
+            else:
+                imsave(save_path, self.motion_correction_controller.mc_video)
+
     def save_rois(self):
         if self.watershed_controller.labels[0] is not None:
             # let the user pick where to save the ROIs
@@ -126,11 +141,16 @@ class Controller():
             if not save_path.endswith('.npy'):
                 save_path += ".npy"
 
+            if self.roi_filtering_controller.filtered_out_rois is None:
+                filtered_out_rois = self.watershed_controller.filtered_out_rois
+            else:
+                filtered_out_rois = self.roi_filtering_controller.filtered_out_rois
+
             # create a dictionary to hold the ROI data
             roi_data = {'labels'           : self.watershed_controller.labels,
                         'roi_areas'        : self.watershed_controller.roi_areas,
                         'roi_circs'        : self.watershed_controller.roi_circs,
-                        'filtered_out_rois': self.roi_filtering_controller.filtered_out_rois,
+                        'filtered_out_rois': filtered_out_rois,
                         'erased_rois'      : self.roi_filtering_controller.erased_rois,
                         'removed_rois'     : self.roi_filtering_controller.removed_rois,
                         'locked_rois'      : self.roi_filtering_controller.locked_rois}
@@ -158,13 +178,13 @@ class Controller():
         self.watershed_controller.labels                = roi_data['labels']
         self.watershed_controller.roi_areas             = roi_data['roi_areas']
         self.watershed_controller.roi_circs             = roi_data['roi_circs']
-        self.roi_filtering_controller.filtered_out_rois = roi_data['filtered_out_rois']
+        self.watershed_controller.filtered_out_rois     = roi_data['filtered_out_rois']
         self.roi_filtering_controller.erased_rois       = roi_data['erased_rois']
         self.roi_filtering_controller.removed_rois      = roi_data['removed_rois']
         self.roi_filtering_controller.locked_rois       = roi_data['locked_rois']
 
         # show ROI filtering parameters
-        self.show_roi_filtering_params(self.watershed_controller.labels, self.watershed_controller.roi_areas, self.watershed_controller.roi_circs, None, None, None, None, loading_rois=True)
+        self.show_roi_filtering_params(self.watershed_controller.labels, self.watershed_controller.roi_areas, self.watershed_controller.roi_circs, None, None, None, roi_data['filtered_out_rois'], None, loading_rois=True)
 
     def open_videos(self, video_paths):
         # add the new video paths to the currently loaded video paths
@@ -219,6 +239,8 @@ class Controller():
         self.param_window.stacked_widget.setDisabled(False)
         self.param_window.statusBar().showMessage("")
         self.param_widget.param_sliders["z"].setMaximum(self.video.shape[1]-1)
+
+        self.param_window.videos_widget.save_mc_video_button.setEnabled(False)
 
         # if the video is a different shape than the previous one, get rid of any exising roi information
         if previous_video_shape is None or self.video.shape[2] != previous_video_shape[2] or self.video.shape[3] != previous_video_shape[3]:
@@ -329,11 +351,16 @@ class Controller():
             self.motion_correction_controller.video_opened(self.normalized_video, self.video_path)
         self.param_window.statusBar().showMessage("")
 
-    def show_roi_filtering_params(self, labels, roi_areas, roi_circs, mean_images, normalized_images, correlation_images, filtered_out_rois, roi_overlay, loading_rois=False):
+    def show_roi_filtering_params(self, labels, roi_areas, roi_circs,
+      mean_images, normalized_images, correlation_images, filtered_out_rois,
+      roi_overlay, loading_rois=False):
         self.param_window.stacked_widget.setCurrentIndex(2)
         self.mode = "filter"
         self.preview_window.controller = self.roi_filtering_controller
-        self.roi_filtering_controller.video_opened(self.normalized_video, self.video_path, labels, roi_areas, roi_circs, mean_images, normalized_images, correlation_images, filtered_out_rois, roi_overlay, loading_rois=loading_rois)
+        self.roi_filtering_controller.video_opened(self.normalized_video,
+          self.video_path, labels, roi_areas, roi_circs, mean_images,
+          normalized_images, correlation_images, filtered_out_rois, roi_overlay,
+          loading_rois=loading_rois)
         self.param_window.statusBar().showMessage("")
 
     def rois_created(self):
@@ -540,6 +567,8 @@ class MotionCorrectionController():
         self.mc_video      = mc_video
 
         self.param_widget.update_motion_correction_progress(100)
+
+        self.main_controller.param_window.videos_widget.save_mc_video_button.setEnabled(True)
 
         self.mc_video = utilities.normalize(self.mc_video).astype(np.uint8)
 
@@ -977,26 +1006,29 @@ class ROIFilteringController():
             else:
                 self.original_labels   = labels[:]
                 self.labels            = self.original_labels[:]
+
             self.roi_areas         = roi_areas
             self.roi_circs         = roi_circs
             self.filtered_out_rois = filtered_out_rois
             self.roi_overlay       = roi_overlay
 
-            if not loading_rois:
+            if self.erased_rois is None:
                 self.erased_rois = [ [] for i in range(video.shape[1]) ]
+
+            if self.locked_rois is None:
                 self.locked_rois = [ [] for i in range(video.shape[1]) ]
 
-                if self.filtered_out_rois is None:
-                    if python_version == 3:
-                        self.filtered_out_rois = filtered_out_rois.copy()
-                    else:
-                        self.filtered_out_rois = filtered_out_rois[:]
+            if not loading_rois:
+                if python_version == 3:
+                    self.filtered_out_rois = filtered_out_rois.copy()
+                else:
+                    self.filtered_out_rois = filtered_out_rois[:]
 
-                if self.removed_rois is None:
-                    if python_version == 3:
-                        self.removed_rois = filtered_out_rois.copy()
-                    else:
-                        self.removed_rois = filtered_out_rois[:]
+            if self.removed_rois is None:
+                if python_version == 3:
+                    self.removed_rois = self.filtered_out_rois.copy()
+                else:
+                    self.removed_rois = self.filtered_out_rois[:]
 
             self.last_erased_rois  = [ [] for i in range(video.shape[1]) ]
 
@@ -1072,6 +1104,12 @@ class ROIFilteringController():
             self.preview_window.plot_image(self.adjusted_image)
 
     def filter_rois(self, z, update_overlay=False):
+        print("mean image", self.mean_images[z])
+        print("labels", self.labels[z])
+        print("roi_areas", self.roi_areas[z])
+        print("roi_circs", self.roi_circs[z])
+        print("correlation_images", self.correlation_images[z])
+        print("locked_rois", self.locked_rois[z])
         _, self.filtered_out_rois[z] = utilities.filter_rois(self.mean_images[z], self.labels[z], self.params['min_area'], self.params['max_area'], self.params['min_circ'], self.params['max_circ'], self.roi_areas[z], self.roi_circs[z], self.correlation_images[z], self.params['min_correlation'], self.locked_rois[z])
         self.removed_rois[z] = self.filtered_out_rois[z] + self.erased_rois[z]
 

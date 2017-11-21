@@ -199,7 +199,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
 
     for z in range(video.shape[1]):
         print(z)
-        video_path = os.path.join(directory, os.path.splitext(filename)[0] + "_z_{}.tif".format(z))
+        video_path = os.path.join(directory, os.path.splitext(filename)[0] + "_z_{}_temp.tif".format(z))
         imsave(video_path, video[:, z, :, :])
 
         a = imread(video_path)
