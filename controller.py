@@ -1186,6 +1186,41 @@ class ROIFilteringController():
 
             self.add_to_history()
 
+    def shift_labels(self, start_point, end_point):
+        y_shift = end_point[1] - start_point[1]
+        x_shift = end_point[0] - start_point[0]
+
+        self.labels[self.z] = np.roll(self.labels[self.z], y_shift, axis=0)
+        self.labels[self.z] = np.roll(self.labels[self.z], x_shift, axis=1)
+
+        self.roi_overlay = np.roll(self.roi_overlay, y_shift, axis=0)
+        self.roi_overlay = np.roll(self.roi_overlay, x_shift, axis=1)
+
+        # if y_shift >= 0 and x_shift >= 0:
+        #     self.labels[self.z][:y_shift, :] = 0
+        #     self.labels[self.z][:, :x_shift] = 0
+        #     self.roi_overlay[:y_shift, :, :] = 0
+        #     self.roi_overlay[:, :x_shift, :] = 0
+        # elif y_shift < 0 and x_shift >= 0:
+        #     self.labels[self.z][y_shift:, :] = 0
+        #     self.labels[self.z][:, :x_shift] = 0
+        #     self.roi_overlay[y_shift:, :, :] = 0
+        #     self.roi_overlay[:, :x_shift, :] = 0
+        # elif y_shift >= 0 and x_shift < 0:
+        #     self.labels[self.z][:y_shift, :] = 0
+        #     self.labels[self.z][:, x_shift:] = 0
+        #     self.roi_overlay[:y_shift, :, :] = 0
+        #     self.roi_overlay[:, x_shift:, :] = 0
+        # else:
+        #     self.labels[self.z][y_shift:, :] = 0
+        #     self.labels[self.z][:, x_shift:] = 0
+        #     self.roi_overlay[y_shift:, :, :] = 0
+        #     self.roi_overlay[:, x_shift:, :] = 0
+
+        self.calculate_watershed_image(z=self.z, update_overlay=False)
+
+        self.show_watershed_image(show=self.param_widget.show_watershed_checkbox.isChecked())
+
     def erase_rois(self):
         self.rois_erased = False
 

@@ -389,6 +389,9 @@ class PreviewWindow(QMainWindow):
     def set_roi_start_point(self, roi_point):
         self.drawn_roi_start_point = roi_point
 
+    def set_labels_shift_prev_point(self, point):
+        self.labels_shift_prev_point = point
+
     def draw_tentative_roi(self, roi_point):
         if self.drawn_roi_start_point is not None and roi_point != self.drawn_roi_start_point:
             mask = np.zeros((self.image.shape[0], self.image.shape[1])).astype(np.uint8)
@@ -413,11 +416,19 @@ class PreviewWindow(QMainWindow):
 
         self.drawn_roi_start_point = None
 
+    def shift_labels(self, point):
+        self.controller.shift_labels(self.labels_shift_prev_point, point)
+
+        self.set_labels_shift_prev_point(point)
+
     def mouse_pressed(self, point):
         if self.main_controller.mode == "watershed" and self.drawing_mask:
             self.add_mask_point(point)
-        elif self.main_controller.mode == "filter" and self.drawing_rois:
-            self.set_roi_start_point(point)
+        elif self.main_controller.mode == "filter":
+            if self.drawing_rois:
+                self.set_roi_start_point(point)
+            else:
+                self.set_labels_shift_prev_point(point)
 
     def mouse_moved(self, point, clicked=False):
         if self.drawing_mask:
@@ -426,6 +437,8 @@ class PreviewWindow(QMainWindow):
             self.erase_roi_at_point(point)
         elif self.drawing_rois and clicked:
             self.draw_tentative_roi(point)
+        elif self.main_controller.mode == "filter" and clicked:
+            self.shift_labels(point)
 
     def mouse_released(self, point, mouse_moved=False):
         if self.main_controller.mode == "watershed":
@@ -438,6 +451,8 @@ class PreviewWindow(QMainWindow):
                 self.draw_roi(point)
             elif not mouse_moved:
                 self.select_roi(point)
+            else:
+                self.set_labels_shift_prev_point(None)
 
     def closeEvent(self, ce):
         if not self.main_controller.closing:
