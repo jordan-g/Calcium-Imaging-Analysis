@@ -168,7 +168,36 @@ class Controller():
 
         if load_path is not None and len(load_path) > 0:
             # load the saved ROIs
-            roi_data = np.load(load_path)[()]
+            roi_data = np.load(load_path)
+
+            if len(roi_data.shape) == 3:
+                if roi_data.shape != self.video.shape[1:]:
+                    print("Error: ROI array shape does not match the video shape.")
+                    return
+
+                # loading just the ROI array
+                self.watershed_controller.labels = roi_data
+                self.watershed_controller.filtered_out_rois = [ [] for i in range(self.video.shape[1]) ]
+
+                self.watershed_controller.roi_areas = [ [] for i in range(self.video.shape[1]) ]
+                self.watershed_controller.roi_circs = [ [] for i in range(self.video.shape[1]) ]
+                for z in range(self.video.shape[1]):
+                    self.watershed_controller.roi_areas[z], self.watershed_controller.roi_circs[z] = utilities.calculate_roi_properties(roi_data[z])
+            else:
+                roi_data = roi_data[()]
+
+                if roi_data['labels'].shape != self.video.shape[1:]:
+                    print("Error: ROI array shape does not match the video shape.")
+                    return
+
+                # set parameters of watershed & ROI filtering controllers
+                self.watershed_controller.labels                = roi_data['labels']
+                self.watershed_controller.roi_areas             = roi_data['roi_areas']
+                self.watershed_controller.roi_circs             = roi_data['roi_circs']
+                self.watershed_controller.filtered_out_rois     = roi_data['filtered_out_rois']
+                self.roi_filtering_controller.erased_rois       = roi_data['erased_rois']
+                self.roi_filtering_controller.removed_rois      = roi_data['removed_rois']
+                self.roi_filtering_controller.locked_rois       = roi_data['locked_rois']
 
             # stop any motion correction or watershed process
             if self.mode == "motion_correct":
@@ -176,17 +205,8 @@ class Controller():
             elif self.mode == "watershed":
                 self.watershed_controller.cancel_watershed()
 
-            # set parameters of watershed & ROI filtering controllers
-            self.watershed_controller.labels                = roi_data['labels']
-            self.watershed_controller.roi_areas             = roi_data['roi_areas']
-            self.watershed_controller.roi_circs             = roi_data['roi_circs']
-            self.watershed_controller.filtered_out_rois     = roi_data['filtered_out_rois']
-            self.roi_filtering_controller.erased_rois       = roi_data['erased_rois']
-            self.roi_filtering_controller.removed_rois      = roi_data['removed_rois']
-            self.roi_filtering_controller.locked_rois       = roi_data['locked_rois']
-
             # show ROI filtering parameters
-            self.show_roi_filtering_params(self.watershed_controller.labels, self.watershed_controller.roi_areas, self.watershed_controller.roi_circs, None, None, None, roi_data['filtered_out_rois'], None, loading_rois=True)
+            self.show_roi_filtering_params(self.watershed_controller.labels, self.watershed_controller.roi_areas, self.watershed_controller.roi_circs, None, None, None, self.watershed_controller.filtered_out_rois, None, loading_rois=True)
 
             self.rois_created()
 
@@ -319,7 +339,7 @@ class Controller():
             else:
                 self.process_videos_thread.running = False
 
-            self.process_videos_thread.set_parameters(self.video_paths, labels, self.motion_correct_all_videos, self.motion_correction_controller.params["max_shift"], self.motion_correction_controller.params["patch_stride"], self.motion_correction_controller.params["patch_overlap"])
+            self.process_videos_thread.set_parameters(self.video_paths, labels, self.motion_correct_all_videos, self.motion_correction_controller.params["max_shift"], self.motion_correction_controller.params["patch_stride"], self.motion_correction_controller.params["patch_overlap"], self.params)
 
             self.process_videos_thread.start()
 
@@ -1656,20 +1676,22 @@ class ProcessVideosThread(QThread):
 
         self.running = False
 
-    def set_parameters(self, video_paths, labels, motion_correct, max_shift, patch_stride, patch_overlap):
+    def set_parameters(self, video_paths, labels, motion_correct, max_shift, patch_stride, patch_overlap, params):
         self.video_paths    = video_paths
         self.labels         = labels
         self.motion_correct = motion_correct
         self.max_shift      = max_shift
         self.patch_stride   = patch_stride
         self.patch_overlap  = patch_overlap
+        self.params         = params
 
     def run(self):
         self.running = True
 
         video_shape = None
 
-        mean_images_list = []
+        first_mean_images = None
+        mean_images = None
 
         for i in range(len(self.video_paths)):
             video_path = self.video_paths[i]
@@ -1769,10 +1791,12 @@ class ProcessVideosThread(QThread):
             # print(labels[0].shape, vid.shape, video_shape)
 
             # shift the labels to match the first video
-            mean_images_list.append([ ndi.median_filter(utilities.sharpen(ndi.gaussian_filter(denoise_tv_chambolle(utilities.mean(vid, z).astype(np.float32), weight=0.01, multichannel=False), 1)), 3) for z in range(vid.shape[1]) ])
-            if len(mean_images_list) > 1:
-                for z in range(vid.shape[1]):
-                    y_shift, x_shift = utilities.calculate_shift(mean_images_list[0][z], mean_images_list[i][z])
+            mean_images       = [ ndi.median_filter(utilities.sharpen(ndi.gaussian_filter(denoise_tv_chambolle(utilities.mean(vid, z).astype(np.float32), weight=0.01, multichannel=False), 1)), 3) for z in range(vid.shape[1]) ]
+            normalized_images = [ utilities.normalize(mean_image).astype(np.uint8) for mean_image in mean_images ]
+
+            for z in range(vid.shape[1]):
+                if first_mean_images is not None:
+                    y_shift, x_shift = utilities.calculate_shift(first_mean_images[z], mean_images[z])
 
                     if np.abs(y_shift) < 20 and np.abs(x_shift) < 20:
                         labels[z] = np.roll(labels[z], -y_shift, axis=0)
@@ -1791,7 +1815,18 @@ class ProcessVideosThread(QThread):
                             labels[z][y_shift:, :] = 0
                             labels[z][:, x_shift:] = 0
 
+                adjusted_image = utilities.calculate_adjusted_image(normalized_images[z], self.params['contrast'], self.params['gamma'])
+
+                rgb_image = cv2.cvtColor((adjusted_image*255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
+
+                watershed_image, _ = utilities.draw_rois(rgb_image, labels[z], None, None, [], None, roi_overlay=None)
+
+                cv2.imwrite(os.path.join(video_dir_path, 'z_{}_rois.png'.format(z)), watershed_image)
+
             np.save(os.path.join(video_dir_path, '_rois.npy'), labels)
+
+            if first_mean_images is None:
+                first_mean_images = mean_images[:]
 
             results = [ {} for z in range(video.shape[1]) ]
 

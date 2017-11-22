@@ -197,7 +197,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         percent_complete = int(100.0*float(0.1)/len(z_range))
         progress_signal.emit(percent_complete)
 
-    mc_video = video.copy()
+    mc_video = np.zeros(video.shape)
 
     counter = 0
 
@@ -458,6 +458,40 @@ def calculate_soma_threshold_image(equalized_image, soma_threshold):
 
     return soma_mask, I_mod, soma_threshold_image
 
+def calculate_roi_properties(labels):
+    unique_labels = np.unique(labels)
+
+    n = len(unique_labels)
+
+    roi_areas = np.zeros(n)
+    roi_circs = np.zeros(n)
+
+    for i in range(len(unique_labels)):
+        l = unique_labels[i]
+
+        if l <= 1:
+            continue
+
+        mask = np.zeros(labels.shape, dtype="uint8")
+        mask[labels == l] = 255
+
+        # detect contours in the mask and grab the largest one
+        cnts = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
+
+        if len(cnts) > 0:
+            c = max(cnts, key=cv2.contourArea)
+
+            area = cv2.contourArea(c)
+
+            perimeter = cv2.arcLength(c, True)
+
+            if area > 0:
+                roi_circs[i] = (perimeter**2)/(4*np.pi*area)
+
+            roi_areas[i] = area
+
+    return roi_areas, roi_circs
+
 def apply_watershed(original_image, cells_mask, starting_image):
     if len(original_image.shape) == 2:
         rgb_image = cv2.cvtColor((original_image*255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
@@ -578,20 +612,20 @@ def add_roi_to_overlay(overlay, roi_mask, labels):
     overlay[roi_mask > 0] = colors[l]
 
 def calculate_shift(mean_image_1, mean_image_2):
-    nonzeros_1 = np.nonzero(mean_image_1 > 5)
-    nonzeros_2 = np.nonzero(mean_image_2 > 5)
+    nonzeros_1 = np.nonzero(mean_image_1 > 0)
+    nonzeros_2 = np.nonzero(mean_image_2 > 0)
 
-    crop_y = max([nonzeros_1[0][0], nonzeros_2[0][0]]) + 5
-    crop_x = max([nonzeros_1[1][0], nonzeros_2[1][0]]) + 5
+    crop_y = max([nonzeros_1[0][0], nonzeros_2[0][0]]) + 10
+    crop_x = max([nonzeros_1[1][0], nonzeros_2[1][0]]) + 10
 
     image_1 = mean_image_1[crop_y:-crop_y, crop_x:-crop_x]
     image_2 = mean_image_2[crop_y:-crop_y, crop_x:-crop_x]
 
     shift, error, diffphase = register_translation(image_1, image_2)
 
-    # print("shift", shift)
+    print("shift", shift)
 
-    return shift
+    return int(shift[0]), int(shift[1])
 
 def draw_rois(rgb_image, labels, selected_roi, erased_rois, filtered_out_rois, locked_rois, newly_erased_rois=None, roi_overlay=None):
     global colors
