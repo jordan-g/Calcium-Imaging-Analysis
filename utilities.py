@@ -632,8 +632,8 @@ def calculate_shift(mean_image_1, mean_image_2):
     nonzeros_1 = np.nonzero(mean_image_1 > 0)
     nonzeros_2 = np.nonzero(mean_image_2 > 0)
 
-    crop_y = max([nonzeros_1[0][0], nonzeros_2[0][0]]) + 10
-    crop_x = max([nonzeros_1[1][0], nonzeros_2[1][0]]) + 10
+    crop_y = max([nonzeros_1[0][0], nonzeros_2[0][0]]) + 20
+    crop_x = max([nonzeros_1[1][0], nonzeros_2[1][0]]) + 20
 
     image_1 = mean_image_1[crop_y:-crop_y, crop_x:-crop_x]
     image_2 = mean_image_2[crop_y:-crop_y, crop_x:-crop_x]

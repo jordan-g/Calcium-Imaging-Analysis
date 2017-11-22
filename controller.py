@@ -758,21 +758,36 @@ class WatershedController():
 
             if self.video.shape[1] > 1:
                 window_size = 50
-                mean_vals = [ np.mean(self.normalized_images[0][:window_size, :window_size]), np.mean(self.normalized_images[0][:window_size, -window_size:]), np.mean(self.normalized_images[0][-window_size:, :window_size]), np.mean(self.normalized_images[0][-window_size:, -window_size:]) ]
+
+                nonzeros = np.nonzero(self.normalized_images[0] > 0)
+
+                crop_y = nonzeros[0][0] + 20
+                crop_x = nonzeros[1][0] + 20
+
+                image = self.normalized_images[0][crop_y:-crop_y, crop_x:-crop_x]
+
+                mean_vals = [ np.mean(image[:window_size, :window_size]), np.mean(image[:window_size, -window_size:]), np.mean(image[-window_size:, :window_size]), np.mean(image[-window_size:, -window_size:]) ]
                 bg_brightness_0 = min(mean_vals)
                 bg_window_index = mean_vals.index(bg_brightness_0)
 
                 # print(bg_window_index)
 
                 for z in range(1, self.video.shape[1]):
+                    nonzeros = np.nonzero(self.normalized_images[z] > 0)
+
+                    crop_y = nonzeros[0][0] + 20
+                    crop_x = nonzeros[1][0] + 20
+
+                    image = self.normalized_images[z][crop_y:-crop_y, crop_x:-crop_x]
+
                     if bg_window_index == 0:
-                        bg_brightness = np.mean(self.normalized_images[z][:window_size, :window_size])
+                        bg_brightness = np.mean(image[:window_size, :window_size])
                     elif bg_window_index == 1:
-                        bg_brightness = np.mean(self.normalized_images[z][:window_size, -window_size:])
+                        bg_brightness = np.mean(image[:window_size, -window_size:])
                     elif bg_window_index == 2:
-                        bg_brightness = np.mean(self.normalized_images[z][-window_size:, :window_size])
+                        bg_brightness = np.mean(image[-window_size:, :window_size])
                     else:
-                        bg_brightness = np.mean(self.normalized_images[z][-window_size:, -window_size:])
+                        bg_brightness = np.mean(image[-window_size:, -window_size:])
 
                     difference = int(round(bg_brightness - bg_brightness_0))
 
