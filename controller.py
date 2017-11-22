@@ -280,6 +280,8 @@ class Controller():
         self.param_window.stacked_widget.setDisabled(False)
         self.param_window.statusBar().showMessage("")
         self.param_widget.param_sliders["z"].setMaximum(self.video.shape[1]-1)
+        self.param_widget.param_sliders["z"].setValue(self.params['z'])
+        self.param_widget.param_textboxes["z"].setText(str(self.params['z']))
 
         self.param_window.videos_widget.save_mc_video_button.setEnabled(False)
 
@@ -747,6 +749,7 @@ class WatershedController():
             self.preview_window.timer.stop()
 
             self.mean_images = [ ndi.median_filter(utilities.sharpen(ndi.gaussian_filter(denoise_tv_chambolle(utilities.mean(self.video, z).astype(np.float32), weight=0.01, multichannel=False), 1)), 3) for z in range(video.shape[1]) ]
+            # self.mean_images = [ ndi.median_filter(utilities.sharpen(ndi.gaussian_filter(denoise_tv_chambolle(utilities.mean(self.video, z).astype(np.float32), 1), weight=0.01, multichannel=False)), 3) for z in range(video.shape[1]) ]
             # self.mean_images = [ utilities.mean(self.video, z).astype(np.float32) for z in range(video.shape[1]) ]
 
             self.correlation_images = [ utilities.correlation(self.video, z).astype(np.float32) for z in range(video.shape[1]) ]

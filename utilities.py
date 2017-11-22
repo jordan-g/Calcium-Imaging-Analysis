@@ -197,7 +197,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         percent_complete = int(100.0*float(0.1)/len(z_range))
         progress_signal.emit(percent_complete)
 
-    mc_video = np.zeros(video.shape)
+    mc_video = video.copy()
 
     counter = 0
 
@@ -206,6 +206,8 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         video_path = os.path.join(directory, os.path.splitext(filename)[0] + "_z_{}_temp.tif".format(z))
         imsave(video_path, video[:, z, :, :])
 
+        mc_video[:, z, :, :] *= 0
+
         a = imread(video_path)
         # print(a.shape)
 
@@ -213,7 +215,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
 
         params_movie = {'fname': video_path,
                         'max_shifts': (max_shift, max_shift),  # maximum allow rigid shift (2,2)
-                        'niter_rig': 2,
+                        'niter_rig': 4,
                         'splits_rig': 4,  # for parallelization split the movies in  num_splits chuncks across time
                         'num_splits_to_process_rig': None,  # if none all the splits are processed and the movie is saved
                         'strides': (patch_stride, patch_stride),  # intervals at which patches are laid out for motion correction
@@ -276,6 +278,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
             try:
                 os.remove(mc.fname_tot_rig)
                 os.remove(mc.fname_tot_els)
+                os.remove(video_path)
             except:
                 pass
 
@@ -305,6 +308,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
             try:
                 os.remove(mc.fname_tot_rig)
                 os.remove(mc.fname_tot_els)
+                os.remove(video_path)
             except:
                 pass
 
@@ -388,6 +392,18 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         # out = np.nan_to_num(out)
 
         if thread is not None and thread.running == False:
+            cm.stop_server()
+            log_files = glob.glob('Yr*_LOG_*')
+            for log_file in log_files:
+                os.remove(log_file)
+
+            try:
+                os.remove(mc.fname_tot_rig)
+                os.remove(mc.fname_tot_els)
+                os.remove(video_path)
+            except:
+                pass
+
             return np.zeros(1)
 
         if progress_signal:
@@ -398,6 +414,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         try:
             os.remove(mc.fname_tot_rig)
             os.remove(mc.fname_tot_els)
+            os.remove(video_path)
         except:
             pass
 
