@@ -186,7 +186,7 @@ class Controller():
             else:
                 roi_data = roi_data[()]
 
-                if roi_data['labels'].shape != self.video.shape[1:]:
+                if np.array(roi_data['labels']).shape != self.video.shape[1:]:
                     print("Error: ROI array shape does not match the video shape.")
                     return
 
@@ -452,6 +452,12 @@ class Controller():
             self.watershed_controller.update_param(param, value)
         elif self.mode == "filter":
             self.roi_filtering_controller.update_param(param, value)
+
+    def show_watershed_image(self, show):
+        if self.mode == "watershed":
+            self.watershed_controller.show_watershed_image(show)
+        elif self.mode == "filter":
+            self.roi_filtering_controller.show_watershed_image(show)
 
     def save_params(self):
         json.dump(self.params, open(VIEWING_PARAMS_FILENAME, "w"))
@@ -839,12 +845,14 @@ class WatershedController():
             self.background_mask = utilities.calculate_background_mask(self.adjusted_image, self.params['background_threshold'])
 
             self.param_widget.show_watershed_checkbox.setChecked(False)
+            self.main_controller.param_window.show_watershed_action.setChecked(False)
 
             self.preview_window.plot_image(self.adjusted_image, mask=self.background_mask)
         elif param == "window_size":
             self.equalized_image = utilities.calculate_equalized_image(self.adjusted_image, self.background_mask, self.params['window_size'])
 
             self.param_widget.show_watershed_checkbox.setChecked(False)
+            self.main_controller.param_window.show_watershed_action.setChecked(False)
 
             self.preview_window.plot_image(self.equalized_image, mask=None)
         elif param == "z":
@@ -872,6 +880,9 @@ class WatershedController():
             self.preview_window.plot_image(self.watershed_image)
         else:
             self.preview_window.plot_image(self.adjusted_image)
+
+        self.main_controller.param_window.show_watershed_action.setChecked(show)
+        self.param_widget.show_watershed_checkbox.setChecked(show)
 
     def process_video(self):
         if not self.performing_watershed:
@@ -905,6 +916,8 @@ class WatershedController():
 
         self.param_widget.show_watershed_checkbox.setDisabled(False)
         self.param_widget.show_watershed_checkbox.setChecked(True)
+        self.main_controller.param_window.show_watershed_action.setDisabled(False)
+        self.main_controller.param_window.show_watershed_action.setChecked(True)
         self.param_widget.filter_rois_button.setDisabled(False)
 
         rgb_image = cv2.cvtColor((self.adjusted_image*255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
@@ -1109,6 +1122,8 @@ class ROIFilteringController():
 
             self.param_widget.show_watershed_checkbox.setDisabled(False)
             self.param_widget.show_watershed_checkbox.setChecked(True)
+            self.main_controller.param_window.show_watershed_action.setDisabled(False)
+            self.main_controller.param_window.show_watershed_action.setChecked(True)
 
             self.show_watershed_image(True)
 
@@ -1157,6 +1172,9 @@ class ROIFilteringController():
             self.preview_window.plot_image(self.watershed_image)
         else:
             self.preview_window.plot_image(self.adjusted_image)
+
+        self.main_controller.param_window.show_watershed_action.setChecked(show)
+        self.param_widget.show_watershed_checkbox.setChecked(show)
 
     def filter_rois(self, z, update_overlay=False):
         print("mean image", self.mean_images[z])
@@ -1823,7 +1841,7 @@ class ProcessVideosThread(QThread):
 
                 cv2.imwrite(os.path.join(video_dir_path, 'z_{}_rois.png'.format(z)), watershed_image)
 
-            np.save(os.path.join(video_dir_path, '_rois.npy'), labels)
+            np.save(os.path.join(video_dir_path, 'all_rois.npy'), labels)
 
             if first_mean_images is None:
                 first_mean_images = mean_images[:]

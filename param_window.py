@@ -67,6 +67,8 @@ class ParamWindow(QMainWindow):
         self.delete_shortcut = QShortcut(QKeySequence('Backspace'), self.videos_widget.videos_list)
         self.delete_shortcut.activated.connect(self.remove_selected_items)
 
+        self.create_menus()
+
         self.toggle_initial_state(True)
 
         # set window title bar buttons
@@ -76,6 +78,21 @@ class ParamWindow(QMainWindow):
             self.setWindowFlags(Qt.CustomizeWindowHint | Qt.WindowCloseButtonHint | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint)
 
         self.show()
+
+    def create_menus(self):
+        self.show_watershed_action = QAction('Show ROIs', self, checkable=True)
+        self.show_watershed_action.setShortcut('R')
+        self.show_watershed_action.setStatusTip('Toggle showing the ROIs.')
+        self.show_watershed_action.triggered.connect(lambda:self.controller.show_watershed_image(self.show_watershed_action.isChecked()))
+        self.show_watershed_action.setEnabled(False)
+
+        # create menu bar
+        menubar  = self.menuBar()
+
+        # add menu items
+        file_menu = menubar.addMenu('&View')
+        file_menu.addAction(self.show_watershed_action)
+        # file_menu.addSeparator()
 
     def videos_opened(self, video_paths):
         self.videos_widget.videos_opened(video_paths)
@@ -440,8 +457,6 @@ class MotionCorrectionWidget(ParamWidget):
         self.mc_current_z_checkbox.setChecked(False)
         self.mc_current_z_checkbox.clicked.connect(lambda:self.controller.set_mc_current_z(self.mc_current_z_checkbox.isChecked()))
         self.button_layout.addWidget(self.mc_current_z_checkbox)
-
-        self.main_layout.addWidget(HLine())
 
         self.button_widget_2 = QWidget(self)
         self.button_layout_2 = QHBoxLayout(self.button_widget_2)
