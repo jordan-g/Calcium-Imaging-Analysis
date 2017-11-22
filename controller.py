@@ -273,8 +273,8 @@ class Controller():
 
         print("Loaded video with shape {}.".format(self.video.shape))
 
-        # update preview window
-        self.preview_window.title_label.setText(os.path.basename(self.video_path))
+        # update preview window's titlebar to show the video name
+        self.preview_window.set_video_name(os.path.basename(self.video_path))
 
         # update param window
         self.param_window.stacked_widget.setDisabled(False)
@@ -316,7 +316,7 @@ class Controller():
             self.show_motion_correction_params()
             self.param_window.toggle_initial_state(True)
             self.preview_window.timer.stop()
-            self.preview_window.title_label.setText("")
+            self.preview_window.set_video_name("")
             self.preview_window.setWindowTitle("Preview")
             self.preview_window.plot_image(None)
         elif 0 in indices:
@@ -384,7 +384,7 @@ class Controller():
         self.watershed_controller.video_opened(video, video_path, roi_overlay)
         self.param_window.statusBar().showMessage("")
 
-        self.preview_window.setWindowTitle("Preview")
+        self.preview_window.setWindowTitle(os.path.basename(self.video_path))
 
     def show_motion_correction_params(self, switched_to=False):
         self.param_window.stacked_widget.setCurrentIndex(0)
@@ -865,14 +865,14 @@ class WatershedController():
             self.param_widget.show_watershed_checkbox.setChecked(False)
             self.main_controller.param_window.show_watershed_action.setChecked(False)
 
-            self.preview_window.plot_image(self.adjusted_image, mask=self.background_mask)
+            self.preview_window.plot_image(self.adjusted_image, background_mask=self.background_mask)
         elif param == "window_size":
             self.equalized_image = utilities.calculate_equalized_image(self.adjusted_image, self.background_mask, self.params['window_size'])
 
             self.param_widget.show_watershed_checkbox.setChecked(False)
             self.main_controller.param_window.show_watershed_action.setChecked(False)
 
-            self.preview_window.plot_image(self.equalized_image, mask=None)
+            self.preview_window.plot_image(self.equalized_image)
         elif param == "z":
             self.z = value
 
