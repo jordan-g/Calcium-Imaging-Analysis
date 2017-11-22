@@ -782,7 +782,7 @@ class ROIFilteringWidget(ParamWidget):
         self.filter_rois_button.setIcon(QIcon("icons/accept_icon.png"))
         self.filter_rois_button.setIconSize(QSize(16,16))
         self.filter_rois_button.setStyleSheet('font-weight: bold;')
-        self.filter_rois_button.clicked.connect(lambda:self.controller.filter_rois(self.main_controller.params['z'], update_overlay=True))
+        self.filter_rois_button.clicked.connect(lambda:self.controller.filter_rois(self.main_controller.z, update_overlay=True))
         self.button_layout.addWidget(self.filter_rois_button)
 
     def roi_erasing_started(self):

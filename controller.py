@@ -36,8 +36,7 @@ else:
 
 DEFAULT_VIEWING_PARAMS = {'gamma'   : 1.0,
                           'contrast': 1.0,
-                          'fps'     : 60,
-                          'z'       : 0}
+                          'fps'     : 60}
 
 DEFAULT_WATERSHED_PARAMS = {'window_size'         : 7,
                             'background_threshold': 10,
@@ -93,6 +92,8 @@ class Controller():
 
         # set the mode -- "motion_correct" / "watershed" / "filter"
         self.mode = "motion_correct"
+
+        self.z = 0
 
         # set references to param widgets & preview window
         self.param_widget                                = self.param_window.main_param_widget
@@ -261,9 +262,9 @@ class Controller():
             # add a z dimension
             self.video = self.video[:, np.newaxis, :, :]
 
-        # set z parameter to 0 if necessary
-        if self.params['z'] >= self.video.shape[1]:
-            self.params['z'] = 0
+        # set z to 0 if necessary
+        if self.z >= self.video.shape[1]:
+            self.z = 0
 
         # remove nans
         self.video = np.nan_to_num(self.video).astype(np.float32)
@@ -280,8 +281,8 @@ class Controller():
         self.param_window.stacked_widget.setDisabled(False)
         self.param_window.statusBar().showMessage("")
         self.param_widget.param_sliders["z"].setMaximum(self.video.shape[1]-1)
-        self.param_widget.param_sliders["z"].setValue(self.params['z'])
-        self.param_widget.param_textboxes["z"].setText(str(self.params['z']))
+        self.param_widget.param_sliders["z"].setValue(self.z)
+        self.param_widget.param_textboxes["z"].setText(str(self.z))
 
         self.param_window.videos_widget.save_mc_video_button.setEnabled(False)
 
@@ -503,7 +504,7 @@ class MotionCorrectionController():
         self.video      = video
         self.video_path = video_path
 
-        self.z = self.main_controller.params['z']
+        self.z = self.main_controller.z
 
         self.preview_window.timer.stop()
 
@@ -515,13 +516,13 @@ class MotionCorrectionController():
         self.param_widget.use_mc_video_checkbox.setDisabled(True)
 
     def switched_to(self):
-        if self.z != self.main_controller.params['z']:
-            z = self.main_controller.params['z']
+        if self.z != self.main_controller.z:
+            z = self.main_controller.z
 
             if self.use_mc_video:
-                self.adjusted_mc_video = self.calculate_adjusted_video(self.mc_video, z=self.main_controller.params['z'])
+                self.adjusted_mc_video = self.calculate_adjusted_video(self.mc_video, z=self.main_controller.z)
             else:
-                self.adjusted_video = self.calculate_adjusted_video(self.video, z=self.main_controller.params['z'])
+                self.adjusted_video = self.calculate_adjusted_video(self.video, z=self.main_controller.z)
 
             self.z = z
 
@@ -744,7 +745,7 @@ class WatershedController():
             self.video       = video
             self.video_path  = video_path
 
-            self.z = self.main_controller.params['z']
+            self.z = self.main_controller.z
 
             self.preview_window.timer.stop()
 
@@ -1045,7 +1046,7 @@ class ROIFilteringController():
             self.video      = video
             self.video_path = video_path
 
-            self.z = self.main_controller.params['z']
+            self.z = self.main_controller.z
 
             self.preview_window.timer.stop()
 
