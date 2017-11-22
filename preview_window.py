@@ -24,8 +24,6 @@ except:
 # color table to use for showing images
 gray_color_table = [qRgb(i, i, i) for i in range(256)]
 
-TITLE_STYLESHEET = "font-size: 15px; font-weight: bold; color: white;"
-
 class PreviewQLabel(QLabel):
     """
     QLabel subclass used to show a preview image.
