@@ -1,5 +1,4 @@
 # import the Qt library
-
 try:
     from PyQt4.QtCore import *
     from PyQt4.QtGui import *
@@ -12,6 +11,7 @@ except:
 
 import os
 
+# set styles of title and subtitle labels
 TITLE_STYLESHEET    = "font-size: 16px; font-weight: bold;"
 SUBTITLE_STYLESHEET = "font-size: 14px; font-weight: bold;"
 
@@ -28,6 +28,7 @@ class ParamWindow(QMainWindow):
         # set initial position
         self.setGeometry(0, 32, 10, 10)
 
+        # create main widget & layout
         self.main_widget = QWidget(self)
         self.main_layout = QGridLayout(self.main_widget)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
@@ -36,11 +37,15 @@ class ParamWindow(QMainWindow):
         # set main widget to be the central widget
         self.setCentralWidget(self.main_widget)
 
+        # set up the status bar
         self.statusBar().setStyleSheet("background-color: rgba(255, 255, 255, 0.5); border-top: 1px solid rgba(0, 0, 0, 0.1); font-size: 10px; font-style: italic;")
         self.statusBar().showMessage("To begin, open one or more video files. TIFF and NPY files are supported.")
 
+        # create video list widget
         self.videos_widget = VideosWidget(self, self.controller)
         self.main_layout.addWidget(self.videos_widget, 0, 0)
+        self.delete_shortcut = QShortcut(QKeySequence('Backspace'), self.videos_widget.videos_list)
+        self.delete_shortcut.activated.connect(self.remove_selected_items)
 
         self.main_param_widget = MainParamWidget(self, self.controller)
         self.main_layout.addWidget(self.main_param_widget, 1, 0)
@@ -56,20 +61,23 @@ class ParamWindow(QMainWindow):
         self.motion_correction_widget = MotionCorrectionWidget(self, self.controller)
         self.stacked_widget.addWidget(self.motion_correction_widget)
 
-        # create watershed widget
-        self.watershed_widget = WatershedWidget(self, self.controller)
-        self.stacked_widget.addWidget(self.watershed_widget)
+        # create ROI finding widget
+        self.roi_finding_widget = ROIFindingWidget(self, self.controller)
+        self.stacked_widget.addWidget(self.roi_finding_widget)
 
         # create ROI filtering widget
         self.roi_filtering_widget = ROIFilteringWidget(self, self.controller)
         self.stacked_widget.addWidget(self.roi_filtering_widget)
 
-        self.delete_shortcut = QShortcut(QKeySequence('Backspace'), self.videos_widget.videos_list)
-        self.delete_shortcut.activated.connect(self.remove_selected_items)
-
+        # create menus
         self.create_menus()
 
-        self.toggle_initial_state(True)
+        # disable buttons
+        self.main_param_widget.setDisabled(True)
+        self.stacked_widget.setDisabled(True)
+        self.videos_widget.load_rois_button.setDisabled(True)
+        self.videos_widget.save_rois_button.setDisabled(True)
+        self.videos_widget.process_all_button.setDisabled(True)
 
         # set window title bar buttons
         if pyqt_version == 5:
@@ -80,24 +88,26 @@ class ParamWindow(QMainWindow):
         self.show()
 
     def create_menus(self):
-        self.show_watershed_action = QAction('Show ROIs', self, checkable=True)
-        self.show_watershed_action.setShortcut('R')
-        self.show_watershed_action.setStatusTip('Toggle showing the ROIs.')
-        self.show_watershed_action.triggered.connect(lambda:self.controller.show_watershed_image(self.show_watershed_action.isChecked()))
-        self.show_watershed_action.setEnabled(False)
+        self.show_rois_action = QAction('Show ROIs', self, checkable=True)
+        self.show_rois_action.setShortcut('R')
+        self.show_rois_action.setStatusTip('Toggle showing the ROIs.')
+        self.show_rois_action.triggered.connect(lambda:self.controller.show_ROI_image(self.show_rois_action.isChecked()))
+        self.show_rois_action.setEnabled(False)
 
         # create menu bar
         menubar  = self.menuBar()
 
         # add menu items
         file_menu = menubar.addMenu('&View')
-        file_menu.addAction(self.show_watershed_action)
+        file_menu.addAction(self.show_rois_action)
         # file_menu.addSeparator()
 
     def videos_opened(self, video_paths):
         self.videos_widget.videos_opened(video_paths)
 
-        self.toggle_initial_state(False)
+        self.main_param_widget.setDisabled(False)
+        self.stacked_widget.setDisabled(False)
+        self.videos_widget.load_rois_button.setDisabled(False)
 
     def remove_selected_items(self):
         self.videos_widget.remove_selected_items()
@@ -135,15 +145,6 @@ class ParamWindow(QMainWindow):
     def rois_created(self):
         self.videos_widget.save_rois_button.setEnabled(True)
         self.videos_widget.process_all_button.setEnabled(True)
-
-    def toggle_initial_state(self, initial_state=True):
-        self.main_param_widget.setDisabled(initial_state)
-        self.stacked_widget.setDisabled(initial_state)
-        self.videos_widget.load_rois_button.setDisabled(initial_state)
-
-        if initial_state:
-            self.videos_widget.save_rois_button.setDisabled(True)
-            self.videos_widget.process_all_button.setDisabled(True)
 
     def closeEvent(self, event):
         self.controller.close_all()
@@ -520,11 +521,11 @@ class MotionCorrectionWidget(ParamWidget):
         else:
             self.mc_progress_label.setText("Motion correcting... {}%.".format(int(percent)))
 
-class WatershedWidget(ParamWidget):
+class ROIFindingWidget(ParamWidget):
     def __init__(self, parent_widget, controller):
         ParamWidget.__init__(self, parent_widget, controller, "ROI Finding Parameters")
 
-        self.controller = controller.watershed_controller
+        self.controller = controller.roi_finding_controller
 
         self.add_param_slider(label_name="Normalization Window Size", name="window_size", minimum=2, maximum=30, moved=self.update_param, multiplier=1, pressed=self.update_param, released=self.update_param, description="Size (in pixels) of the window used to normalize brightness across the image.", int_values=True)
         # self.add_param_slider(label_name="Soma Threshold", name="soma_threshold", minimum=1, maximum=255, moved=self.update_param, multiplier=1, pressed=self.controller.show_soma_threshold_image, released=self.update_param, description="Threshold for soma centers.", int_values=True)
@@ -574,20 +575,20 @@ class WatershedWidget(ParamWidget):
         self.button_layout.setSpacing(5)
         self.main_layout.addWidget(self.button_widget)
 
-        self.show_watershed_checkbox = QCheckBox("Show ROIs")
-        self.show_watershed_checkbox.setObjectName("Show ROIs")
-        self.show_watershed_checkbox.setChecked(False)
-        self.show_watershed_checkbox.clicked.connect(lambda:self.controller.show_watershed_image(self.show_watershed_checkbox.isChecked()))
-        self.show_watershed_checkbox.setDisabled(True)
-        self.button_layout.addWidget(self.show_watershed_checkbox)
+        self.show_rois_checkbox = QCheckBox("Show ROIs")
+        self.show_rois_checkbox.setObjectName("Show ROIs")
+        self.show_rois_checkbox.setChecked(False)
+        self.show_rois_checkbox.clicked.connect(lambda:self.controller.show_ROI_image(self.show_rois_checkbox.isChecked()))
+        self.show_rois_checkbox.setDisabled(True)
+        self.button_layout.addWidget(self.show_rois_checkbox)
 
         self.button_layout.addStretch()
 
-        self.watershed_progress_label = QLabel("")
-        self.watershed_progress_label.setStyleSheet("font-size: 10px; font-style: italic;")
-        self.watershed_progress_label.setMinimumWidth(200)
-        self.watershed_progress_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.button_layout.addWidget(self.watershed_progress_label)
+        self.roi_finding_progress_label = QLabel("")
+        self.roi_finding_progress_label.setStyleSheet("font-size: 10px; font-style: italic;")
+        self.roi_finding_progress_label.setMinimumWidth(200)
+        self.roi_finding_progress_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.button_layout.addWidget(self.roi_finding_progress_label)
 
         self.motion_correct_button = HoverButton('Motion Correction', None, self.parent_widget.statusBar())
         self.motion_correct_button.setHoverMessage("Go back to motion correction.")
@@ -612,27 +613,27 @@ class WatershedWidget(ParamWidget):
         self.filter_rois_button.setDisabled(True)
         self.button_layout.addWidget(self.filter_rois_button)
 
-    def watershed_started(self):
-        self.watershed_progress_label.setText("Finding ROIs... 0%.")
+    def roi_finding_started(self):
+        self.roi_finding_progress_label.setText("Finding ROIs... 0%.")
         self.process_video_button.setText('Cancel')
         self.process_video_button.setHoverMessage("Stop finding ROIs.")
         self.filter_rois_button.setEnabled(False)
         self.motion_correct_button.setEnabled(False)
 
-    def update_watershed_progress(self, percent):
+    def update_roi_finding_progress(self, percent):
         if percent == 100:
-            self.watershed_progress_label.setText("")
+            self.roi_finding_progress_label.setText("")
             self.process_video_button.setText('Find ROIs')
             self.process_video_button.setHoverMessage("Find ROIs using the watershed algorithm.")
             self.filter_rois_button.setEnabled(True)
             self.motion_correct_button.setEnabled(True)
         elif percent == -1:
-            self.watershed_progress_label.setText("")
+            self.roi_finding_progress_label.setText("")
             self.process_video_button.setText('Find ROIs')
             self.process_video_button.setHoverMessage("Find ROIs using the watershed algorithm.")
             self.motion_correct_button.setEnabled(True)
         else:
-            self.watershed_progress_label.setText("Finding ROIs... {}%.".format(int(percent)))
+            self.roi_finding_progress_label.setText("Finding ROIs... {}%.".format(int(percent)))
 
 class ROIFilteringWidget(ParamWidget):
     def __init__(self, parent_widget, controller):
@@ -754,12 +755,12 @@ class ROIFilteringWidget(ParamWidget):
         self.button_layout.setSpacing(5)
         self.main_layout.addWidget(self.button_widget)
 
-        self.show_watershed_checkbox = QCheckBox("Show ROIs")
-        self.show_watershed_checkbox.setObjectName("Show ROIs")
-        self.show_watershed_checkbox.setChecked(False)
-        self.show_watershed_checkbox.clicked.connect(lambda:self.controller.show_watershed_image(self.show_watershed_checkbox.isChecked()))
-        self.show_watershed_checkbox.setDisabled(True)
-        self.button_layout.addWidget(self.show_watershed_checkbox)
+        self.show_rois_checkbox = QCheckBox("Show ROIs")
+        self.show_rois_checkbox.setObjectName("Show ROIs")
+        self.show_rois_checkbox.setChecked(False)
+        self.show_rois_checkbox.clicked.connect(lambda:self.controller.show_ROI_image(self.show_rois_checkbox.isChecked()))
+        self.show_rois_checkbox.setDisabled(True)
+        self.button_layout.addWidget(self.show_rois_checkbox)
 
         self.button_layout.addStretch()
 
@@ -770,12 +771,12 @@ class ROIFilteringWidget(ParamWidget):
         self.motion_correct_button.clicked.connect(self.controller.motion_correct)
         self.button_layout.addWidget(self.motion_correct_button)
 
-        self.watershed_button = HoverButton('ROI Finding', None, self.parent_widget.statusBar())
-        self.watershed_button.setHoverMessage("Go back to ROI segmentation.")
-        self.watershed_button.setIcon(QIcon("icons/skip_back_icon.png"))
-        self.watershed_button.setIconSize(QSize(16,16))
-        self.watershed_button.clicked.connect(self.controller.watershed)
-        self.button_layout.addWidget(self.watershed_button)
+        self.find_rois_button = HoverButton('ROI Finding', None, self.parent_widget.statusBar())
+        self.find_rois_button.setHoverMessage("Go back to ROI segmentation.")
+        self.find_rois_button.setIcon(QIcon("icons/skip_back_icon.png"))
+        self.find_rois_button.setIconSize(QSize(16,16))
+        self.find_rois_button.clicked.connect(self.controller.find_rois)
+        self.button_layout.addWidget(self.find_rois_button)
 
         self.filter_rois_button = HoverButton('Filter ROIs', None, self.parent_widget.statusBar())
         self.filter_rois_button.setHoverMessage("Automatically filter ROIs with the current parameters.")
@@ -787,7 +788,7 @@ class ROIFilteringWidget(ParamWidget):
 
     def roi_erasing_started(self):
         self.filter_rois_button.setEnabled(False)
-        self.watershed_button.setEnabled(False)
+        self.find_rois_button.setEnabled(False)
         self.motion_correct_button.setEnabled(False)
         self.enlarge_roi_button.setEnabled(False)
         self.shrink_roi_button.setEnabled(False)
@@ -800,7 +801,7 @@ class ROIFilteringWidget(ParamWidget):
 
     def roi_erasing_ended(self):
         self.filter_rois_button.setEnabled(True)
-        self.watershed_button.setEnabled(True)
+        self.find_rois_button.setEnabled(True)
         self.motion_correct_button.setEnabled(True)
         self.reset_button.setEnabled(True)
         self.undo_button.setEnabled(True)
@@ -809,7 +810,7 @@ class ROIFilteringWidget(ParamWidget):
 
     def roi_drawing_started(self):
         self.filter_rois_button.setEnabled(False)
-        self.watershed_button.setEnabled(False)
+        self.find_rois_button.setEnabled(False)
         self.motion_correct_button.setEnabled(False)
         self.enlarge_roi_button.setEnabled(False)
         self.shrink_roi_button.setEnabled(False)
@@ -822,7 +823,7 @@ class ROIFilteringWidget(ParamWidget):
 
     def roi_drawing_ended(self):
         self.filter_rois_button.setEnabled(True)
-        self.watershed_button.setEnabled(True)
+        self.find_rois_button.setEnabled(True)
         self.motion_correct_button.setEnabled(True)
         self.reset_button.setEnabled(True)
         self.undo_button.setEnabled(True)

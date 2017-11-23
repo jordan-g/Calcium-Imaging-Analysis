@@ -220,7 +220,7 @@ class PreviewWindow(QMainWindow):
                 self.image[background_mask > 0] = np.array([255, 0, 0]).astype(np.uint8)
 
             # draw user-drawn masks
-            if self.main_controller.mode == "watershed" and len(self.controller.mask_points[self.controller.z]) > 0:
+            if self.main_controller.mode == "roi_finding" and len(self.controller.mask_points[self.controller.z]) > 0:
                 # # make a copy of the image
                 # image = self.image.copy()
 
@@ -440,9 +440,9 @@ class PreviewWindow(QMainWindow):
         self.controller.shift_labels(previous_point, current_point)
 
     def mouse_pressed(self, point):
-        if self.main_controller.mode == "watershed" and self.drawing_mask:
+        if self.main_controller.mode == "roi_finding" and self.drawing_mask:
             self.add_mask_point(point)
-        elif self.main_controller.mode == "filter" and not self.drawing_rois:
+        elif self.main_controller.mode == "roi_filtering" and not self.drawing_rois:
             # store this point
             self.click_end_point = end_point
 
@@ -453,17 +453,17 @@ class PreviewWindow(QMainWindow):
             self.erase_roi_at_point(end_point)
         elif self.drawing_rois and clicked:
             self.draw_tentative_roi(start_point, end_point)
-        elif self.main_controller.mode == "filter" and clicked:
+        elif self.main_controller.mode == "roi_filtering" and clicked:
             self.shift_labels(self.click_end_point, end_point)
 
             # store this point
             self.click_end_point = end_point
 
     def mouse_released(self, start_point, end_point, mouse_moved=False):
-        if self.main_controller.mode == "watershed":
+        if self.main_controller.mode == "roi_finding":
             if not self.drawing_mask and not mouse_moved:
                 self.select_mask(end_point)
-        elif self.main_controller.mode == "filter":
+        elif self.main_controller.mode == "roi_filtering":
             if self.erasing_rois:
                 self.end_erase_rois()
             elif self.drawing_rois:

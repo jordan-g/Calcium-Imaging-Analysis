@@ -509,7 +509,7 @@ def calculate_roi_properties(labels):
 
     return roi_areas, roi_circs
 
-def apply_watershed(original_image, cells_mask, starting_image):
+def find_rois(original_image, cells_mask, starting_image):
     if len(original_image.shape) == 2:
         rgb_image = cv2.cvtColor((original_image*255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
     else:
