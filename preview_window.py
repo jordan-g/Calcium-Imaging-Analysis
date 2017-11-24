@@ -444,7 +444,7 @@ class PreviewWindow(QMainWindow):
             self.add_mask_point(point)
         elif self.main_controller.mode == "roi_filtering" and not self.drawing_rois:
             # store this point
-            self.click_end_point = end_point
+            self.click_end_point = point
 
     def mouse_moved(self, start_point, end_point, clicked=False):
         if self.drawing_mask:
