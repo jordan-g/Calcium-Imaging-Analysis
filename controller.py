@@ -916,7 +916,7 @@ class ROIFindingController():
 
             self.roi_finding_thread.start()
 
-            self.param_widget.roi_finding_finished()
+            self.param_widget.roi_finding_started()
 
             self.finding_rois = True
         else:

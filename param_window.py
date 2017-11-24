@@ -88,6 +88,12 @@ class ParamWindow(QMainWindow):
         self.show()
 
     def create_menus(self):
+        self.add_videos_action = QAction('Add Videos...', self, checkable=True)
+        self.add_videos_action.setShortcut('Ctrl+O')
+        self.add_videos_action.setStatusTip('Add video files for processing.')
+        self.add_videos_action.triggered.connect(self.controller.select_and_open_video)
+        self.add_videos_action.setEnabled(False)
+
         self.show_rois_action = QAction('Show ROIs', self, checkable=True)
         self.show_rois_action.setShortcut('R')
         self.show_rois_action.setStatusTip('Toggle showing the ROIs.')
@@ -98,9 +104,12 @@ class ParamWindow(QMainWindow):
         menubar  = self.menuBar()
 
         # add menu items
-        file_menu = menubar.addMenu('&View')
-        file_menu.addAction(self.show_rois_action)
+        file_menu = menubar.addMenu('&File')
+        file_menu.addAction(self.add_videos_action)
         # file_menu.addSeparator()
+
+        view_menu = menubar.addMenu('&View')
+        view_menu.addAction(self.show_rois_action)
 
     def videos_opened(self, video_paths):
         self.videos_widget.videos_opened(video_paths)
@@ -167,8 +176,8 @@ class VideosWidget(QWidget):
         self.button_layout.setSpacing(5)
         self.main_layout.addWidget(self.button_widget)
 
-        self.open_file_button = HoverButton('Open...', None, self.parent_widget.statusBar())
-        self.open_file_button.setHoverMessage("Open video files for processing.")
+        self.open_file_button = HoverButton('Add...', None, self.parent_widget.statusBar())
+        self.open_file_button.setHoverMessage("Add video files for processing.")
         self.open_file_button.setStyleSheet('font-weight: bold;')
         self.open_file_button.setIcon(QIcon("icons/open_file_icon.png"))
         self.open_file_button.setIconSize(QSize(16,16))
