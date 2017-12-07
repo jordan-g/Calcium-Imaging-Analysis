@@ -72,12 +72,8 @@ class ParamWindow(QMainWindow):
         # create menus
         self.create_menus()
 
-        # disable buttons
-        self.main_param_widget.setDisabled(True)
-        self.stacked_widget.setDisabled(True)
-        self.videos_widget.load_rois_button.setDisabled(True)
-        self.videos_widget.save_rois_button.setDisabled(True)
-        self.videos_widget.process_all_button.setDisabled(True)
+        # set initial state of widgets, buttons & menu items
+        self.set_initial_state()
 
         # set window title bar buttons
         if pyqt_version == 5:
@@ -87,8 +83,8 @@ class ParamWindow(QMainWindow):
 
         self.show()
 
-    def toggle_initial_state(self, initial_state):
-        # disable buttons
+    def set_initial_state(self):
+        # disable buttons, widgets & menu items
         self.main_param_widget.setDisabled(True)
         self.stacked_widget.setDisabled(True)
         self.videos_widget.load_rois_button.setDisabled(True)
@@ -117,7 +113,7 @@ class ParamWindow(QMainWindow):
         self.save_roi_image_action.setEnabled(False)
 
         # create menu bar
-        menubar  = self.menuBar()
+        menubar = self.menuBar()
 
         # add menu items
         file_menu = menubar.addMenu('&File')

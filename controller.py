@@ -319,7 +319,7 @@ class Controller():
             self.use_mc_video = False
 
             self.show_motion_correction_params()
-            self.param_window.toggle_initial_state(True)
+            self.param_window.set_initial_state()
             self.preview_window.timer.stop()
             self.preview_window.set_video_name("")
             self.preview_window.setWindowTitle("Preview")
