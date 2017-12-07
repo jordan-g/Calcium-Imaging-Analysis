@@ -108,6 +108,7 @@ class ParamWindow(QMainWindow):
         self.show_rois_action.setStatusTip('Toggle showing the ROIs.')
         self.show_rois_action.triggered.connect(lambda:self.controller.show_roi_image(self.show_rois_action.isChecked()))
         self.show_rois_action.setEnabled(False)
+        self.show_rois_action.setShortcutContext(Qt.ApplicationShortcut)
 
         self.save_roi_image_action = QAction('Save ROI Image...', self)
         self.save_roi_image_action.setShortcut('Ctrl+Alt+S')
