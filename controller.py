@@ -34,6 +34,7 @@ if sys.version_info[0] < 3:
 else:
     python_version = 3
 
+# set default parameters dictionaries
 DEFAULT_VIEWING_PARAMS = {'gamma'   : 1.0,
                           'contrast': 1.0,
                           'fps'     : 60}
@@ -53,6 +54,7 @@ DEFAULT_ROI_FILTERING_PARAMS = {'min_area'       : 10,
                                 'max_circ'       : 2,
                                 'min_correlation': 0.2}
 
+# set filenames for saving current parameters
 VIEWING_PARAMS_FILENAME           = "viewing_params.txt"
 ROI_FINDING_PARAMS_FILENAME       = "roi_finding_params.txt"
 MOTION_CORRECTION_PARAMS_FILENAME = "motion_correction_params.txt"
@@ -93,6 +95,7 @@ class Controller():
         # set the mode -- "motion_correcting" / "roi_finding" / "roi_filtering"
         self.mode = "motion_correcting"
 
+        # set the current z plane to 0
         self.z = 0
 
         # set references to param widgets & preview window
@@ -127,6 +130,7 @@ class Controller():
             if not (save_path.endswith('.npy') or save_path.endswith('.tif') or save_path.endswith('.tiff')):
                 save_path += ".tif"
 
+            # save the video
             if save_path.endswith('.npy'):
                 np.save(save_path, self.motion_correction_controller.mc_video)
             else:
@@ -251,9 +255,9 @@ class Controller():
             print("Error: Opened file is not a video -- not enough dimensions.")
             return False
 
-        # self.video = video[1:]
-
-        self.video = video
+        # there is a bug with z-stack OIR files where the first frame of the first z plane is wrong,
+        # so we have to throw out the first frame of the video here
+        self.video = video[1:]
 
         # set the path to the previewed video
         self.video_path = video_path
@@ -1078,7 +1082,7 @@ class ROIFilteringController():
                         else:
                             bg_brightness = np.mean(self.normalized_images[z][-window_size:, -window_size:])
 
-                        difference = round(bg_brightness - bg_brightness_0).astype(int)
+                        difference = int(round(bg_brightness - bg_brightness_0))
 
                         self.normalized_images[z] = np.maximum(self.normalized_images[z].astype(int) - difference, 0).astype(np.uint8)
 
