@@ -87,12 +87,21 @@ class ParamWindow(QMainWindow):
 
         self.show()
 
+    def toggle_initial_state(self, initial_state):
+        # disable buttons
+        self.main_param_widget.setDisabled(True)
+        self.stacked_widget.setDisabled(True)
+        self.videos_widget.load_rois_button.setDisabled(True)
+        self.videos_widget.save_rois_button.setDisabled(True)
+        self.videos_widget.process_all_button.setDisabled(True)
+        self.show_rois_action.setEnabled(False)
+        self.save_roi_image_action.setEnabled(False)
+
     def create_menus(self):
-        self.add_videos_action = QAction('Add Videos...', self, checkable=True)
+        self.add_videos_action = QAction('Add Videos...', self)
         self.add_videos_action.setShortcut('Ctrl+O')
         self.add_videos_action.setStatusTip('Add video files for processing.')
         self.add_videos_action.triggered.connect(self.controller.select_and_open_video)
-        self.add_videos_action.setEnabled(False)
 
         self.show_rois_action = QAction('Show ROIs', self, checkable=True)
         self.show_rois_action.setShortcut('R')
@@ -100,12 +109,19 @@ class ParamWindow(QMainWindow):
         self.show_rois_action.triggered.connect(lambda:self.controller.show_roi_image(self.show_rois_action.isChecked()))
         self.show_rois_action.setEnabled(False)
 
+        self.save_roi_image_action = QAction('Save ROI Image...', self)
+        self.save_roi_image_action.setShortcut('Ctrl+Alt+S')
+        self.save_roi_image_action.setStatusTip('Save an image of the current ROIs.')
+        self.save_roi_image_action.triggered.connect(self.controller.save_roi_image)
+        self.save_roi_image_action.setEnabled(False)
+
         # create menu bar
         menubar  = self.menuBar()
 
         # add menu items
         file_menu = menubar.addMenu('&File')
         file_menu.addAction(self.add_videos_action)
+        file_menu.addAction(self.save_roi_image_action)
         # file_menu.addSeparator()
 
         view_menu = menubar.addMenu('&View')

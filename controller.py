@@ -466,6 +466,22 @@ class Controller():
         elif self.mode == "roi_filtering":
             self.roi_filtering_controller.show_roi_image(show)
 
+    def save_roi_image(self):
+        # let the user pick where to save the ROI images
+        if pyqt_version == 4:
+            save_path = str(QFileDialog.getSaveFileName(self.param_window, 'Save ROI image', '{}_rois_z_{}'.format(os.path.splitext(self.video_path)[0], self.z), 'PNG (*.png)'))
+        elif pyqt_version == 5:
+            save_path = str(QFileDialog.getSaveFileName(self.param_window, 'Save ROI image', '{}_rois_z_{}'.format(os.path.splitext(self.video_path)[0], self.z), 'PNG (*.png)')[0])
+        if not save_path.endswith('.png'):
+            save_path += ".png"
+
+        if save_path is not None and len(save_path) > 0:
+            # save the ROIs image
+            if self.roi_filtering_controller.roi_image is not None:
+                scipy.misc.imsave(save_path, self.roi_filtering_controller.roi_image)
+            else:
+                scipy.misc.imsave(save_path, self.roi_finding_controller.roi_image)
+
     def save_params(self):
         json.dump(self.params, open(VIEWING_PARAMS_FILENAME, "w"))
 
@@ -940,6 +956,7 @@ class ROIFindingController():
         self.param_widget.show_rois_checkbox.setDisabled(False)
         self.param_widget.show_rois_checkbox.setChecked(True)
         self.main_controller.param_window.show_rois_action.setDisabled(False)
+        self.main_controller.param_window.save_roi_image_action.setDisabled(False)
         self.main_controller.param_window.show_rois_action.setChecked(True)
         self.param_widget.filter_rois_button.setDisabled(False)
 
@@ -1146,6 +1163,7 @@ class ROIFilteringController():
             self.param_widget.show_rois_checkbox.setDisabled(False)
             self.param_widget.show_rois_checkbox.setChecked(True)
             self.main_controller.param_window.show_rois_action.setDisabled(False)
+            self.main_controller.param_window.save_roi_image_action.setDisabled(False)
             self.main_controller.param_window.show_rois_action.setChecked(True)
 
             self.show_roi_image(True)
