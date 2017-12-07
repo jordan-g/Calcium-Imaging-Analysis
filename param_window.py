@@ -97,7 +97,7 @@ class ParamWindow(QMainWindow):
         self.show_rois_action = QAction('Show ROIs', self, checkable=True)
         self.show_rois_action.setShortcut('R')
         self.show_rois_action.setStatusTip('Toggle showing the ROIs.')
-        self.show_rois_action.triggered.connect(lambda:self.controller.show_ROI_image(self.show_rois_action.isChecked()))
+        self.show_rois_action.triggered.connect(lambda:self.controller.show_roi_image(self.show_rois_action.isChecked()))
         self.show_rois_action.setEnabled(False)
 
         # create menu bar
@@ -587,7 +587,7 @@ class ROIFindingWidget(ParamWidget):
         self.show_rois_checkbox = QCheckBox("Show ROIs")
         self.show_rois_checkbox.setObjectName("Show ROIs")
         self.show_rois_checkbox.setChecked(False)
-        self.show_rois_checkbox.clicked.connect(lambda:self.controller.show_ROI_image(self.show_rois_checkbox.isChecked()))
+        self.show_rois_checkbox.clicked.connect(lambda:self.controller.show_roi_image(self.show_rois_checkbox.isChecked()))
         self.show_rois_checkbox.setDisabled(True)
         self.button_layout.addWidget(self.show_rois_checkbox)
 
@@ -767,7 +767,7 @@ class ROIFilteringWidget(ParamWidget):
         self.show_rois_checkbox = QCheckBox("Show ROIs")
         self.show_rois_checkbox.setObjectName("Show ROIs")
         self.show_rois_checkbox.setChecked(False)
-        self.show_rois_checkbox.clicked.connect(lambda:self.controller.show_ROI_image(self.show_rois_checkbox.isChecked()))
+        self.show_rois_checkbox.clicked.connect(lambda:self.controller.show_roi_image(self.show_rois_checkbox.isChecked()))
         self.show_rois_checkbox.setDisabled(True)
         self.button_layout.addWidget(self.show_rois_checkbox)
 
