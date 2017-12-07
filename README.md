@@ -8,6 +8,12 @@ This software requires Python 2 or 3 to be installed, as well as the following P
 - scipy
 - numpy
 - matplotlib
+- future
+- scikit-learn
+- h5py
+- tqdm
+- ipyparallel
+- psutil
 
 ## Running
 
