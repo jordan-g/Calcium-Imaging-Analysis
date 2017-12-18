@@ -448,7 +448,7 @@ def calculate_equalized_image(adjusted_image, background_mask, window_size):
 
     equalized_image = rescale_0_1(image_difference/image_range)
 
-    equalized_image[equalized_image < 0] = 0
+    equalized_image[equalized_image < 0.05] = 0
     equalized_image[equalized_image > 1] = 1
 
     equalized_image[background_mask] = 0

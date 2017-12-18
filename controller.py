@@ -1294,27 +1294,6 @@ class ROIFilteringController():
         self.roi_overlay = np.roll(self.roi_overlay, y_shift, axis=0)
         self.roi_overlay = np.roll(self.roi_overlay, x_shift, axis=1)
 
-        # if y_shift >= 0 and x_shift >= 0:
-        #     self.labels[self.z][:y_shift, :] = 0
-        #     self.labels[self.z][:, :x_shift] = 0
-        #     self.roi_overlay[:y_shift, :, :] = 0
-        #     self.roi_overlay[:, :x_shift, :] = 0
-        # elif y_shift < 0 and x_shift >= 0:
-        #     self.labels[self.z][y_shift:, :] = 0
-        #     self.labels[self.z][:, :x_shift] = 0
-        #     self.roi_overlay[y_shift:, :, :] = 0
-        #     self.roi_overlay[:, :x_shift, :] = 0
-        # elif y_shift >= 0 and x_shift < 0:
-        #     self.labels[self.z][:y_shift, :] = 0
-        #     self.labels[self.z][:, x_shift:] = 0
-        #     self.roi_overlay[:y_shift, :, :] = 0
-        #     self.roi_overlay[:, x_shift:, :] = 0
-        # else:
-        #     self.labels[self.z][y_shift:, :] = 0
-        #     self.labels[self.z][:, x_shift:] = 0
-        #     self.roi_overlay[y_shift:, :, :] = 0
-        #     self.roi_overlay[:, x_shift:, :] = 0
-
         self.calculate_roi_image(z=self.z, update_overlay=False)
 
         self.show_roi_image(show=self.param_widget.show_rois_checkbox.isChecked())
@@ -1405,7 +1384,9 @@ class ROIFilteringController():
             self.param_widget.lock_roi_button.setText("Lock ROI")
 
     def add_to_history(self):
-        print("Adding to history")
+        print("Adding to history.")
+
+        # only store up to 20 history states
         if len(self.previous_labels[self.z]) > 20:
             del self.previous_labels[self.z][0]
         if len(self.previous_roi_overlays[self.z]) > 20:
@@ -1425,6 +1406,7 @@ class ROIFilteringController():
         if len(self.previous_locked_rois[self.z]) > 20:
             del self.previous_locked_rois[self.z][0]
 
+        # store the current state
         if python_version == 3:
             self.previous_labels[self.z].append(self.labels[self.z].copy())
             self.previous_erased_rois[self.z].append(self.erased_rois[self.z].copy())
@@ -1441,6 +1423,7 @@ class ROIFilteringController():
         self.previous_roi_overlays[self.z].append(self.roi_overlay.copy())
         self.previous_adjusted_images[self.z].append(self.adjusted_image.copy())
         self.previous_roi_images[self.z].append(self.roi_image.copy())
+
         if self.selected_roi is not None:
             self.previous_selected_rois[self.z].append(self.selected_roi)
 
@@ -1905,7 +1888,7 @@ class ProcessVideosThread(QThread):
 
                     writer.writerow(['ROI #'] + [ 'Frame {}'.format(i) for i in range(video.shape[0]) ])
 
-                    for l in np.unique(self.labels[z]):
+                    for l in np.unique(self.labels[z])[1:]:
                         writer.writerow([l] + results[z][l].tolist())
                 print("Done.")
 

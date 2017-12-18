@@ -674,15 +674,6 @@ class ROIFilteringWidget(ParamWidget):
         
         self.main_layout.addWidget(HLine())
 
-        # self.title_widget = QWidget(self)
-        # self.title_layout = QHBoxLayout(self.title_widget)
-        # self.title_layout.setContentsMargins(10, 10, 0, 0)
-        # self.main_layout.addWidget(self.title_widget)
-
-        # self.title_label = QLabel("Manual Controls")
-        # self.title_label.setStyleSheet(TITLE_STYLESHEET)
-        # self.title_layout.addWidget(self.title_label)
-
         self.roi_button_widget = QWidget(self)
         self.roi_button_layout = QHBoxLayout(self.roi_button_widget)
         self.roi_button_layout.setContentsMargins(5, 0, 0, 0)
@@ -706,8 +697,6 @@ class ROIFilteringWidget(ParamWidget):
         self.undo_button.setHoverMessage("Undo the previous erase action.")
         self.undo_button.setIcon(QIcon("icons/undo_icon.png"))
         self.undo_button.setIconSize(QSize(16, 16))
-        # self.undo_button.setIcon(QIcon("icons/undo_icon.png"))
-        # self.undo_button.setIconSize(QSize(16, 16))
         self.undo_button.clicked.connect(self.controller.undo_erase)
         self.roi_button_layout.addWidget(self.undo_button)
 
