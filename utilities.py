@@ -596,7 +596,7 @@ def filter_labels(labels, removed_rois):
 def get_roi_containing_point(labels, roi_point):
     roi = labels[roi_point[1], roi_point[0]]
 
-    if roi <= 1:
+    if roi < 1:
         return None
 
     return roi
@@ -622,7 +622,13 @@ def get_mask_containing_point(masks, mask_point, inverted=False):
     return None, -1
 
 def calc_activity_of_roi(labels, video, roi, z=0):
-    return np.mean(video[:, z, :, :].transpose(1, 2, 0) * ((labels == roi)[:, :, np.newaxis]), axis=(0, 1))
+    mask = np.zeros(video.shape, dtype=bool)
+    mask[:, :, :] = labels[:, :, np.newaxis] == roi
+
+    # print(mask.shape, vid.shape, vid[mask].shape)
+    # print(np.mean(np.multiply(video[0, z, :, :], labels == roi)))
+    # print(np.nanmax(np.where(mask, video, np.nan), axis=(0, 1)))
+    return np.nanmean(np.where(mask, video, np.nan), axis=(0, 1))
 
 def add_roi_to_overlay(overlay, roi_mask, labels):
     l = np.amax(labels[roi_mask > 0])
@@ -640,7 +646,7 @@ def calculate_shift(mean_image_1, mean_image_2):
 
     shift, error, diffphase = register_translation(image_1, image_2)
 
-    print("shift", shift)
+    # print("shift", shift)
 
     return int(shift[0]), int(shift[1])
 
@@ -653,7 +659,7 @@ def draw_rois(rgb_image, labels, selected_roi, erased_rois, filtered_out_rois, l
         roi_overlay = np.zeros(image.shape).astype(np.uint8)
 
         for l in np.unique(labels):
-            if l <= 1 or l in filtered_out_rois:
+            if l < 1 or l in filtered_out_rois:
                 continue
 
             roi_overlay[labels == l] = colors[l]

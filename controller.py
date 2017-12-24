@@ -407,7 +407,7 @@ class Controller():
         self.param_window.stacked_widget.setCurrentIndex(2)
         self.mode = "roi_filtering"
         self.preview_window.controller = self.roi_filtering_controller
-        self.roi_filtering_controller.video_opened(self.normalized_video,
+        self.roi_filtering_controller.video_opened(self.video, self.normalized_video,
           self.video_path, labels, roi_areas, roi_circs, mean_images,
           normalized_images, correlation_images, filtered_out_rois, roi_overlay,
           loading_rois=loading_rois)
@@ -817,6 +817,12 @@ class ROIFindingController():
             self.masks             = [ [] for i in range(video.shape[1]) ]
             self.mask_points       = [ [] for i in range(video.shape[1]) ]
 
+            if self.labels is None:
+                self.labels = [ np.zeros(video.shape[2:]).astype(int) for i in range(video.shape[1]) ]
+                self.filtered_out_rois = [ [] for i in range(video.shape[1]) ]
+                self.roi_circs = [ [] for i in range(video.shape[1]) ]
+                self.roi_areas = [ [] for i in range(video.shape[1]) ]
+
             self.adjusted_image       = utilities.calculate_adjusted_image(self.normalized_images[self.z], self.main_controller.params['contrast'], self.main_controller.params['gamma'])
             self.background_mask      = utilities.calculate_background_mask(self.adjusted_image, self.params['background_threshold'])
             self.equalized_image      = utilities.calculate_equalized_image(self.adjusted_image, self.background_mask, self.params['window_size'])
@@ -1062,9 +1068,10 @@ class ROIFilteringController():
 
         self.z = 0
 
-    def video_opened(self, video, video_path, labels, roi_areas, roi_circs, mean_images, normalized_images, correlation_images, filtered_out_rois, roi_overlay, loading_rois=False):
+    def video_opened(self, video, normalized_video, video_path, labels, roi_areas, roi_circs, mean_images, normalized_images, correlation_images, filtered_out_rois, roi_overlay, loading_rois=False):
         if labels is not self.original_labels:
             self.video      = video
+            self.normalized_video = normalized_video
             self.video_path = video_path
 
             self.z = self.main_controller.z
@@ -1076,7 +1083,7 @@ class ROIFilteringController():
             else:
                 # self.mean_images = [ ndi.median_filter(denoise_tv_chambolle(utilities.mean(self.video, z).astype(np.float32), weight=0.01, multichannel=False), 3) for z in range(video.shape[1]) ]
 
-                self.mean_images = [ ndi.median_filter(utilities.sharpen(ndi.gaussian_filter(denoise_tv_chambolle(utilities.mean(self.video, z).astype(np.float32), weight=0.01, multichannel=False), 1)), 3) for z in range(video.shape[1]) ]
+                self.mean_images = [ ndi.median_filter(utilities.sharpen(ndi.gaussian_filter(denoise_tv_chambolle(utilities.mean(self.normalized_video, z).astype(np.float32), weight=0.01, multichannel=False), 1)), 3) for z in range(video.shape[1]) ]
 
             if normalized_images is not None:
                 self.normalized_images = normalized_images
@@ -1145,7 +1152,7 @@ class ROIFilteringController():
             self.previous_erased_rois       = [ [] for i in range(video.shape[1]) ]
             self.previous_filtered_out_rois = [ [] for i in range(video.shape[1]) ]
             self.previous_adjusted_images   = [ [] for i in range(video.shape[1]) ]
-            self.previous_roi_images  = [ [] for i in range(video.shape[1]) ]
+            self.previous_roi_images        = [ [] for i in range(video.shape[1]) ]
             self.previous_selected_rois     = [ [] for i in range(video.shape[1]) ]
             self.previous_removed_rois      = [ [] for i in range(video.shape[1]) ]
             self.previous_locked_rois       = [ [] for i in range(video.shape[1]) ]
@@ -1218,12 +1225,12 @@ class ROIFilteringController():
         self.param_widget.show_rois_checkbox.setChecked(show)
 
     def filter_rois(self, z, update_overlay=False):
-        print("mean image", self.mean_images[z])
-        print("labels", self.labels[z])
-        print("roi_areas", self.roi_areas[z])
-        print("roi_circs", self.roi_circs[z])
-        print("correlation_images", self.correlation_images[z])
-        print("locked_rois", self.locked_rois[z])
+        # print("mean image", self.mean_images[z])
+        # print("labels", self.labels[z])
+        # print("roi_areas", self.roi_areas[z])
+        # print("roi_circs", self.roi_circs[z])
+        # print("correlation_images", self.correlation_images[z])
+        # print("locked_rois", self.locked_rois[z])
         _, self.filtered_out_rois[z] = utilities.filter_rois(self.mean_images[z], self.labels[z], self.params['min_area'], self.params['max_area'], self.params['min_circ'], self.params['max_circ'], self.roi_areas[z], self.roi_circs[z], self.correlation_images[z], self.params['min_correlation'], self.locked_rois[z])
         self.removed_rois[z] = self.filtered_out_rois[z] + self.erased_rois[z]
 
@@ -1359,7 +1366,9 @@ class ROIFilteringController():
 
             self.show_roi_image(show=self.param_widget.show_rois_checkbox.isChecked())
 
-            activity = utilities.calc_activity_of_roi(self.labels[self.z], self.video, self.selected_roi, z=self.z)
+            # print(self.video[0, 0, :, :])
+
+            activity = utilities.calc_activity_of_roi(self.labels[self.z], self.video[:, self.z, :, :].transpose(1, 2, 0), self.selected_roi, z=self.z)
 
             if self.figure is None:
                 plt.close('all')
@@ -1531,7 +1540,7 @@ class ROIFilteringController():
 
             self.show_roi_image(show=self.param_widget.show_rois_checkbox.isChecked())
 
-            activity = utilities.calc_activity_of_roi(self.labels[self.z], self.video, self.selected_roi, z=self.z)
+            activity = utilities.calc_activity_of_roi(self.labels[self.z], self.video[:, self.z, :, :].transpose(1, 2, 0), self.selected_roi, z=self.z)
 
             if self.figure is None:
                 plt.close('all')
@@ -1561,7 +1570,7 @@ class ROIFilteringController():
 
             self.show_roi_image(show=self.param_widget.show_rois_checkbox.isChecked())
 
-            activity = utilities.calc_activity_of_roi(self.labels[self.z], self.video, self.selected_roi, z=self.z)
+            activity = utilities.calc_activity_of_roi(self.labels[self.z], self.video[:, self.z, :, :].transpose(1, 2, 0), self.selected_roi, z=self.z)
 
             if self.figure is None:
                 plt.close('all')
@@ -1876,8 +1885,9 @@ class ProcessVideosThread(QThread):
                 np.save(os.path.join(video_dir_path, 'z_{}_rois.npy'.format(z)), labels[z])
 
                 print("Calculating ROI activities for z={}...".format(z))
+                vid_z = vid[:, z, :, :].transpose(1, 2, 0)
                 for l in np.unique(labels[z]):
-                    activity = utilities.calc_activity_of_roi(labels[z], vid, l, z=z)
+                    activity = utilities.calc_activity_of_roi(labels[z], vid_z, l, z=z)
 
                     results[z][l] = activity
 

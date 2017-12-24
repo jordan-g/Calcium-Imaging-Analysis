@@ -130,6 +130,8 @@ class ParamWindow(QMainWindow):
         self.main_param_widget.setDisabled(False)
         self.stacked_widget.setDisabled(False)
         self.videos_widget.load_rois_button.setDisabled(False)
+        self.videos_widget.save_rois_button.setEnabled(True)
+        self.videos_widget.process_all_button.setEnabled(True)
 
     def remove_selected_items(self):
         self.videos_widget.remove_selected_items()
@@ -165,8 +167,7 @@ class ParamWindow(QMainWindow):
         self.videos_widget.update_process_videos_progress(percent)
 
     def rois_created(self):
-        self.videos_widget.save_rois_button.setEnabled(True)
-        self.videos_widget.process_all_button.setEnabled(True)
+        pass
 
     def closeEvent(self, event):
         self.controller.close_all()
@@ -632,7 +633,7 @@ class ROIFindingWidget(ParamWidget):
         self.filter_rois_button.setIcon(QIcon("icons/skip_icon.png"))
         self.filter_rois_button.setIconSize(QSize(16,16))
         self.filter_rois_button.clicked.connect(self.controller.filter_rois)
-        self.filter_rois_button.setDisabled(True)
+        # self.filter_rois_button.setDisabled(True)
         self.button_layout.addWidget(self.filter_rois_button)
 
     def roi_finding_started(self):
