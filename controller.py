@@ -37,7 +37,8 @@ else:
 # set default parameters dictionaries
 DEFAULT_VIEWING_PARAMS = {'gamma'   : 1.0,
                           'contrast': 1.0,
-                          'fps'     : 60}
+                          'fps'     : 60,
+                          'z'       : 0}
 
 DEFAULT_ROI_FINDING_PARAMS = {'window_size'         : 7,
                             'background_threshold': 10,
