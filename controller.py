@@ -1,3 +1,4 @@
+from __future__ import division
 from param_window import ParamWindow
 from preview_window import PreviewWindow
 from skimage.morphology import *

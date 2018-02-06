@@ -1,3 +1,4 @@
+from __future__ import division
 # import the Qt library
 try:
     from PyQt4.QtCore import *

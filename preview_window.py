@@ -1,3 +1,4 @@
+from __future__ import division
 import sys
 import os
 import time
@@ -55,6 +56,7 @@ class PreviewQLabel(QLabel):
 
             # update scale factor
             self.scale_factor = min(self.height()/self.image.shape[0], self.width()/self.image.shape[1])
+            print(self.scale_factor)
 
     def mousePressEvent(self, event):
         """
