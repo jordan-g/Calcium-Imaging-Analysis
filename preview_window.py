@@ -129,9 +129,6 @@ class PreviewWindow(QMainWindow):
         # set controller
         self.controller = controller
 
-        # set title
-        self.setWindowTitle("Preview")
-
         # get parameter window position & size
         param_window_x      = self.controller.param_window.x()
         param_window_y      = self.controller.param_window.y()
@@ -157,16 +154,8 @@ class PreviewWindow(QMainWindow):
         self.image_label = PreviewQLabel(self)
         self.image_label.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.MinimumExpanding)
         self.image_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-        self.image_label.hide()
         self.image_layout.addWidget(self.image_label)
         self.main_layout.addWidget(self.image_widget, 0, 0)
-
-        # initialize variables
-        self.image                 = None  # image to show
-        self.frames                = None  # frames to play
-        self.frame_num             = 0     # current frame #
-        self.n_frames              = 1     # total number of frames
-        self.video_name            = ""    # name of the currently showing video
 
         self.drawing_mask = False # whether the user is drawing a mask
         self.erasing_rois = False # whether the user is erasing ROIs
@@ -189,63 +178,67 @@ class PreviewWindow(QMainWindow):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_frame)
 
+        self.set_initial_state()
+
         self.show()
 
+    def set_initial_state(self):
+        # reset variables
+        self.image      = None  # image to show
+        self.frames     = None  # frames to play
+        self.frame_num  = 0     # current frame #
+        self.n_frames   = 1     # total number of frames
+        self.video_name = ""    # name of the currently showing video
+
+        self.update_image_label(None)
+        self.image_label.hide()
+        self.timer.stop()
+        self.setWindowTitle("Preview")
+
     def plot_image(self, image, background_mask=None):
-        if image is None:
-            # reset variables
-            self.image                 = None
-            self.frames                = None
-            self.frame_num             = 0
-            self.n_frames              = 1
-            self.video_name            = ""
+        if self.image is None:
+            self.image_label.show()
+            self.main_widget.setMinimumSize(QSize(image.shape[1], image.shape[0]))
 
-            self.update_image_label(None)
-            self.image_label.hide()
-        else:
-            if self.image is None:
-                self.image_label.show()
-                self.main_widget.setMinimumSize(QSize(image.shape[1], image.shape[0]))
+        # normalize the image (to be between 0 and 255)
+        normalized_image = utilities.normalize(image)
 
-            # normalize the image (to be between 0 and 255)
-            normalized_image = utilities.normalize(image)
+        # convert to RGB
+        if len(normalized_image.shape) == 2:
+            normalized_image = cv2.cvtColor(normalized_image.astype(np.uint8), cv2.COLOR_GRAY2RGB)
 
-            # convert to RGB
-            if len(normalized_image.shape) == 2:
-                normalized_image = cv2.cvtColor(normalized_image.astype(np.uint8), cv2.COLOR_GRAY2RGB)
+        # update image
+        self.image = normalized_image
 
-            # update image
-            self.image = normalized_image
+        # draw the background mask as red
+        if background_mask is not None:
+            self.image[background_mask > 0] = np.array([255, 0, 0]).astype(np.uint8)
 
-            # draw the background mask as red
-            if background_mask is not None:
-                self.image[background_mask > 0] = np.array([255, 0, 0]).astype(np.uint8)
+        # draw user-drawn masks
+        if self.controller.mode == "roi_finding" and len(self.controller.mask_points[self.controller.z]) > 0:
+            # # make a copy of the image
+            # image = self.image.copy()
 
-            # draw user-drawn masks
-            if self.controller.mode == "roi_finding" and len(self.controller.mask_points[self.controller.z]) > 0:
-                # # make a copy of the image
-                # image = self.image.copy()
+            # combine the masks into one using their union or intersection, depending on whether they are inverted or not
+            masks = np.array(self.controller.masks[self.controller.z])
+            if self.controller.params['invert_masks']:
+                mask = np.prod(masks, axis=0).astype(bool)
+            else:
+                mask = np.sum(masks, axis=0).astype(bool)
 
-                # combine the masks into one using their union or intersection, depending on whether they are inverted or not
-                masks = np.array(self.controller.masks[self.controller.z])
-                if self.controller.params['invert_masks']:
-                    mask = np.prod(masks, axis=0).astype(bool)
-                else:
-                    mask = np.sum(masks, axis=0).astype(bool)
+            # darken the image outside of the mask
+            self.image[mask == False] = self.image[mask == False]/2
 
-                # darken the image outside of the mask
-                self.image[mask == False] = self.image[mask == False]/2
+            # draw the points along the individual masks
+            for i in range(len(self.controller.mask_points[self.controller.z])):
+                mask_points = self.controller.mask_points[self.controller.z][i]
 
-                # draw the points along the individual masks
-                for i in range(len(self.controller.mask_points[self.controller.z])):
-                    mask_points = self.controller.mask_points[self.controller.z][i]
+                self.draw_mask_points(mask_points, self.image, selected=(i == self.controller.selected_mask_num))
 
-                    self.draw_mask_points(mask_points, self.image, selected=(i == self.controller.selected_mask_num))
-
-                # self.image = image
-            
-            # update image label
-            self.update_image_label(self.image)
+            # self.image = image
+        
+        # update image label
+        self.update_image_label(self.image)
 
     def play_movie(self, frames, fps=60):
         if frames is None:

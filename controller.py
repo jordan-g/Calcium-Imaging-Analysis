@@ -122,8 +122,8 @@ class Controller():
         self.adjusted_frame    = None
         self.adjusted_mc_frame = None
 
-        self.motion_correction_thread     = None # TODO: send a signal to any existing motion correction thread to quit
-        self.performing_motion_correction = False
+        # cancel any ongoing motion correction
+        self.cancel_motion_correction()
 
     def reset_roi_finding_variables(self, reset_rois=False):
         self.background_mask      = None
@@ -145,8 +145,8 @@ class Controller():
             self.roi_circs         = None
             self.filtered_out_rois = None
 
-            self.roi_finding_thread = None # TODO: send a signal to any existing ROI finding thread to quit
-            self.finding_rois       = False
+            # cancel any ongoing ROI finding
+            self.cancel_roi_finding()
 
     def reset_roi_filtering_variables(self, reset_rois=False):
         self.roi_image = None
@@ -314,27 +314,36 @@ class Controller():
             roi_data = np.load(load_path)
 
             if len(roi_data.shape) == 3:
+                # we are loading just an ROI array
+
+                # make sure the ROI array shape matches the video
                 if roi_data.shape != self.video.shape[1:]:
                     print("Error: ROI array shape does not match the video shape.")
                     return
 
-                # loading just the ROI array
-                self.rois = roi_data
+                # set ROI variables
+                self.rois              = roi_data
                 self.filtered_out_rois = [ [] for i in range(self.video.shape[1]) ]
+                self.erased_rois       = [ [] for i in range(self.video.shape[1]) ]
+                self.removed_rois      = [ [] for i in range(self.video.shape[1]) ]
+                self.locked_rois       = [ [] for i in range(self.video.shape[1]) ]
 
-                self.roi_areas = [ [] for i in range(self.video.shape[1]) ]
-                self.roi_circs = [ [] for i in range(self.video.shape[1]) ]
+                # calculate ROI areas and circulatures for the ROIs
                 for z in range(self.video.shape[1]):
                     self.roi_areas[z], self.roi_circs[z] = utilities.calculate_roi_properties(roi_data[z])
             else:
+                # we are loading a dictionary containing an ROI array and other ROI variables
+
+                # extract the dictionary
                 roi_data = roi_data[()]
 
+                # make sure the ROI array shape matches the video
                 if np.array(roi_data['labels']).shape != self.video.shape[1:]:
                     print("Error: ROI array shape does not match the video shape.")
                     return
 
-                # set parameters of ROI finding & filtering controllers
-                self.rois            = roi_data['labels']
+                # set ROI variables
+                self.rois              = roi_data['labels']
                 self.roi_areas         = roi_data['roi_areas']
                 self.roi_circs         = roi_data['roi_circs']
                 self.filtered_out_rois = roi_data['filtered_out_rois']
@@ -343,10 +352,8 @@ class Controller():
                 self.locked_rois       = roi_data['locked_rois']
 
             # stop any motion correction or ROI finding process
-            if self.mode == "motion_correcting":
-                self.cancel_motion_correction()
-            elif self.mode == "roi_finding":
-                self.cancel_roi_finding()
+            self.cancel_motion_correction()
+            self.cancel_roi_finding()
 
             # show ROI filtering parameters
             self.show_roi_filtering_params(self.rois, self.roi_areas, self.roi_circs, None, None, None, self.filtered_out_rois, None, loading_rois=True)
@@ -355,70 +362,99 @@ class Controller():
 
     def cancel_motion_correction(self):
         if self.motion_correction_thread is not None:
+            # inform the thread to stop running
             self.motion_correction_thread.running = False
 
-        self.param_widget.update_motion_correction_progress(100)
+        # reset motion correction progress text
+        self.param_widget.update_motion_correction_progress(-1)
 
+        # reset motion correction progress variables
         self.performing_motion_correction = False
+        self.motion_correction_thread     = None
 
     def cancel_roi_finding(self):
         if self.roi_finding_thread is not None:
+            # inform the thread to stop running
             self.roi_finding_thread.running = False
 
+        # reset ROI finding progress text
         self.param_widget.update_roi_finding_progress(-1)
 
+        # reset ROI finding progress variables
         self.finding_rois       = False
         self.roi_finding_thread = None
 
+    def cancel_processing_videos(self):
+        if self.video_processing_thread is not None:
+            # inform the thread to stop running
+            self.video_processing_thread.running = False
+
+        # reset video processing progress text
+        self.param_window.update_process_videos_progress(-1)
+
+        # reset video processing progress variables
+        self.processing_videos       = False
+        self.video_processing_thread = None
+
     def remove_videos_at_indices(self, indices):
+        # sort the indices in increasing order
         indices = sorted(indices)
+
         for i in range(len(indices)-1, -1, -1):
+            # remove the video paths at the indices, in reverse order
             index = indices[i]
             del self.video_paths[index]
 
         if len(self.video_paths) == 0:
-            if self.mode == "motion_correcting":
-                self.cancel_motion_correction()
+            # cancel any ongoing motion correction
+            self.cancel_motion_correction()
 
-            self.video_path = None
+            # reset variables
+            self.video_path   = None
             self.use_mc_video = False
 
+            # switch to showing motion correction params
             self.show_motion_correction_params()
+
+            # reset param window & preview window to their initial states
             self.param_window.set_initial_state()
-            self.preview_window.timer.stop()
-            self.preview_window.set_video_name("")
-            self.preview_window.setWindowTitle("Preview")
-            self.preview_window.plot_image(None)
+            self.preview_window.set_initial_state()
         elif 0 in indices:
+            # the first video was removed; open the next one for previewing
             self.open_video(self.video_paths[0])
 
     def process_all_videos(self):
-        if self.mode == "motion_correcting":
-            self.cancel_motion_correction()
-        elif self.mode == "roi_finding":
-            self.cancel_roi_finding()
+        # stop any motion correction or ROI finding process
+        self.cancel_motion_correction()
+        self.cancel_roi_finding()
 
-        if self.rois is not None:
-            labels = utilities.filter_labels(self.rois, self.removed_rois)
+        # get rid of filtered out and/or manually erased rois
+        if self.removed_rois is not None:
+            rois = utilities.remove_rois(self.rois, self.removed_rois)
         else:
-            labels = utilities.filter_labels(self.rois, self.filtered_out_rois)
+            rois = utilities.remove_rois(self.rois, self.filtered_out_rois)
 
         if not self.processing_videos:
-            if self.video_processing_thread is None:
-                self.video_processing_thread = ProcessVideosThread(self.param_window)
-                self.video_processing_thread.progress.connect(self.process_videos_progress)
-                self.video_processing_thread.finished.connect(self.process_videos_finished)
-            else:
-                self.video_processing_thread.running = False
+            # cancel any ongoing processing of videos
+            self.cancel_processing_videos()
 
+            # create a new thread for processing the videos
+            self.video_processing_thread = ProcessVideosThread(self.param_window)
+            self.video_processing_thread.progress.connect(self.process_videos_progress)
+            self.video_processing_thread.finished.connect(self.process_videos_finished)
+
+            # set its parameters
             self.video_processing_thread.set_parameters(self.video_paths, labels, self.motion_correct_all_videos, self.params["max_shift"], self.params["patch_stride"], self.params["patch_overlap"], self.params)
 
+            # start the thread
             self.video_processing_thread.start()
 
+            # notify the param window
             self.param_window.process_videos_started()
 
             self.processing_videos = True
         else:
+            # cancel any ongoing processing of videos
             self.cancel_processing_videos()
 
     def process_videos_progress(self, percent):
@@ -426,15 +462,6 @@ class Controller():
 
     def process_videos_finished(self):
         self.param_window.update_process_videos_progress(100)
-
-    def cancel_processing_videos(self):
-        if self.video_processing_thread is not None:
-            self.video_processing_thread.running = False
-
-        self.param_window.update_process_videos_progress(-1)
-
-        self.processing_videos = False
-        self.video_processing_thread = None
 
     def set_motion_correct(self, boolean):
         self.motion_correct_all_videos = boolean

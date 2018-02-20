@@ -552,6 +552,10 @@ class MotionCorrectionWidget(ParamWidget):
             self.motion_correct_button.setText('Motion Correct')
             self.motion_correct_button.setHoverMessage("Perform motion correction on the video.")
             self.accept_button.setEnabled(True)
+        elif percent == -1:
+            self.mc_progress_label.setText("")
+            self.motion_correct_button.setText('Motion Correct')
+            self.motion_correct_button.setHoverMessage("Perform motion correction on the video.")
         else:
             self.mc_progress_label.setText("Motion correcting... {}%.".format(int(percent)))
 
@@ -660,12 +664,10 @@ class ROIFindingWidget(ParamWidget):
             self.process_video_button.setText('Find ROIs')
             self.process_video_button.setHoverMessage("Find ROIs using the watershed algorithm.")
             self.filter_rois_button.setEnabled(True)
-            self.motion_correct_button.setEnabled(True)
         elif percent == -1:
             self.roi_finding_progress_label.setText("")
             self.process_video_button.setText('Find ROIs')
             self.process_video_button.setHoverMessage("Find ROIs using the watershed algorithm.")
-            self.motion_correct_button.setEnabled(True)
         else:
             self.roi_finding_progress_label.setText("Finding ROIs... {}%.".format(int(percent)))
 

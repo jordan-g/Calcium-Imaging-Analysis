@@ -549,50 +549,41 @@ def find_rois(original_image, cells_mask, starting_image):
 
     return labels, roi_areas, roi_circs
 
-def filter_rois(image, labels, min_area, max_area, min_circ, max_circ, roi_areas, roi_circs, correlations, min_correlation, locked_rois=[]):
-    filtered_labels = labels.copy()
+def filter_rois(image, rois, min_area, max_area, min_circ, max_circ, roi_areas, roi_circs, correlations, min_correlation, locked_rois=[]):
+    filtered_rois = rois.copy()
     filtered_out_rois = []
 
-    for l in np.unique(labels):
+    for l in np.unique(rois):
         if ((not (min_area <= roi_areas[l-1] <= max_area)) or (not (min_circ <= roi_circs[l-1] <= max_circ)) or l <= 1) and l not in locked_rois:
-            mask = labels == l
+            mask = rois == l
             
-            filtered_labels[mask] = 0
+            filtered_rois[mask] = 0
             filtered_out_rois.append(l)
         else:
-            mask = labels == l
-
-            # a = dilation(mask, disk(1))
-            # b = erosion(mask, disk(1))
-
-            # difference = np.mean(image[a - b]) - np.mean(image[b])
-
-            # if (difference != np.nan and difference < 4.0):
-            #     filtered_labels[mask] = 0
-            #     filtered_out_rois.append(l)
+            mask = rois == l
 
             correlation = np.mean(correlations[mask])
 
             if correlation < min_correlation:
-                filtered_labels[mask] = 0
+                filtered_rois[mask] = 0
                 filtered_out_rois.append(l)
 
-    return filtered_labels, filtered_out_rois
+    return filtered_rois, filtered_out_rois
 
-def filter_labels(labels, removed_rois):
-    if removed_rois is not None:
+def remove_rois(rois, rois_to_remove):
+    if rois_to_remove is not None:
         if python_version == 3:
-            new_labels = labels.copy()
+            new_rois = rois.copy()
         else:
-            new_labels = labels[:]
+            new_rois = rois[:]
 
-        for i in range(len(new_labels)):
-            for roi in removed_rois[i]:
-                new_labels[i][new_labels[i] == roi] = 0
+        for i in range(len(new_rois)):
+            for roi in rois_to_remove[i]:
+                new_rois[i][new_rois[i] == roi] = 0
 
-        return new_labels
+        return new_rois
     else:
-        return labels
+        return rois
 
 def get_roi_containing_point(labels, roi_point):
     roi = labels[roi_point[1], roi_point[0]]
