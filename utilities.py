@@ -685,7 +685,7 @@ def draw_rois(rgb_image, labels, selected_roi, erased_rois, filtered_out_rois, l
 
         b = erosion(mask, disk(1))
 
-        mask = mask - b
+        mask = mask ^ b
 
         image[mask] = np.array([0, 255, 0]).astype(np.uint8)
 
@@ -695,7 +695,7 @@ def draw_rois(rgb_image, labels, selected_roi, erased_rois, filtered_out_rois, l
 
             b = erosion(mask, disk(1))
 
-            mask = mask - b
+            mask = mask ^ b
 
             image[mask] = np.array([255, 255, 0]).astype(np.uint8)
 

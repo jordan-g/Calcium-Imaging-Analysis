@@ -123,19 +123,19 @@ class PreviewWindow(QMainWindow):
     QMainWindow subclass used to show frames & tracking.
     """
 
-    def __init__(self, main_controller):
+    def __init__(self, controller):
         QMainWindow.__init__(self)
 
         # set controller
-        self.main_controller = main_controller
+        self.controller = controller
 
         # set title
         self.setWindowTitle("Preview")
 
         # get parameter window position & size
-        param_window_x      = self.main_controller.param_window.x()
-        param_window_y      = self.main_controller.param_window.y()
-        param_window_width  = self.main_controller.param_window.width()
+        param_window_x      = self.controller.param_window.x()
+        param_window_y      = self.controller.param_window.y()
+        param_window_width  = self.controller.param_window.width()
 
         # set position & size
         self.setGeometry(param_window_x + param_window_width, param_window_y, 10, 10)
@@ -222,7 +222,7 @@ class PreviewWindow(QMainWindow):
                 self.image[background_mask > 0] = np.array([255, 0, 0]).astype(np.uint8)
 
             # draw user-drawn masks
-            if self.main_controller.mode == "roi_finding" and len(self.controller.mask_points[self.controller.z]) > 0:
+            if self.controller.mode == "roi_finding" and len(self.controller.mask_points[self.controller.z]) > 0:
                 # # make a copy of the image
                 # image = self.image.copy()
 
@@ -276,8 +276,9 @@ class PreviewWindow(QMainWindow):
             # start the timer to update the frames
             self.timer.start(int(1000.0/fps))
 
-    def set_video_name(self, video_name):
-        self.video_name = video_name
+    def video_opened(self, video_path):
+        self.video_name = os.path.basename(video_path)
+        self.timer.stop()
 
     def set_fps(self, fps):
         # restart the timer with the new fps
@@ -310,7 +311,7 @@ class PreviewWindow(QMainWindow):
             self.frame_num = self.frame_num % self.n_frames
 
             # update window title
-            self.setWindowTitle("{}. Z={}. Frame {}/{}.".format(self.video_name, self.main_controller.params['z'], self.frame_num + 1, self.n_frames))
+            self.setWindowTitle("{}. Z={}. Frame {}/{}.".format(self.video_name, self.controller.params['z'], self.frame_num + 1, self.n_frames))
 
     def update_image_label(self, image):
         self.image_label.update_pixmap(image)
@@ -442,9 +443,9 @@ class PreviewWindow(QMainWindow):
         self.controller.shift_labels(previous_point, current_point)
 
     def mouse_pressed(self, point):
-        if self.main_controller.mode == "roi_finding" and self.drawing_mask:
+        if self.controller.mode == "roi_finding" and self.drawing_mask:
             self.add_mask_point(point)
-        elif self.main_controller.mode == "roi_filtering" and not self.drawing_rois:
+        elif self.controller.mode == "roi_filtering" and not self.drawing_rois:
             # store this point
             self.click_end_point = point
 
@@ -455,17 +456,17 @@ class PreviewWindow(QMainWindow):
             self.erase_roi_at_point(end_point)
         elif self.drawing_rois and clicked:
             self.draw_tentative_roi(start_point, end_point)
-        elif self.main_controller.mode == "roi_filtering" and clicked:
+        elif self.controller.mode == "roi_filtering" and clicked:
             self.shift_labels(self.click_end_point, end_point)
 
             # store this point
             self.click_end_point = end_point
 
     def mouse_released(self, start_point, end_point, mouse_moved=False):
-        if self.main_controller.mode == "roi_finding":
+        if self.controller.mode == "roi_finding":
             if not self.drawing_mask and not mouse_moved:
                 self.select_mask(end_point)
-        elif self.main_controller.mode == "roi_filtering":
+        elif self.controller.mode == "roi_filtering":
             if self.erasing_rois:
                 self.end_erase_rois()
             elif self.drawing_rois:
@@ -474,7 +475,7 @@ class PreviewWindow(QMainWindow):
                 self.select_roi(end_point)
 
     def closeEvent(self, ce):
-        if not self.main_controller.closing:
+        if not self.controller.closing:
             ce.ignore()
         else:
             ce.accept()
