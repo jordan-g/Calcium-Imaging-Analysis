@@ -261,7 +261,7 @@ class PreviewWindow(QMainWindow):
             self.frame_num = 0
 
             # normalize the frames (to be between 0 and 255)
-            self.frames = utilities.normalize(frames).astype(np.uint8)
+            self.frames = (utilities.normalize(frames)).astype(np.uint8)
 
             # get the number of frames
             self.n_frames = self.frames.shape[0]
@@ -286,7 +286,7 @@ class PreviewWindow(QMainWindow):
             self.image_label.hide()
         else:
             # convert to RGB
-            frame = cv2.cvtColor(frame.astype(np.uint8), cv2.COLOR_GRAY2RGB)
+            frame = cv2.cvtColor(utilities.normalize(frame).astype(np.uint8), cv2.COLOR_GRAY2RGB)
 
             # update image label
             self.update_image_label(frame)

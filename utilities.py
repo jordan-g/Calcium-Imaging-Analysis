@@ -431,17 +431,18 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
 
     return mc_video
 
-def calculate_adjusted_image(normalized_image, contrast, gamma):
-    return adjust_gamma(adjust_contrast(normalized_image, contrast), gamma)/255.0
+def calculate_adjusted_image(image, contrast, gamma):
+    return adjust_gamma(adjust_contrast(image, contrast), gamma)
 
 def calculate_background_mask(adjusted_image, background_threshold):
-    return adjusted_image < background_threshold/255.0
+    return adjusted_image < background_threshold
 
 def calculate_equalized_image(adjusted_image, background_mask, window_size):
-    new_image_10 = order_statistic(adjusted_image, 0.1, int(window_size))
-    new_image_90 = order_statistic(adjusted_image, 0.9, int(window_size))
+    image = adjusted_image.astype(np.float32)/255.0
+    new_image_10 = order_statistic(image, 0.1, int(window_size))
+    new_image_90 = order_statistic(image, 0.9, int(window_size))
 
-    image_difference = adjusted_image - new_image_10
+    image_difference = image - new_image_10
     image_difference[image_difference < 0] = 0
 
     image_range = new_image_90 - new_image_10

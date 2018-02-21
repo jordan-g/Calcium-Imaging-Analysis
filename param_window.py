@@ -177,9 +177,6 @@ class ParamWindow(QMainWindow):
     def update_process_videos_progress(self, percent):
         self.videos_widget.update_process_videos_progress(percent)
 
-    def rois_created(self):
-        pass
-
     def closeEvent(self, event):
         self.controller.close_all()
 
@@ -527,7 +524,7 @@ class MotionCorrectionWidget(ParamWidget):
         self.accept_button.setIcon(QIcon("icons/skip_icon.png"))
         self.accept_button.setIconSize(QSize(16,16))
         # self.accept_button.setMaximumWidth(100)
-        self.accept_button.clicked.connect(self.controller.accept_motion_correction)
+        self.accept_button.clicked.connect(lambda:self.controller.show_roi_finding_params())
         self.button_layout_2.addWidget(self.accept_button)
 
     def preview_contrast(self):
@@ -632,7 +629,7 @@ class ROIFindingWidget(ParamWidget):
         self.motion_correct_button.setHoverMessage("Go back to motion correction.")
         self.motion_correct_button.setIcon(QIcon("icons/skip_back_icon.png"))
         self.motion_correct_button.setIconSize(QSize(16,16))
-        self.motion_correct_button.clicked.connect(lambda:self.controller.show_motion_correction_params(switched_to=True))
+        self.motion_correct_button.clicked.connect(lambda:self.controller.show_motion_correction_params())
         self.button_layout.addWidget(self.motion_correct_button)
 
         self.process_video_button = HoverButton('Find ROIs', None, self.parent_widget.statusBar())
@@ -707,14 +704,14 @@ class ROIFilteringWidget(ParamWidget):
         self.roi_button_layout.addWidget(self.erase_rois_button)
 
         self.undo_button = HoverButton('Undo', None, self.parent_widget.statusBar())
-        self.undo_button.setHoverMessage("Undo the previous erase action.")
+        self.undo_button.setHoverMessage("Undo the previous action.")
         self.undo_button.setIcon(QIcon("icons/undo_icon.png"))
         self.undo_button.setIconSize(QSize(16, 16))
-        self.undo_button.clicked.connect(self.controller.undo_erase)
+        self.undo_button.clicked.connect(self.controller.undo)
         self.roi_button_layout.addWidget(self.undo_button)
 
         self.reset_button = HoverButton('Reset', None, self.parent_widget.statusBar())
-        self.reset_button.setHoverMessage("Reset erased ROIs.")
+        self.reset_button.setHoverMessage("Reset ROIs.")
         self.reset_button.setIcon(QIcon("icons/reset_icon.png"))
         self.reset_button.setIconSize(QSize(16, 16))
         self.reset_button.clicked.connect(self.controller.reset_erase)
@@ -783,7 +780,6 @@ class ROIFilteringWidget(ParamWidget):
         self.show_rois_checkbox.setObjectName("Show ROIs")
         self.show_rois_checkbox.setChecked(False)
         self.show_rois_checkbox.clicked.connect(lambda:self.controller.show_roi_image(self.show_rois_checkbox.isChecked()))
-        self.show_rois_checkbox.setDisabled(True)
         self.button_layout.addWidget(self.show_rois_checkbox)
 
         self.button_layout.addStretch()
@@ -792,14 +788,14 @@ class ROIFilteringWidget(ParamWidget):
         self.motion_correct_button.setHoverMessage("Go back to motion correction.")
         self.motion_correct_button.setIcon(QIcon("icons/skip_back_icon.png"))
         self.motion_correct_button.setIconSize(QSize(16,16))
-        self.motion_correct_button.clicked.connect(lambda:self.controller.show_motion_correction_params(switched_to=True))
+        self.motion_correct_button.clicked.connect(lambda:self.controller.show_motion_correction_params())
         self.button_layout.addWidget(self.motion_correct_button)
 
         self.find_rois_button = HoverButton('ROI Finding', None, self.parent_widget.statusBar())
         self.find_rois_button.setHoverMessage("Go back to ROI segmentation.")
         self.find_rois_button.setIcon(QIcon("icons/skip_back_icon.png"))
         self.find_rois_button.setIconSize(QSize(16,16))
-        self.find_rois_button.clicked.connect(self.controller.show_roi_finding_params)
+        self.find_rois_button.clicked.connect(lambda:self.controller.show_roi_finding_params())
         self.button_layout.addWidget(self.find_rois_button)
 
         self.filter_rois_button = HoverButton('Filter ROIs', None, self.parent_widget.statusBar())
@@ -807,7 +803,7 @@ class ROIFilteringWidget(ParamWidget):
         self.filter_rois_button.setIcon(QIcon("icons/accept_icon.png"))
         self.filter_rois_button.setIconSize(QSize(16,16))
         self.filter_rois_button.setStyleSheet('font-weight: bold;')
-        self.filter_rois_button.clicked.connect(lambda:self.controller.filter_rois(self.controller.z, update_overlay=True))
+        self.filter_rois_button.clicked.connect(lambda:self.controller.filter_rois(self.controller.z))
         self.button_layout.addWidget(self.filter_rois_button)
 
     def roi_erasing_started(self):
@@ -822,6 +818,7 @@ class ROIFilteringWidget(ParamWidget):
         self.undo_button.setEnabled(False)
         self.param_widget.setEnabled(False)
         self.draw_rois_button.setEnabled(False)
+        self.erase_rois_button.setText("Finished")
 
     def roi_erasing_ended(self):
         self.filter_rois_button.setEnabled(True)
@@ -831,6 +828,7 @@ class ROIFilteringWidget(ParamWidget):
         self.undo_button.setEnabled(True)
         self.param_widget.setEnabled(True)
         self.draw_rois_button.setEnabled(True)
+        self.erase_rois_button.setText("Erase ROIs")
 
     def roi_drawing_started(self):
         self.filter_rois_button.setEnabled(False)
@@ -844,6 +842,7 @@ class ROIFilteringWidget(ParamWidget):
         self.undo_button.setEnabled(False)
         self.param_widget.setEnabled(False)
         self.erase_rois_button.setEnabled(False)
+        self.draw_rois_button.setText("Finished")
 
     def roi_drawing_ended(self):
         self.filter_rois_button.setEnabled(True)
@@ -853,6 +852,7 @@ class ROIFilteringWidget(ParamWidget):
         self.undo_button.setEnabled(True)
         self.param_widget.setEnabled(True)
         self.erase_rois_button.setEnabled(True)
+        self.draw_rois_button.setText("Draw")
 
 class HoverCheckBox(QCheckBox):
     def __init__(self, text, parent=None, status_bar=None):
