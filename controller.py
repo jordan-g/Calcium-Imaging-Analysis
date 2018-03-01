@@ -480,7 +480,7 @@ class Controller():
             self.video_processing_thread.finished.connect(self.process_videos_finished)
 
             # set its parameters
-            self.video_processing_thread.set_parameters(self.video_paths, labels, self.motion_correct_all_videos, self.params["max_shift"], self.params["patch_stride"], self.params["patch_overlap"], self.params)
+            self.video_processing_thread.set_parameters(self.video_paths, labels, self.motion_correct_all_videos, self.params["max_shift"], self.params["patch_stride"], self.params["patch_overlap"], self.apply_blur, self.params)
 
             # start the thread
             self.video_processing_thread.start()
@@ -1633,22 +1633,22 @@ class ProcessVideosThread(QThread):
 
         self.running = False
 
-    def set_parameters(self, video_paths, labels, motion_correct, max_shift, patch_stride, patch_overlap, params):
+    def set_parameters(self, video_paths, rois, motion_correct, max_shift, patch_stride, patch_overlap, apply_blur, params):
         self.video_paths    = video_paths
-        self.rois         = labels
+        self.rois           = rois
         self.motion_correct = motion_correct
         self.max_shift      = max_shift
         self.patch_stride   = patch_stride
         self.patch_overlap  = patch_overlap
+        self.apply_blur     = apply_blur
         self.params         = params
 
     def run(self):
         self.running = True
 
-        video_shape = None
-
+        video_shape       = None
         first_mean_images = None
-        mean_images = None
+        mean_images       = None
 
         for i in range(len(self.video_paths)):
             video_path = self.video_paths[i]
@@ -1673,12 +1673,6 @@ class ProcessVideosThread(QThread):
             if video_shape is None and not self.motion_correct:
                 video_shape = video.shape
 
-            # elif (video.shape[2], video.shape[3]) != video_shape:
-            #     print("Skipping {} due to shape mismatch.".format(video_path))
-            #     continue
-
-            # print("Loaded video with shape {}.".format(video.shape))
-
             video = np.nan_to_num(video).astype(np.float32)
 
             # figure out the dynamic range of the video
@@ -1691,9 +1685,9 @@ class ProcessVideosThread(QThread):
                 video_max = 255
             else:
                 video_max = 1
-
-            name = os.path.splitext(base_name)[0]
-            directory = os.path.dirname(video_path)
+            
+            name           = os.path.splitext(base_name)[0]
+            directory      = os.path.dirname(video_path)
             video_dir_path = os.path.join(directory, name)
 
             # make a folder to hold the results
@@ -1759,7 +1753,10 @@ class ProcessVideosThread(QThread):
             # print(labels[0].shape, vid.shape, video_shape)
 
             # shift the labels to match the first video
-            mean_images = [ ndi.median_filter(utilities.sharpen(ndi.gaussian_filter(denoise_tv_chambolle(utilities.mean(vid, z).astype(np.float32), weight=0.01, multichannel=False), 1)), 3).astype(np.uint8) for z in range(vid.shape[1]) ]
+            if self.apply_blur:
+                mean_images = [ ndi.median_filter(utilities.sharpen(ndi.gaussian_filter(denoise_tv_chambolle(utilities.mean(vid, z).astype(np.float32), weight=0.01, multichannel=False), 1)), 3).astype(np.uint8) for z in range(vid.shape[1]) ]
+            else:
+                mean_images = [ utilities.mean(vid, z) for z in range(vid.shape[1]) ]
 
             for z in range(vid.shape[1]):
                 if first_mean_images is not None:
