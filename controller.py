@@ -920,22 +920,18 @@ class Controller():
     def set_apply_blur(self, apply_blur):
         self.apply_blur = apply_blur
 
-        if self.mode in ("roi_finding", "roi_filtering"):
-            # calculate new mean images
-            self.calculate_mean_images()
+        # calculate new mean images
+        self.calculate_mean_images()
 
-            # calculate a contrast- and gamma-adjusted version of the current z plane's mean image
-            self.adjusted_image = utilities.calculate_adjusted_image(self.mean_images[self.z], self.params['contrast'], self.params['gamma'])
+        # calculate a contrast- and gamma-adjusted version of the current z plane's mean image
+        self.adjusted_image = utilities.calculate_adjusted_image(self.mean_images[self.z], self.params['contrast'], self.params['gamma'])
 
-            # update the ROI image using the new adjusted image
-            if self.rois is not None:
-                self.calculate_roi_image(self.z, update_overlay=False)
+        # update the ROI image using the new adjusted image
+        if self.rois is not None:
+            self.calculate_roi_image(self.z, update_overlay=False)
 
-            # show the ROI image
-            if self.mode == "roi_finding":
-                self.show_roi_image(show=self.roi_finding_param_widget.show_rois_checkbox.isChecked())
-            else:
-                self.show_roi_image(show=self.roi_filtering_param_widget.show_rois_checkbox.isChecked())
+        # show the ROI image
+        self.show_roi_image(show=self.roi_finding_param_widget.show_rois_checkbox.isChecked())
 
     def show_roi_image(self, show):
         # plot the ROI image (or the regular image if show is False)
