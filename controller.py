@@ -480,7 +480,7 @@ class Controller():
             self.video_processing_thread.finished.connect(self.process_videos_finished)
 
             # set its parameters
-            self.video_processing_thread.set_parameters(self.video_paths, labels, self.motion_correct_all_videos, self.params["max_shift"], self.params["patch_stride"], self.params["patch_overlap"], self.apply_blur, self.params)
+            self.video_processing_thread.set_parameters(self.video_paths, rois, self.motion_correct_all_videos, self.params["max_shift"], self.params["patch_stride"], self.params["patch_overlap"], self.apply_blur, self.params)
 
             # start the thread
             self.video_processing_thread.start()
