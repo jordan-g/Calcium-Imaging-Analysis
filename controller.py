@@ -89,6 +89,7 @@ class Controller():
         self.mc_current_z              = False # whether to motion-correct only the current z plane
         self.find_new_rois             = True  # whether we need to find new ROIs
         self.mc_rois                   = False # whether found ROIs are based on the motion-corrected video
+        self.apply_blur                = False # whether to apply blurring to remove noise
 
         # initialize thread variables
         self.motion_correction_thread = None
@@ -166,7 +167,6 @@ class Controller():
         if reset_rois:
             self.roi_overlay        = None
             self.original_rois      = None
-            self.rois               = None
             self.selected_roi       = None
             self.correlation_images = None
 
@@ -531,17 +531,12 @@ class Controller():
             self.find_new_rois = True
 
         if self.find_new_rois:
-            if self.use_mc_video and self.adjusted_mc_video is not None:
-                video = self.mc_video*255.0/self.video_max
-            else:
-                video = self.video*255.0/self.video_max
-
             self.reset_roi_finding_variables(reset_rois=True)
             self.reset_roi_filtering_variables(reset_rois=True)
 
             # calculate mean images & correlation images
-            self.mean_images        = [ ndi.median_filter(utilities.sharpen(ndi.gaussian_filter(denoise_tv_chambolle(utilities.mean(video, z).astype(np.float32), weight=0.01, multichannel=False), 1)), 3).astype(np.uint8) for z in range(video.shape[1]) ]
-            self.correlation_images = [ utilities.correlation(video, z).astype(np.float32) for z in range(video.shape[1]) ]
+            self.calculate_mean_images()
+            self.correlation_images = [ utilities.correlation(self.video, z).astype(np.float32) for z in range(self.video.shape[1]) ]
 
             if self.video.shape[1] > 1:
                 # set size of squares whose mean brightness we will calculate
@@ -609,21 +604,18 @@ class Controller():
         self.param_window.stacked_widget.setCurrentIndex(2)
         self.mode = "roi_filtering"
 
-        if self.use_mc_video and self.adjusted_mc_video is not None:
-            video = self.mc_video
-        else:
-            video = self.video
-
         if loading_rois:
             # calculate mean images & correlation images
-            self.mean_images        = [ ndi.median_filter(utilities.sharpen(ndi.gaussian_filter(denoise_tv_chambolle(utilities.mean(video, z).astype(np.float32), weight=0.01, multichannel=False), 1)), 3).astype(np.uint8) for z in range(video.shape[1]) ]
-            self.correlation_images = [ utilities.correlation(video, z).astype(np.float32) for z in range(self.video.shape[1]) ]
+            self.calculate_mean_images()
+            self.correlation_images = [ utilities.correlation(self.video, z).astype(np.float32) for z in range(self.video.shape[1]) ]
 
             # calculate adjusted image
             self.adjusted_image = utilities.calculate_adjusted_image(self.mean_images[self.z], self.params['contrast'], self.params['gamma'])
 
             # reset history variables
             self.reset_history()
+
+        print(self.rois, self.erased_rois, self.filtered_out_rois, self.locked_rois)
 
         # calculate the ROI image
         self.calculate_roi_image(z=self.z, update_overlay=self.roi_overlay is None)
@@ -913,6 +905,37 @@ class Controller():
 
     def set_mc_current_z(self, mc_current_z):
         self.mc_current_z = mc_current_z
+
+    def calculate_mean_images(self):
+        if self.use_mc_video and self.adjusted_mc_video is not None:
+            video = self.mc_video*255.0/self.video_max
+        else:
+            video = self.video*255.0/self.video_max
+
+        if self.apply_blur:
+            self.mean_images = [ ndi.median_filter(utilities.sharpen(ndi.gaussian_filter(denoise_tv_chambolle(utilities.mean(video, z).astype(np.float32), weight=0.01, multichannel=False), 1)), 3).astype(np.uint8) for z in range(video.shape[1]) ]
+        else:
+            self.mean_images = [ utilities.mean(video, z).astype(np.uint8) for z in range(video.shape[1]) ]
+
+    def set_apply_blur(self, apply_blur):
+        self.apply_blur = apply_blur
+
+        if self.mode in ("roi_finding", "roi_filtering"):
+            # calculate new mean images
+            self.calculate_mean_images()
+
+            # calculate a contrast- and gamma-adjusted version of the current z plane's mean image
+            self.adjusted_image = utilities.calculate_adjusted_image(self.mean_images[self.z], self.params['contrast'], self.params['gamma'])
+
+            # update the ROI image using the new adjusted image
+            if self.rois is not None:
+                self.calculate_roi_image(self.z, update_overlay=False)
+
+            # show the ROI image
+            if self.mode == "roi_finding":
+                self.show_roi_image(show=self.roi_finding_param_widget.show_rois_checkbox.isChecked())
+            else:
+                self.show_roi_image(show=self.roi_filtering_param_widget.show_rois_checkbox.isChecked())
 
     def show_roi_image(self, show):
         # plot the ROI image (or the regular image if show is False)

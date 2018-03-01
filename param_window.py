@@ -454,6 +454,12 @@ class MainParamWidget(ParamWidget):
         self.add_param_slider(label_name="FPS", name="fps", minimum=1, maximum=60, moved=self.update_param, released=self.update_param, description="Frames per second of the video preview.", int_values=True)
         self.add_param_slider(label_name="Z", name="z", minimum=0, maximum=0, moved=self.update_param, released=self.update_param, description="Z plane of the video preview.", int_values=True)
 
+        self.blur_checkbox = HoverCheckBox("Apply blur", None, self.parent_widget.statusBar())
+        self.blur_checkbox.setHoverMessage("Apply some blurring to remove noise.")
+        self.blur_checkbox.setChecked(False)
+        self.blur_checkbox.clicked.connect(lambda:self.controller.set_apply_blur(self.blur_checkbox.isChecked()))
+        self.param_layout.addWidget(self.blur_checkbox)
+
     def preview_contrast(self):
         contrast = self.param_sliders["contrast"].sliderPosition()/float(self.param_slider_multipliers["contrast"])
 
