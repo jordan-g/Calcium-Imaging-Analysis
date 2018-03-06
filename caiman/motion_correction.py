@@ -1854,7 +1854,7 @@ def motion_correct_batch_rigid(fname, max_shifts, dview = None, splits = 56 ,num
     #     corrected_slicer = slice(subidx.start, subidx.stop, subidx.step*30)
     #     m = cm.load(fname,subindices=corrected_slicer)
 
-    m = cm.load(fname,subindices=slice(0,None,10))
+    m = cm.load(fname)
     if m.shape[0]<300:
         m = cm.load(fname,subindices=slice(0,None,1))
     elif m.shape[0]<500:
@@ -2006,6 +2006,8 @@ def motion_correct_batch_pwrigid(fname, max_shifts, strides, overlaps, add_to_mo
                                                             shifts_opencv = shifts_opencv, nonneg_movie = nonneg_movie, gSig_filt = gSig_filt)
 
         new_templ = np.nanmedian(np.dstack([r[-1] for r in res_el ]),-1)    
+        np.save("new_template.npy", new_templ)
+        print(gSig_filt, np.sum(new_templ))
         if gSig_filt is not None:
             new_templ  = low_pass_filter_space(new_templ ,gSig_filt)
             
@@ -2053,6 +2055,7 @@ def tile_and_correct_wrapper(params):
             imgs = imread(img_name, key=idxs)
         mc = np.zeros(imgs.shape,dtype = np.float32)
         shift_info = []
+        print(imgs.dtype, "helloooo")
     elif extension == '.sbx':  # check if sbx file
         imgs = cm.base.movies.sbxread(name, idxs[0], len(idxs))
         mc = np.zeros(imgs.shape,dtype = np.float32)

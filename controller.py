@@ -51,7 +51,8 @@ DEFAULT_PARAMS = {'gamma'               : 1.0,
                   'max_area'            : 100,
                   'min_circ'            : 0,
                   'max_circ'            : 2,
-                  'min_correlation'     : 0.2}
+                  'min_edge_contrast'   : 1.5,
+                  'min_correlation'     : 0.02}
 
 # set filename for saving current parameters
 PARAMS_FILENAME = "params.txt"
@@ -147,6 +148,7 @@ class Controller():
                 self.rois              = [ np.zeros(self.video.shape[2:]).astype(int) for i in range(self.video.shape[1]) ]
                 self.roi_areas         = [ [] for i in range(self.video.shape[1]) ]
                 self.roi_circs         = [ [] for i in range(self.video.shape[1]) ]
+                self.roi_edges         = [ [] for i in range(self.video.shape[1]) ]
                 self.filtered_out_rois = [ [] for i in range(self.video.shape[1]) ]
             else:
                 self.masks             = None
@@ -154,6 +156,7 @@ class Controller():
                 self.rois              = None
                 self.roi_areas         = None
                 self.roi_circs         = None
+                self.roi_edges         = None
                 self.filtered_out_rois = None
 
             # cancel any ongoing ROI finding
@@ -240,7 +243,11 @@ class Controller():
 
         # figure out the dynamic range of the video
         max_value = np.amax(self.video)
-        if max_value > 511:
+        if max_value > 2047:
+            self.video_max = 4095
+        elif max_value > 1023:
+            self.video_max = 2047
+        elif max_value > 511:
             self.video_max = 1023
         elif max_value > 255:
             self.video_max = 511
@@ -248,6 +255,8 @@ class Controller():
             self.video_max = 255
         else:
             self.video_max = 1
+
+        print(max_value)
 
         # set the path to the previewed video
         self.video_path = video_path
@@ -326,6 +335,7 @@ class Controller():
                 roi_data = {'labels'           : self.rois,
                             'roi_areas'        : self.roi_areas,
                             'roi_circs'        : self.roi_circs,
+                            'roi_edges'        : self.roi_edges,
                             'filtered_out_rois': self.filtered_out_rois,
                             'erased_rois'      : self.erased_rois,
                             'removed_rois'     : self.removed_rois,
@@ -362,7 +372,7 @@ class Controller():
 
                 # calculate ROI areas and circulatures for the ROIs
                 for z in range(self.video.shape[1]):
-                    self.roi_areas[z], self.roi_circs[z] = utilities.calculate_roi_properties(roi_data[z])
+                    self.roi_areas[z], self.roi_circs[z], self.roi_edges[z] = utilities.calculate_roi_properties(roi_data[z], self.mean_images[z])
             else:
                 # we are loading a dictionary containing an ROI array and other ROI variables
 
@@ -378,6 +388,7 @@ class Controller():
                 self.rois              = roi_data['labels']
                 self.roi_areas         = roi_data['roi_areas']
                 self.roi_circs         = roi_data['roi_circs']
+                self.roi_edges         = roi_data['roi_edges']
                 self.filtered_out_rois = roi_data['filtered_out_rois']
                 self.erased_rois       = roi_data['erased_rois']
                 self.removed_rois      = roi_data['removed_rois']
@@ -811,7 +822,7 @@ class Controller():
 
                 # add the current state to the history only if this is the first time we've switched to this z plane
                 self.add_to_history(only_if_new=True)
-            elif param in ("min_area", "max_area", "min_circ", "max_circ", "min_correlation"):
+            elif param in ("min_area", "max_area", "min_circ", "max_circ", "min_correlation", "min_edge_contrast"):
                 pass
 
     def calculate_adjusted_video(self, video, z=None):
@@ -1048,7 +1059,7 @@ class Controller():
             self.roi_finding_thread.finished.connect(self.roi_finding_ended)
 
             # set the parameters of the ROI finding thread
-            self.roi_finding_thread.set_parameters(self.video, self.mean_images, self.masks, self.params["min_area"], self.params["max_area"], self.params["min_circ"], self.params["max_circ"], self.params['min_correlation'], self.params['soma_threshold'], self.params['window_size'], self.params['background_threshold'], self.params['contrast'], self.params['gamma'], self.correlation_images)
+            self.roi_finding_thread.set_parameters(self.video, self.mean_images, self.masks, self.params["min_area"], self.params["max_area"], self.params["min_circ"], self.params["max_circ"], self.params['min_edge_contrast'], self.params['min_correlation'], self.params['soma_threshold'], self.params['window_size'], self.params['background_threshold'], self.params['contrast'], self.params['gamma'], self.correlation_images)
 
             # start the thread
             self.roi_finding_thread.start()
@@ -1065,7 +1076,7 @@ class Controller():
         # notify the param widget
         self.roi_finding_param_widget.update_roi_finding_progress(percent)
 
-    def roi_finding_ended(self, rois, roi_areas, roi_circs, filtered_out_rois): # TODO: create an roi_finding_ended() method for the param window
+    def roi_finding_ended(self, rois, roi_areas, roi_circs, roi_edges, filtered_out_rois): # TODO: create an roi_finding_ended() method for the param window
         # notify the param widget
         self.roi_finding_param_widget.update_roi_finding_progress(100)
 
@@ -1075,6 +1086,7 @@ class Controller():
         self.original_rois     = rois[:]
         self.roi_areas         = roi_areas
         self.roi_circs         = roi_circs
+        self.roi_edges         = roi_edges
         self.filtered_out_rois = filtered_out_rois
 
         # update the param window
@@ -1138,7 +1150,7 @@ class Controller():
 
     def filter_rois(self, z):
         # filter out ROIs and update the removed ROIs
-        _, self.filtered_out_rois[z] = utilities.filter_rois(self.mean_images[z], self.rois[z], self.params['min_area'], self.params['max_area'], self.params['min_circ'], self.params['max_circ'], self.roi_areas[z], self.roi_circs[z], self.correlation_images[z], self.params['min_correlation'], self.locked_rois[z])
+        _, self.filtered_out_rois[z] = utilities.filter_rois(self.mean_images[z], self.rois[z], self.params['min_area'], self.params['max_area'], self.params['min_circ'], self.params['max_circ'], self.params['min_edge_contrast'], self.roi_areas[z], self.roi_circs[z], self.roi_edges[z], self.correlation_images[z], self.params['min_correlation'], self.locked_rois[z])
         self.removed_rois[z] = self.filtered_out_rois[z] + self.erased_rois[z]
 
         # update the ROI image
@@ -1183,9 +1195,17 @@ class Controller():
             # get the perimeter of the ROI
             perimeter = cv2.arcLength(c, True)
 
+            a = dilation(mask, disk(1))
+            b = erosion(mask, disk(1))
+
+            edge_mask = a ^ b
+
+            edge_contrast = np.mean(self.mean_images[self.z][edge_mask])/np.mean(self.mean_images[self.z][b])
+
             # record the circulature and area of the ROI
             self.roi_circs[self.z] = np.append(self.roi_circs[self.z], [(perimeter**2)/(4*np.pi*area)])
             self.roi_areas[self.z] = np.append(self.roi_areas[self.z], [area])
+            self.roi_edges[self.z] = np.append(self.roi_edges[self.z], [edge_contrast])
 
             # update the ROI array
             self.rois[self.z][mask == 1] = l
@@ -1530,7 +1550,7 @@ class MotionCorrectThread(QThread):
         self.running = False
 
 class ROIFindingThread(QThread):
-    finished = pyqtSignal(list, list, list, list)
+    finished = pyqtSignal(list, list, list, list, list)
     progress = pyqtSignal(int)
 
     def __init__(self, parent):
@@ -1538,7 +1558,7 @@ class ROIFindingThread(QThread):
 
         self.running = False
 
-    def set_parameters(self, video, mean_images, masks, min_area, max_area, min_circ, max_circ, min_correlation, soma_threshold, window_size, background_threshold, contrast, gamma, correlation_images):
+    def set_parameters(self, video, mean_images, masks, min_area, max_area, min_circ, max_circ, min_edge_contrast, min_correlation, soma_threshold, window_size, background_threshold, contrast, gamma, correlation_images):
         self.video                = video
         self.mean_images          = mean_images
         self.masks                = masks
@@ -1546,6 +1566,7 @@ class ROIFindingThread(QThread):
         self.max_area             = max_area
         self.min_circ             = min_circ
         self.max_circ             = max_circ
+        self.min_edge_contrast    = min_edge_contrast
         self.min_correlation      = min_correlation
         self.soma_threshold       = soma_threshold
         self.window_size          = window_size
@@ -1560,6 +1581,7 @@ class ROIFindingThread(QThread):
         labels            = [ [] for i in range(self.video.shape[1]) ]
         roi_areas         = [ [] for i in range(self.video.shape[1]) ]
         roi_circs         = [ [] for i in range(self.video.shape[1]) ]
+        roi_edges         = [ [] for i in range(self.video.shape[1]) ]
         filtered_out_rois = [ [] for i in range(self.video.shape[1]) ]
 
         self.running = True
@@ -1593,7 +1615,7 @@ class ROIFindingThread(QThread):
                 out[mask] = I_mod[mask]
                 I_mod = out.copy()
 
-            labels[z], roi_areas[z], roi_circs[z] = utilities.find_rois(adjusted_image, soma_mask, I_mod)
+            labels[z], roi_areas[z], roi_circs[z], roi_edges[z] = utilities.find_rois(soma_mask, I_mod, self.mean_images[z])
 
             if not self.running:
                 self.running = False
@@ -1610,7 +1632,7 @@ class ROIFindingThread(QThread):
                 out[mask] = labels[z][mask]
                 labels[z] = out.copy()
 
-            _, filtered_out_rois[z] = utilities.filter_rois(self.mean_images[z], labels[z], self.min_area, self.max_area, self.min_circ, self.max_circ, roi_areas[z], roi_circs[z], self.correlation_images[z], self.min_correlation)
+            _, filtered_out_rois[z] = utilities.filter_rois(self.mean_images[z], labels[z], self.min_area, self.max_area, self.min_circ, self.max_circ, self.min_edge_contrast, roi_areas[z], roi_circs[z], roi_edges[z], self.correlation_images[z], self.min_correlation)
 
             if not self.running:
                 self.running = False
@@ -1620,7 +1642,7 @@ class ROIFindingThread(QThread):
             self.progress.emit(int(100.0*float(z + 1)/self.video.shape[1]))
 
         if labels is not None:
-            self.finished.emit(labels, roi_areas, roi_circs, filtered_out_rois)
+            self.finished.emit(labels, roi_areas, roi_circs, roi_edges, filtered_out_rois)
 
         self.running = False
 
@@ -1677,7 +1699,11 @@ class ProcessVideosThread(QThread):
 
             # figure out the dynamic range of the video
             max_value = np.amax(video)
-            if max_value > 511:
+            if max_value > 2047:
+                video_max = 4095
+            elif max_value > 1023:
+                video_max = 2047
+            elif max_value > 511:
                 video_max = 1023
             elif max_value > 255:
                 video_max = 511

@@ -198,6 +198,22 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         percent_complete = int(100.0*float(0.1)/len(z_range))
         progress_signal.emit(percent_complete)
 
+    max_value = np.amax(video)
+    if max_value > 2047:
+        video_max = 4095
+    elif max_value > 1023:
+        video_max = 2047
+    elif max_value > 511:
+        video_max = 1023
+    elif max_value > 255:
+        video_max = 511
+    elif max_value > 1:
+        video_max = 255
+    else:
+        video_max = 1
+
+    video = video*255.0/video_max
+
     mc_video = video.copy()
 
     counter = 0
@@ -216,12 +232,12 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
 
         params_movie = {'fname': video_path,
                         'max_shifts': (max_shift, max_shift),  # maximum allow rigid shift (2,2)
-                        'niter_rig': 4,
-                        'splits_rig': 4,  # for parallelization split the movies in  num_splits chuncks across time
+                        'niter_rig': 1,
+                        'splits_rig': 4 if video.shape[0] > 10 else 1,  # for parallelization split the movies in  num_splits chuncks across time
                         'num_splits_to_process_rig': None,  # if none all the splits are processed and the movie is saved
                         'strides': (patch_stride, patch_stride),  # intervals at which patches are laid out for motion correction
                         'overlaps': (patch_overlap, patch_overlap),  # overlap between pathes (size of patch strides+overlaps)
-                        'splits_els': 4,  # for parallelization split the movies in  num_splits chuncks across time
+                        'splits_els': 4 if video.shape[0] > 10 else 1,  # for parallelization split the movies in  num_splits chuncks across time
                         'num_splits_to_process_els': [None],  # if none all the splits are processed and the movie is saved
                         'upsample_factor_grid': 4,  # upsample factor to avoid smearing when merging patches
                         'max_deviation_rigid': int(max_shift/2) - 1,  # maximum deviation allowed for patch with respect to rigid shift         
@@ -260,7 +276,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
 
         # Create motion correction object
         mc = MotionCorrect(fname, min_mov,
-                           dview=dview, max_shifts=max_shifts, niter_rig=niter_rig, splits_rig=splits_rig, 
+                           dview=None, max_shifts=max_shifts, niter_rig=niter_rig, splits_rig=splits_rig, 
                            num_splits_to_process_rig=num_splits_to_process_rig, 
                         strides= strides, overlaps= overlaps, splits_els=splits_els,
                         num_splits_to_process_els=num_splits_to_process_els, 
@@ -477,13 +493,14 @@ def calculate_soma_threshold_image(equalized_image, soma_threshold):
 
     return soma_mask, I_mod, soma_threshold_image
 
-def calculate_roi_properties(labels):
+def calculate_roi_properties(labels, mean_image):
     unique_labels = np.unique(labels)
 
     n = len(unique_labels)
 
     roi_areas = np.zeros(n)
     roi_circs = np.zeros(n)
+    roi_edges = np.zeros(n)
 
     for i in range(len(unique_labels)):
         l = unique_labels[i]
@@ -491,11 +508,10 @@ def calculate_roi_properties(labels):
         if l <= 1:
             continue
 
-        mask = np.zeros(labels.shape, dtype="uint8")
-        mask[labels == l] = 255
+        mask = labels == l
 
         # detect contours in the mask and grab the largest one
-        cnts = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
+        cnts = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
 
         if len(cnts) > 0:
             c = max(cnts, key=cv2.contourArea)
@@ -503,59 +519,34 @@ def calculate_roi_properties(labels):
             area = cv2.contourArea(c)
 
             perimeter = cv2.arcLength(c, True)
+
+            # a = dilation(mask, disk(1))
+            # b = erosion(mask, disk(1))
+
+            # edge_mask = a ^ b
 
             if area > 0:
                 roi_circs[i] = (perimeter**2)/(4*np.pi*area)
 
             roi_areas[i] = area
 
-    return roi_areas, roi_circs
+            # roi_edges[i] = np.mean(mean_image[edge_mask])/np.mean(mean_image[b])
 
-def find_rois(original_image, cells_mask, starting_image):
-    if len(original_image.shape) == 2:
-        rgb_image = cv2.cvtColor((original_image*255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
-    else:
-        rgb_image = (original_image*255).copy()
+    return roi_areas, roi_circs, roi_edges
 
+def find_rois(cells_mask, starting_image, mean_image):
     labels = watershed(starting_image, label(cells_mask))
 
-    unique_labels = np.unique(labels)
+    roi_areas, roi_circs, roi_edges = calculate_roi_properties(labels, mean_image)
 
-    n = len(unique_labels)
+    return labels, roi_areas, roi_circs, roi_edges
 
-    roi_areas = np.zeros(n)
-    roi_circs = np.zeros(n)
-
-    for l in unique_labels:
-        if l <= 1:
-            continue
-
-        mask = np.zeros(original_image.shape, dtype="uint8")
-        mask[labels == l] = 255
-
-        # detect contours in the mask and grab the largest one
-        cnts = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
-
-        if len(cnts) > 0:
-            c = max(cnts, key=cv2.contourArea)
-
-            area = cv2.contourArea(c)
-
-            perimeter = cv2.arcLength(c, True)
-
-            if area > 0:
-                roi_circs[l-1] = (perimeter**2)/(4*np.pi*area)
-
-            roi_areas[l-1] = area
-
-    return labels, roi_areas, roi_circs
-
-def filter_rois(image, rois, min_area, max_area, min_circ, max_circ, roi_areas, roi_circs, correlations, min_correlation, locked_rois=[]):
+def filter_rois(image, rois, min_area, max_area, min_circ, max_circ, min_edge_contrast, roi_areas, roi_circs, roi_edges, correlations, min_correlation, locked_rois=[]):
     filtered_rois = rois.copy()
     filtered_out_rois = []
 
     for l in np.unique(rois):
-        if ((not (min_area <= roi_areas[l-1] <= max_area)) or (not (min_circ <= roi_circs[l-1] <= max_circ)) or l <= 1) and l not in locked_rois:
+        if ((not (min_area <= roi_areas[l-1] <= max_area)) or (not (min_circ <= roi_circs[l-1] <= max_circ)) or (not (min_edge_contrast <= roi_edges[l-1])) or l <= 1) and l not in locked_rois:
             mask = rois == l
             
             filtered_rois[mask] = 0
