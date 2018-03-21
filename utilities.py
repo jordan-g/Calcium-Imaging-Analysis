@@ -641,7 +641,7 @@ def draw_rois(rgb_image, labels, selected_roi, erased_rois, filtered_out_rois, l
 
     if roi_overlay is None:
         n_rois = len(np.unique(labels))
-        roi_overlay = image.copy()
+        roi_overlay = np.zeros(image.shape)
 
         for l in np.unique(labels):
             if l < 1 or l in filtered_out_rois:
@@ -664,7 +664,9 @@ def draw_rois(rgb_image, labels, selected_roi, erased_rois, filtered_out_rois, l
             mask = labels == l
             roi_overlay[mask] = 0
 
-    cv2.addWeighted(roi_overlay, 0.5, image, 0.5, 0, image)
+    final_overlay = image.copy()
+    final_overlay[roi_overlay > 0] = roi_overlay[roi_overlay > 0]
+    cv2.addWeighted(final_overlay, 0.5, image, 0.5, 0, image)
 
     if selected_roi is not None:
         mask = labels == selected_roi
