@@ -15,6 +15,7 @@ from skimage.measure import find_contours, regionprops
 from skimage.filters import gaussian
 from skimage.restoration import (denoise_tv_chambolle, denoise_bilateral,
                                  denoise_wavelet, estimate_sigma)
+from skimage import exposure
 import cv2
 import matplotlib.pyplot as plt
 import csv
@@ -46,7 +47,7 @@ DEFAULT_PARAMS = {'gamma'               : 1.0,
                   'window_size'         : 7,
                   'background_threshold': 10,
                   'invert_masks'        : False,
-                  'soma_threshold'      : 1,
+                  'soma_threshold'      : 0.8,
                   'min_area'            : 10,
                   'max_area'            : 100,
                   'min_circ'            : 0,
@@ -256,14 +257,15 @@ class Controller():
         else:
             self.video_max = 1
 
-        print(max_value)
+        print("Video max: {}.".format(self.video_max))
 
         # set the path to the previewed video
         self.video_path = video_path
 
         if len(self.video.shape) == 3:
             # add a z dimension
-            self.video = self.video[:, np.newaxis, :, :]
+            # self.video = self.video[:, np.newaxis, :, :]
+            self.video = self.video[np.newaxis, :, :, :]
 
         # set z to 0 if necessary
         if self.z >= self.video.shape[1]:
@@ -274,9 +276,6 @@ class Controller():
 
         # calculate gamma- and contrast-adjusted video
         self.adjusted_video = self.calculate_adjusted_video(self.video, z=self.z)
-
-        print(self.adjusted_video.dtype)
-        print(np.amax(self.adjusted_video), self.adjusted_video[:, 0])
 
         print("Opened video with shape {}.".format(self.video.shape))
 
@@ -491,7 +490,7 @@ class Controller():
             self.video_processing_thread.finished.connect(self.process_videos_finished)
 
             # set its parameters
-            self.video_processing_thread.set_parameters(self.video_paths, rois, self.motion_correct_all_videos, self.params["max_shift"], self.params["patch_stride"], self.params["patch_overlap"], self.apply_blur, self.params)
+            self.video_processing_thread.set_parameters(self.video_paths, rois, self.motion_correct_all_videos, self.params["max_shift"], self.params["patch_stride"], self.params["patch_overlap"], self.apply_blur, self.params, self.video_max)
 
             # start the thread
             self.video_processing_thread.start()
@@ -547,7 +546,7 @@ class Controller():
 
             # calculate mean images & correlation images
             self.calculate_mean_images()
-            self.correlation_images = [ utilities.correlation(self.video, z).astype(np.float32) for z in range(self.video.shape[1]) ]
+            self.correlation_images = [ utilities.correlation(self.video, z) for z in range(self.video.shape[1]) ]
 
             if self.video.shape[1] > 1:
                 # set size of squares whose mean brightness we will calculate
@@ -591,7 +590,7 @@ class Controller():
                     difference = int(round(bg_brightness - bg_brightness_0))
 
                     # subtract this difference from this z plane's mean image
-                    self.mean_images[z] = np.maximum(self.mean_images[z].astype(np.float32) - difference, 0).astype(np.uint8)
+                    self.mean_images[z] = np.maximum(self.mean_images[z] - difference, 0)
 
             # uncheck "Show ROIs" checkbox
             self.roi_finding_param_widget.show_rois_checkbox.setChecked(False)
@@ -600,9 +599,9 @@ class Controller():
 
             # calculate ROI finding variables
             self.adjusted_image                                   = utilities.calculate_adjusted_image(self.mean_images[self.z], self.params['contrast'], self.params['gamma'])
-            self.background_mask                                  = utilities.calculate_background_mask(self.adjusted_image, self.params['background_threshold'])
-            self.equalized_image                                  = utilities.calculate_equalized_image(self.adjusted_image, self.background_mask, self.params['window_size'])
-            self.soma_mask, self.I_mod, self.soma_threshold_image = utilities.calculate_soma_threshold_image(self.equalized_image, self.params['soma_threshold'])
+            self.background_mask                                  = utilities.calculate_background_mask(self.adjusted_image, self.params['background_threshold'], self.video_max)
+            self.equalized_image                                  = utilities.calculate_equalized_image(self.adjusted_image, self.background_mask, self.params['window_size'], self.video_max)
+            self.soma_mask, self.I_mod, self.soma_threshold_image = utilities.calculate_soma_threshold_image(self.equalized_image, self.params['soma_threshold'], self.video_max)
 
         self.show_roi_image(show=self.roi_finding_param_widget.show_rois_checkbox.isChecked())
 
@@ -618,7 +617,7 @@ class Controller():
         if loading_rois:
             # calculate mean images & correlation images
             self.calculate_mean_images()
-            self.correlation_images = [ utilities.correlation(self.video, z).astype(np.float32) for z in range(self.video.shape[1]) ]
+            self.correlation_images = [ utilities.correlation(self.video, z) for z in range(self.video.shape[1]) ]
 
             # calculate adjusted image
             self.adjusted_image = utilities.calculate_adjusted_image(self.mean_images[self.z], self.params['contrast'], self.params['gamma'])
@@ -626,7 +625,7 @@ class Controller():
             # reset history variables
             self.reset_history()
 
-        print(self.rois, self.erased_rois, self.filtered_out_rois, self.locked_rois)
+        # print(self.rois, self.erased_rois, self.filtered_out_rois, self.locked_rois)
 
         # calculate the ROI image
         self.calculate_roi_image(z=self.z, update_overlay=self.roi_overlay is None)
@@ -762,7 +761,7 @@ class Controller():
                 self.show_roi_image(show=self.roi_finding_param_widget.show_rois_checkbox.isChecked())
             elif param == "background_threshold":
                 # calculate the background mask using the new threshold
-                self.background_mask = utilities.calculate_background_mask(self.adjusted_image, self.params['background_threshold'])
+                self.background_mask = utilities.calculate_background_mask(self.adjusted_image, self.params['background_threshold'], self.video_max)
 
                 # uncheck the "Show ROIs" checkbox
                 self.roi_finding_param_widget.show_rois_checkbox.setChecked(False)
@@ -770,10 +769,10 @@ class Controller():
 
                 # show the background mask
                 # TODO: only show the background mask while dragging the slider
-                self.preview_window.plot_image(self.adjusted_image, background_mask=self.background_mask)
+                self.preview_window.plot_image(self.adjusted_image, background_mask=self.background_mask, video_max=self.video_max)
             elif param == "window_size":
                 # calculate the equalized image using the new window size
-                self.equalized_image = utilities.calculate_equalized_image(self.adjusted_image, self.background_mask, self.params['window_size'])
+                self.equalized_image = utilities.calculate_equalized_image(self.adjusted_image, self.background_mask, self.params['window_size'], self.video_max)
 
                 # uncheck the "Show ROIs" checkbox
                 self.roi_finding_param_widget.show_rois_checkbox.setChecked(False)
@@ -781,7 +780,7 @@ class Controller():
 
                 # show the equalized image
                 # TODO: only show the equalized image while dragging the slider
-                self.preview_window.plot_image(self.equalized_image)
+                self.preview_window.plot_image(self.equalized_image, video_max=self.video_max)
             elif param == "z":
                 self.z = value
 
@@ -828,14 +827,14 @@ class Controller():
     def calculate_adjusted_video(self, video, z=None):
         if z is not None:
             # calculate the adjusted video only at this z plane
-            return utilities.adjust_gamma(utilities.adjust_contrast((video[:, z, :, :]*255.0/self.video_max).astype(np.uint8), self.params['contrast']), self.params['gamma']).astype(np.float32)*self.video_max/255.0
+            return utilities.adjust_gamma(utilities.adjust_contrast((video[:, z, :, :]), self.params['contrast']), self.params['gamma'])
         else:
             # calculate the adjusted video at all z planes
-            return utilities.adjust_gamma(utilities.adjust_contrast((video*255.0/self.video_max).astype(np.uint8), self.params['contrast']), self.params['gamma']).astype(np.float32)*self.video_max/255.0
+            return utilities.adjust_gamma(utilities.adjust_contrast((video), self.params['contrast']), self.params['gamma'])
 
     def calculate_adjusted_frame(self, video):
         # calculate the adjusted frame
-        return utilities.adjust_gamma(utilities.adjust_contrast((video[self.preview_window.frame_num, self.z]*255.0/self.video_max).astype(np.uint8), self.params['contrast']), self.params['gamma']).astype(np.float32)*self.video_max/255.0
+        return utilities.adjust_gamma(utilities.adjust_contrast((video[self.preview_window.frame_num, self.z]), self.params['contrast']), self.params['gamma'])
 
     def motion_correct_video(self):
         if not self.performing_motion_correction:
@@ -919,14 +918,14 @@ class Controller():
 
     def calculate_mean_images(self):
         if self.use_mc_video and self.adjusted_mc_video is not None:
-            video = self.mc_video*255.0/self.video_max
+            video = self.mc_video
         else:
-            video = self.video*255.0/self.video_max
+            video = self.video
 
         if self.apply_blur:
-            self.mean_images = [ ndi.median_filter(utilities.sharpen(ndi.gaussian_filter(denoise_tv_chambolle(utilities.mean(video, z).astype(np.float32), weight=0.01, multichannel=False), 1)), 3).astype(np.uint8) for z in range(video.shape[1]) ]
+            self.mean_images = [ ndi.median_filter(utilities.sharpen(ndi.gaussian_filter(denoise_tv_chambolle(utilities.mean(video, z), weight=0.01, multichannel=False), 1)), 3) for z in range(video.shape[1]) ]
         else:
-            self.mean_images = [ utilities.mean(video, z).astype(np.uint8) for z in range(video.shape[1]) ]
+            self.mean_images = [ denoise_wavelet(utilities.mean(video, z)/self.video_max)*self.video_max for z in range(video.shape[1]) ]
 
     def set_apply_blur(self, apply_blur):
         self.apply_blur = apply_blur
@@ -947,9 +946,9 @@ class Controller():
     def show_roi_image(self, show):
         # plot the ROI image (or the regular image if show is False)
         if show:
-            self.preview_window.plot_image(self.roi_image)
+            self.preview_window.plot_image(self.roi_image, video_max=255.0)
         else:
-            self.preview_window.plot_image(self.adjusted_image)
+            self.preview_window.plot_image(self.adjusted_image, video_max=self.video_max)
 
         # update the param window
         self.param_window.show_rois_action.setChecked(show)
@@ -979,11 +978,11 @@ class Controller():
             for j in range(len(self.masks[i])):
                 self.masks[i][j] = self.masks[i][j] == False
 
-        self.preview_window.plot_image(self.adjusted_image)
+        self.preview_window.plot_image(self.adjusted_image, video_max=self.video_max)
 
     def draw_mask(self):
         if not self.preview_window.drawing_mask:
-            self.preview_window.plot_image(self.adjusted_image)
+            self.preview_window.plot_image(self.adjusted_image, video_max=self.video_max)
 
             # notify the preview window that we are in mask drawing mode
             self.preview_window.start_drawing_mask()
@@ -1021,7 +1020,7 @@ class Controller():
             # notify the preview window that we are no longer in mask drawing mode
             self.preview_window.end_drawing_mask()
 
-            self.preview_window.plot_image(self.adjusted_image)
+            self.preview_window.plot_image(self.adjusted_image, video_max=self.video_max)
 
             # update the param widget
             self.roi_finding_param_widget.draw_mask_button.setText("Draw Mask")
@@ -1036,17 +1035,8 @@ class Controller():
             roi_overlay = self.roi_overlay
 
         # create ROI image
-        rgb_image = cv2.cvtColor(self.adjusted_image, cv2.COLOR_GRAY2RGB)
+        rgb_image = cv2.cvtColor(utilities.normalize(self.adjusted_image, self.video_max), cv2.COLOR_GRAY2RGB)
         self.roi_image, self.roi_overlay = utilities.draw_rois(rgb_image, self.rois[z], self.selected_roi, self.erased_rois[z], self.filtered_out_rois[z], self.locked_rois[z], newly_erased_rois=newly_erased_rois, roi_overlay=roi_overlay)
-
-    def show_roi_image(self, show):
-        if show:
-            self.preview_window.plot_image(self.roi_image)
-        else:
-            self.preview_window.plot_image(self.adjusted_image)
-
-        self.param_window.show_rois_action.setChecked(show)
-        self.roi_finding_param_widget.show_rois_checkbox.setChecked(show)
 
     def find_rois(self):
         if not self.finding_rois:
@@ -1059,7 +1049,7 @@ class Controller():
             self.roi_finding_thread.finished.connect(self.roi_finding_ended)
 
             # set the parameters of the ROI finding thread
-            self.roi_finding_thread.set_parameters(self.video, self.mean_images, self.masks, self.params["min_area"], self.params["max_area"], self.params["min_circ"], self.params["max_circ"], self.params['min_edge_contrast'], self.params['min_correlation'], self.params['soma_threshold'], self.params['window_size'], self.params['background_threshold'], self.params['contrast'], self.params['gamma'], self.correlation_images)
+            self.roi_finding_thread.set_parameters(self.video, self.mean_images, self.masks, self.params["min_area"], self.params["max_area"], self.params["min_circ"], self.params["max_circ"], self.params['min_edge_contrast'], self.params['min_correlation'], self.params['soma_threshold'], self.params['window_size'], self.params['background_threshold'], self.params['contrast'], self.params['gamma'], self.correlation_images, self.video_max)
 
             # start the thread
             self.roi_finding_thread.start()
@@ -1100,7 +1090,7 @@ class Controller():
         self.mc_rois = self.use_mc_video
 
         # create ROI image
-        rgb_image = cv2.cvtColor(self.adjusted_image, cv2.COLOR_GRAY2RGB)
+        rgb_image = cv2.cvtColor(utilities.normalize(self.adjusted_image, self.video_max), cv2.COLOR_GRAY2RGB)
         self.roi_image, self.roi_overlay = utilities.draw_rois(rgb_image, self.rois[self.z], None, None, self.filtered_out_rois[self.z], None)
 
         # show the ROI image
@@ -1146,7 +1136,7 @@ class Controller():
             # update the param widget
             self.roi_finding_param_widget.erase_selected_mask_button.setEnabled(False)
 
-            self.preview_window.plot_image(self.adjusted_image)
+            self.preview_window.plot_image(self.adjusted_image, video_max=self.video_max)
 
     def filter_rois(self, z):
         # filter out ROIs and update the removed ROIs
@@ -1453,7 +1443,7 @@ class Controller():
             self.roi_filtering_param_widget.lock_roi_button.setText("Lock ROI")
 
         # create & show the new ROI image
-        self.calculate_roi_image(z=self.z, update_overlay=True)
+        self.calculate_roi_image(z=self.z, update_overlay=False)
         self.show_roi_image(show=self.roi_filtering_param_widget.show_rois_checkbox.isChecked())
 
     def enlarge_roi(self):
@@ -1558,7 +1548,7 @@ class ROIFindingThread(QThread):
 
         self.running = False
 
-    def set_parameters(self, video, mean_images, masks, min_area, max_area, min_circ, max_circ, min_edge_contrast, min_correlation, soma_threshold, window_size, background_threshold, contrast, gamma, correlation_images):
+    def set_parameters(self, video, mean_images, masks, min_area, max_area, min_circ, max_circ, min_edge_contrast, min_correlation, soma_threshold, window_size, background_threshold, contrast, gamma, correlation_images, video_max):
         self.video                = video
         self.mean_images          = mean_images
         self.masks                = masks
@@ -1574,6 +1564,7 @@ class ROIFindingThread(QThread):
         self.contrast             = contrast
         self.gamma                = gamma
         self.correlation_images   = correlation_images
+        self.video_max            = video_max
 
         # print(self.min_area, self.max_area, self.min_circ, self.max_circ)
 
@@ -1588,9 +1579,9 @@ class ROIFindingThread(QThread):
 
         for z in range(self.video.shape[1]):
             adjusted_image  = utilities.calculate_adjusted_image(self.mean_images[z], self.contrast, self.gamma)
-            background_mask = utilities.calculate_background_mask(adjusted_image, self.background_threshold)
-            equalized_image = utilities.calculate_equalized_image(adjusted_image, background_mask, self.window_size)
-            soma_mask, I_mod, soma_threshold_image = utilities.calculate_soma_threshold_image(equalized_image, self.soma_threshold)
+            background_mask = utilities.calculate_background_mask(adjusted_image, self.background_threshold, self.video_max)
+            equalized_image = utilities.calculate_equalized_image(adjusted_image, background_mask, self.window_size, self.video_max)
+            soma_mask, I_mod, soma_threshold_image = utilities.calculate_soma_threshold_image(equalized_image, self.soma_threshold, self.video_max)
 
             if not self.running:
                 self.running = False
@@ -1615,6 +1606,7 @@ class ROIFindingThread(QThread):
                 out[mask] = I_mod[mask]
                 I_mod = out.copy()
 
+            # labels[z], roi_areas[z], roi_circs[z], roi_edges[z] = utilities.find_rois(equalized_image, self.mean_images[z])
             labels[z], roi_areas[z], roi_circs[z], roi_edges[z] = utilities.find_rois(soma_mask, I_mod, self.mean_images[z])
 
             if not self.running:
@@ -1655,7 +1647,7 @@ class ProcessVideosThread(QThread):
 
         self.running = False
 
-    def set_parameters(self, video_paths, rois, motion_correct, max_shift, patch_stride, patch_overlap, apply_blur, params):
+    def set_parameters(self, video_paths, rois, motion_correct, max_shift, patch_stride, patch_overlap, apply_blur, params, video_max):
         self.video_paths    = video_paths
         self.rois           = rois
         self.motion_correct = motion_correct
@@ -1664,6 +1656,7 @@ class ProcessVideosThread(QThread):
         self.patch_overlap  = patch_overlap
         self.apply_blur     = apply_blur
         self.params         = params
+        self.video_max      = video_max
 
     def run(self):
         self.running = True
@@ -1749,9 +1742,9 @@ class ProcessVideosThread(QThread):
                 labels = self.rois[:]
 
             if self.motion_correct:
-                vid = mc_video*255.0/max_video
+                vid = mc_video
             else:
-                vid = video*255.0/max_video
+                vid = video
 
             # print(labels[0].shape, vid.shape, video_shape)
 
@@ -1780,7 +1773,7 @@ class ProcessVideosThread(QThread):
 
             # shift the labels to match the first video
             if self.apply_blur:
-                mean_images = [ ndi.median_filter(utilities.sharpen(ndi.gaussian_filter(denoise_tv_chambolle(utilities.mean(vid, z).astype(np.float32), weight=0.01, multichannel=False), 1)), 3).astype(np.uint8) for z in range(vid.shape[1]) ]
+                mean_images = [ ndi.median_filter(utilities.sharpen(ndi.gaussian_filter(denoise_tv_chambolle(utilities.mean(vid, z), weight=0.01, multichannel=False), 1)), 3) for z in range(vid.shape[1]) ]
             else:
                 mean_images = [ utilities.mean(vid, z) for z in range(vid.shape[1]) ]
 
@@ -1807,7 +1800,7 @@ class ProcessVideosThread(QThread):
 
                 adjusted_image = utilities.calculate_adjusted_image(mean_images[z], self.params['contrast'], self.params['gamma'])
 
-                rgb_image = cv2.cvtColor(adjusted_image, cv2.COLOR_GRAY2RGB)
+                rgb_image = cv2.cvtColor(utilities.normalize(adjusted_image, self.video_max), cv2.COLOR_GRAY2RGB)
 
                 roi_image, _ = utilities.draw_rois(rgb_image, labels[z], None, None, [], None, roi_overlay=None)
 

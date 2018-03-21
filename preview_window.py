@@ -55,8 +55,7 @@ class PreviewQLabel(QLabel):
             self.setPixmap(self.pix.scaled(self.width(), self.height(), Qt.KeepAspectRatio))
 
             # update scale factor
-            self.scale_factor = min(self.height()/self.image.shape[0], self.width()/self.image.shape[1])
-            print(self.scale_factor)
+            self.scale_factor = self.pixmap().height()/self.image.shape[0]
 
     def mousePressEvent(self, event):
         """
@@ -114,7 +113,8 @@ class PreviewQLabel(QLabel):
 
             self.setPixmap(self.pix.scaled(self.width(), self.height(), Qt.KeepAspectRatio, Qt.FastTransformation))
 
-            self.scale_factor = min(self.height()/image.shape[0], self.width()/image.shape[1])
+            # self.scale_factor = min(self.height()/image.shape[0], self.width()/image.shape[1])
+            self.scale_factor = self.pixmap().height()/image.shape[0]
         
         self.image = image
 
@@ -195,13 +195,13 @@ class PreviewWindow(QMainWindow):
         self.timer.stop()
         self.setWindowTitle("Preview")
 
-    def plot_image(self, image, background_mask=None):
+    def plot_image(self, image, background_mask=None, video_max=255):
         if self.image is None:
             self.image_label.show()
             self.main_widget.setMinimumSize(QSize(image.shape[1], image.shape[0]))
 
         # normalize the image (to be between 0 and 255)
-        normalized_image = utilities.normalize(image)
+        normalized_image = utilities.normalize(image, video_max)
 
         # convert to RGB
         if len(normalized_image.shape) == 2:
