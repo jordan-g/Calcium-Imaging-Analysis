@@ -2055,7 +2055,6 @@ def tile_and_correct_wrapper(params):
             imgs = imread(img_name, key=idxs)
         mc = np.zeros(imgs.shape,dtype = np.float32)
         shift_info = []
-        print(imgs.dtype, "helloooo")
     elif extension == '.sbx':  # check if sbx file
         imgs = cm.base.movies.sbxread(name, idxs[0], len(idxs))
         mc = np.zeros(imgs.shape,dtype = np.float32)

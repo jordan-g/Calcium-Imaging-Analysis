@@ -176,21 +176,21 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         percent_complete = int(100.0*float(0.1)/len(z_range))
         progress_signal.emit(percent_complete)
 
-    max_value = np.amax(video)
-    if max_value > 2047:
-        video_max = 4095
-    elif max_value > 1023:
-        video_max = 2047
-    elif max_value > 511:
-        video_max = 1023
-    elif max_value > 255:
-        video_max = 511
-    elif max_value > 1:
-        video_max = 255
-    else:
-        video_max = 1
+    # max_value = np.amax(video)
+    # if max_value > 2047:
+    #     video_max = 4095
+    # elif max_value > 1023:
+    #     video_max = 2047
+    # elif max_value > 511:
+    #     video_max = 1023
+    # elif max_value > 255:
+    #     video_max = 511
+    # elif max_value > 1:
+    #     video_max = 255
+    # else:
+    #     video_max = 1
 
-    video = video*255.0/video_max
+    # video = video*255.0/video_max
 
     mc_video = video.copy()
 
@@ -456,16 +456,16 @@ def calculate_equalized_image(adjusted_image, background_mask, window_size, vide
 
     equalized_image[background_mask] = 0
 
-    equalized_image[equalized_image > 0] = 1
-
     equalized_image = (1.0 - equalized_image)
-
-    equalized_image = remove_small_objects(equalized_image.astype(bool), 2, connectivity=2, in_place=True).astype(float)
 
     return equalized_image*video_max
 
 def calculate_soma_threshold_image(equalized_image, soma_threshold, video_max):
     nuclei_image = equalized_image/video_max
+
+    nuclei_image[nuclei_image < 1] = 0
+
+    nuclei_image = remove_small_objects(nuclei_image.astype(bool), 2, connectivity=2, in_place=True).astype(float)
 
     soma_mask = local_maxima(h_maxima(nuclei_image, soma_threshold/255.0, selem=square(3)), selem=square(3))
     soma_mask = remove_small_objects(soma_mask.astype(bool), 2, connectivity=2, in_place=True)

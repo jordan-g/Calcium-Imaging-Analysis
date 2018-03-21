@@ -490,7 +490,7 @@ class Controller():
             self.video_processing_thread.finished.connect(self.process_videos_finished)
 
             # set its parameters
-            self.video_processing_thread.set_parameters(self.video_paths, rois, self.motion_correct_all_videos, self.params["max_shift"], self.params["patch_stride"], self.params["patch_overlap"], self.apply_blur, self.params, self.video_max)
+            self.video_processing_thread.set_parameters(self.video_paths, rois, self.motion_correct_all_videos, self.params["max_shift"], self.params["patch_stride"], self.params["patch_overlap"], self.apply_blur, self.params)
 
             # start the thread
             self.video_processing_thread.start()
@@ -1078,6 +1078,7 @@ class Controller():
         self.roi_circs         = roi_circs
         self.roi_edges         = roi_edges
         self.filtered_out_rois = filtered_out_rois
+        self.removed_rois      = filtered_out_rois[:]
 
         # update the param window
         self.roi_finding_param_widget.show_rois_checkbox.setDisabled(False)
@@ -1647,7 +1648,7 @@ class ProcessVideosThread(QThread):
 
         self.running = False
 
-    def set_parameters(self, video_paths, rois, motion_correct, max_shift, patch_stride, patch_overlap, apply_blur, params, video_max):
+    def set_parameters(self, video_paths, rois, motion_correct, max_shift, patch_stride, patch_overlap, apply_blur, params):
         self.video_paths    = video_paths
         self.rois           = rois
         self.motion_correct = motion_correct
@@ -1656,7 +1657,6 @@ class ProcessVideosThread(QThread):
         self.patch_overlap  = patch_overlap
         self.apply_blur     = apply_blur
         self.params         = params
-        self.video_max      = video_max
 
     def run(self):
         self.running = True
@@ -1736,10 +1736,7 @@ class ProcessVideosThread(QThread):
 
             self.progress.emit(int(100.0*float(i + (2/3))/len(self.video_paths)))
 
-            if python_version == 3:
-                labels = self.rois.copy()
-            else:
-                labels = self.rois[:]
+            labels = self.rois[:]
 
             if self.motion_correct:
                 vid = mc_video
@@ -1798,9 +1795,11 @@ class ProcessVideosThread(QThread):
                             labels[z][y_shift:, :] = 0
                             labels[z][:, x_shift:] = 0
 
+                print("Saving ROI image of z plane {}...".format(z))
+
                 adjusted_image = utilities.calculate_adjusted_image(mean_images[z], self.params['contrast'], self.params['gamma'])
 
-                rgb_image = cv2.cvtColor(utilities.normalize(adjusted_image, self.video_max), cv2.COLOR_GRAY2RGB)
+                rgb_image = cv2.cvtColor(utilities.normalize(adjusted_image, video_max), cv2.COLOR_GRAY2RGB)
 
                 roi_image, _ = utilities.draw_rois(rgb_image, labels[z], None, None, [], None, roi_overlay=None)
 
@@ -1818,7 +1817,14 @@ class ProcessVideosThread(QThread):
 
                 print("Calculating ROI activities for z={}...".format(z))
                 vid_z = vid[:, z, :, :].transpose(1, 2, 0)
-                for l in np.unique(labels[z]):
+                label_nums = np.unique(labels[z])
+                last_percent_printed = 0
+                for i in range(len(label_nums)):
+                    l = label_nums[i]
+                    percent = int((i/len(label_nums))*100.0)
+                    if percent % 10 == 0 and percent > last_percent_printed:
+                        print("{}% done.".format(percent))
+                        last_percent_printed = percent
                     activity = utilities.calc_activity_of_roi(labels[z], vid_z, l, z=z)
 
                     results[z][l] = activity
