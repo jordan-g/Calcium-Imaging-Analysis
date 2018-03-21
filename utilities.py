@@ -617,7 +617,14 @@ def calc_activity_of_roi(labels, video, roi, z=0):
 
 def add_roi_to_overlay(overlay, roi_mask, labels):
     l = np.amax(labels[roi_mask > 0])
-    overlay[roi_mask > 0] = colors[l]
+
+    mask = labels == l
+
+    b = erosion(mask, disk(1))
+
+    mask = mask ^ b
+    
+    overlay[mask] = np.array([255, 0, 0]).astype(np.uint8)
 
 def calculate_shift(mean_image_1, mean_image_2):
     nonzeros_1 = np.nonzero(mean_image_1 > 0)
@@ -636,7 +643,6 @@ def calculate_shift(mean_image_1, mean_image_2):
     return int(shift[0]), int(shift[1])
 
 def draw_rois(rgb_image, labels, selected_roi, erased_rois, filtered_out_rois, locked_rois, newly_erased_rois=None, roi_overlay=None):
-    global colors
     image = rgb_image.copy()
 
     if roi_overlay is None:
@@ -644,7 +650,7 @@ def draw_rois(rgb_image, labels, selected_roi, erased_rois, filtered_out_rois, l
         roi_overlay = np.zeros(image.shape)
 
         for l in np.unique(labels):
-            if l < 1 or l in filtered_out_rois:
+            if l < 1 or l in filtered_out_rois or l in erased_rois:
                 continue
 
             mask = labels == l

@@ -147,6 +147,7 @@ class Controller():
                 self.masks             = [ [] for i in range(self.video.shape[1]) ]
                 self.mask_points       = [ [] for i in range(self.video.shape[1]) ]
                 self.rois              = [ np.zeros(self.video.shape[2:]).astype(int) for i in range(self.video.shape[1]) ]
+                self.original_rois     = [ np.zeros(self.video.shape[2:]).astype(int) for i in range(self.video.shape[1]) ]
                 self.roi_areas         = [ [] for i in range(self.video.shape[1]) ]
                 self.roi_circs         = [ [] for i in range(self.video.shape[1]) ]
                 self.roi_edges         = [ [] for i in range(self.video.shape[1]) ]
@@ -170,7 +171,6 @@ class Controller():
 
         if reset_rois:
             self.roi_overlay        = None
-            self.original_rois      = None
             self.selected_roi       = None
             self.correlation_images = None
 
@@ -364,6 +364,7 @@ class Controller():
 
                 # set ROI variables
                 self.rois              = roi_data
+                self.original_rois     = self.rois[:]
                 self.filtered_out_rois = [ [] for i in range(self.video.shape[1]) ]
                 self.erased_rois       = [ [] for i in range(self.video.shape[1]) ]
                 self.removed_rois      = [ [] for i in range(self.video.shape[1]) ]
@@ -385,6 +386,7 @@ class Controller():
 
                 # set ROI variables
                 self.rois              = roi_data['labels']
+                self.original_rois     = self.rois[:]
                 self.roi_areas         = roi_data['roi_areas']
                 self.roi_circs         = roi_data['roi_circs']
                 self.roi_edges         = roi_data['roi_edges']
@@ -643,25 +645,23 @@ class Controller():
         # initialize history variables
         if z is None:
             self.last_erased_rois           = [ [] for i in range(self.video.shape[1]) ]
-            self.previous_labels            = [ [] for i in range(self.video.shape[1]) ]
+            self.previous_rois              = [ [] for i in range(self.video.shape[1]) ]
             self.previous_roi_overlays      = [ [] for i in range(self.video.shape[1]) ]
             self.previous_erased_rois       = [ [] for i in range(self.video.shape[1]) ]
             self.previous_filtered_out_rois = [ [] for i in range(self.video.shape[1]) ]
             self.previous_adjusted_images   = [ [] for i in range(self.video.shape[1]) ]
             self.previous_roi_images        = [ [] for i in range(self.video.shape[1]) ]
-            self.previous_selected_rois     = [ [] for i in range(self.video.shape[1]) ]
             self.previous_removed_rois      = [ [] for i in range(self.video.shape[1]) ]
             self.previous_locked_rois       = [ [] for i in range(self.video.shape[1]) ]
             self.previous_params            = [ [] for i in range(self.video.shape[1]) ]
         else:
             self.last_erased_rois[z]           = []
-            self.previous_labels[z]            = []
+            self.previous_rois[z]              = []
             self.previous_roi_overlays[z]      = []
             self.previous_erased_rois[z]       = []
             self.previous_filtered_out_rois[z] = []
             self.previous_adjusted_images[z]   = []
             self.previous_roi_images[z]        = []
-            self.previous_selected_rois[z]     = []
             self.previous_removed_rois[z]      = []
             self.previous_locked_rois[z]       = []
             self.previous_params[z]            = []
@@ -1276,8 +1276,11 @@ class Controller():
             self.show_roi_image(show=self.roi_filtering_param_widget.show_rois_checkbox.isChecked())
 
     def select_roi(self, roi_point): # TODO: create roi_selected() and roi_unselected() methods for the param window
-        # find out which ROI to select
-        selected_roi = utilities.get_roi_containing_point(self.rois[self.z], roi_point)
+        if roi_point is not None:
+            # find out which ROI to select
+            selected_roi = utilities.get_roi_containing_point(self.rois[self.z], roi_point)
+        else:
+            selected_roi = None
 
         if selected_roi is not None and selected_roi not in self.removed_rois[self.z]:
             # an ROI is selected
@@ -1327,12 +1330,12 @@ class Controller():
             self.roi_filtering_param_widget.lock_roi_button.setText("Lock ROI")
 
     def add_to_history(self, only_if_new=False):
-        if (not only_if_new) or len(self.previous_labels[self.z]) == 0:
+        if (not only_if_new) or len(self.previous_rois[self.z]) == 0:
             print("Adding to history.")
 
             # only store up to 20 history states
-            if len(self.previous_labels[self.z]) > 20:
-                del self.previous_labels[self.z][0]
+            if len(self.previous_rois[self.z]) > 20:
+                del self.previous_rois[self.z][0]
             if len(self.previous_roi_overlays[self.z]) > 20:
                 del self.previous_roi_overlays[self.z][0]
             if len(self.previous_erased_rois[self.z]) > 20:
@@ -1343,15 +1346,13 @@ class Controller():
                 del self.previous_adjusted_images[self.z][0]
             if len(self.previous_roi_images[self.z]) > 20:
                 del self.previous_roi_images[self.z][0]
-            if len(self.previous_selected_rois[self.z]) > 20:
-                del self.previous_selected_rois[self.z][0]
             if len(self.previous_removed_rois[self.z]) > 20:
                 del self.previous_removed_rois[self.z][0]
             if len(self.previous_locked_rois[self.z]) > 20:
                 del self.previous_locked_rois[self.z][0]
 
             # store the current state
-            self.previous_labels[self.z].append(self.rois[self.z][:])
+            self.previous_rois[self.z].append(self.rois[self.z][:])
             self.previous_erased_rois[self.z].append(self.erased_rois[self.z][:])
             self.previous_filtered_out_rois[self.z].append(self.filtered_out_rois[self.z][:])
             self.previous_removed_rois[self.z].append(self.removed_rois[self.z][:])
@@ -1361,14 +1362,14 @@ class Controller():
             self.previous_adjusted_images[self.z].append(self.adjusted_image.copy())
             self.previous_roi_images[self.z].append(self.roi_image.copy())
 
-            if self.selected_roi is not None:
-                self.previous_selected_rois[self.z].append(self.selected_roi)
-
     def undo(self):
-        if len(self.previous_labels[self.z]) > 1:
-            del self.previous_labels[self.z][-1]
+        # unselect any ROIs
+        self.select_roi(None)
 
-            self.rois[self.z] = self.previous_labels[self.z][-1][:]
+        if len(self.previous_rois[self.z]) > 1:
+            del self.previous_rois[self.z][-1]
+
+            self.rois[self.z] = self.previous_rois[self.z][-1][:]
         if len(self.previous_roi_overlays[self.z]) > 1:
             del self.previous_roi_overlays[self.z][-1]
 
@@ -1385,10 +1386,6 @@ class Controller():
             del self.previous_roi_images[self.z][-1]
 
             self.roi_image = self.previous_roi_images[self.z][-1].copy()
-        if len(self.previous_selected_rois[self.z]) > 1:
-            del self.previous_selected_rois[self.z][-1]
-
-            self.selected_roi = self.previous_selected_rois[self.z][-1]
         if len(self.previous_locked_rois[self.z]) > 1:
             del self.previous_locked_rois[self.z][-1]
 
@@ -1401,9 +1398,26 @@ class Controller():
         self.show_roi_image(show=self.roi_filtering_param_widget.show_rois_checkbox.isChecked())
 
     def reset_erase(self):
+        # unselect any ROIs
+        self.select_roi(None)
+
+        if len(self.previous_rois[self.z]) > 0:
+            self.rois[self.z] = self.previous_rois[self.z][0][:]
+        if len(self.previous_roi_overlays[self.z]) > 0:
+            self.roi_overlay = self.previous_roi_overlays[self.z][0].copy()
+        if len(self.previous_erased_rois[self.z]) > 0:
+            self.erased_rois[self.z] = self.previous_erased_rois[self.z][0][:]
+        if len(self.previous_adjusted_images[self.z]) > 0:
+            self.adjusted_image  = self.previous_adjusted_images[self.z][0].copy()
+        if len(self.previous_roi_images[self.z]) > 0:
+            self.roi_image = self.previous_roi_images[self.z][0].copy()
+        if len(self.previous_locked_rois[self.z]) > 0:
+            self.locked_rois[self.z] = self.previous_locked_rois[self.z][0][:]
+
         self.rois[self.z]         = self.original_rois[self.z][:]
         self.removed_rois[self.z] = self.filtered_out_rois[self.z][:]
-        self.erased_rois[self.z]  = []
+
+        print(np.unique(self.rois[self.z]))
 
         # reset the history for this z plane
         self.reset_history(z=self.z)
@@ -1417,6 +1431,10 @@ class Controller():
         self.erased_rois[self.z].append(self.selected_roi)
         self.last_erased_rois[self.z].append([self.selected_roi])
         self.removed_rois[self.z] = self.filtered_out_rois[self.z] + self.erased_rois[self.z]
+
+        if self.selected_roi in self.locked_rois[self.z]:
+            index = self.locked_rois[self.z].index(self.selected_roi)
+            del self.locked_rois[self.z][index]
 
         self.selected_roi = None
 
@@ -1446,6 +1464,9 @@ class Controller():
         # create & show the new ROI image
         self.calculate_roi_image(z=self.z, update_overlay=False)
         self.show_roi_image(show=self.roi_filtering_param_widget.show_rois_checkbox.isChecked())
+
+        # add current state to the history
+        self.add_to_history()
 
     def enlarge_roi(self):
         if self.selected_roi >= 1:
