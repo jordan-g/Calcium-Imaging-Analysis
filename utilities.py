@@ -7,9 +7,13 @@ from skimage.feature import peak_local_max
 import scipy.signal
 from skimage.feature import register_translation
 
+import skimage
 from skimage.morphology import *
+from skimage.restoration import (denoise_tv_chambolle, denoise_bilateral,
+                                 denoise_wavelet, estimate_sigma)
 from skimage.filters import rank
 from skimage.external.tifffile import imread, imsave
+# from skimage.exposure import *
 
 import caiman as cm
 from caiman.motion_correction import tile_and_correct, motion_correction_piecewise, MotionCorrect
@@ -19,6 +23,8 @@ import math
 import os
 import glob
 import sys
+
+from Watershed import Watershed
 
 if sys.version_info[0] < 3:
     python_version = 2
@@ -41,25 +47,10 @@ def play_movie(movie):
 
     cv2.destroyAllWindows()
 
-def normalize(image, force=False):
-    min_val = np.amin(image)
-
-    image_new = image.copy()
-
-    if min_val < 0:
-        image_new -= min_val
-
-    max_val = np.amax(image_new)
-
-    if force:
-        return 255*image_new/max_val
-
-    if max_val <= 1:
-        return 255*image_new
-    elif max_val <= 255:
-        return image_new
-    else:
-        return 255*image_new/max_val
+def normalize(image, video_max=255):
+    new_image = 255.0*image/video_max
+    new_image[new_image > 255.0] = 255.0
+    return new_image.astype(np.uint8)
 
 def order_statistic(image, percentile, window_size):
     order = int(np.floor(percentile*window_size**2))
@@ -105,6 +96,7 @@ def calculate_local_correlations(movie):
 
 def mean(movie, z=0):
     return np.mean(movie[:, z, :, :], axis=0)
+    # return np.sum(movie[:, z, :, :], axis=0)
 
 def correlation(movie, z=0):
     return np.abs(cm.local_correlations_fft(movie[:, z, :, :], swap_dim=False))
@@ -149,24 +141,10 @@ def sharpen(image):
     return A_cv2
 
 def adjust_contrast(image, contrast):
-    # print(np.amax(image), np.amin(image))
-    table = np.array([i*contrast
-        for i in np.arange(0, 256)])
-    table[table > 255] = 255
-
-    return cv2.LUT(image, table.astype(np.uint8))
+    return image*contrast
 
 def adjust_gamma(image, gamma):
-    # print("Adjusting gamma...")
-    # build a lookup table mapping the pixel values [0, 255] to
-    # their adjusted gamma values
-    invGamma = 1.0 / gamma
-    table = np.array([((i / 255.0) ** invGamma) * 255
-        for i in np.arange(0, 256)])
-    table[table > 255] = 255
- 
-    # apply gamma correction using the lookup table
-    return cv2.LUT(image, table.astype(np.uint8))
+    return skimage.exposure.adjust_gamma(image, gamma)
 
 def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, progress_signal=None, thread=None, mc_z=-1):
     full_video_path = video_path
@@ -198,6 +176,22 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         percent_complete = int(100.0*float(0.1)/len(z_range))
         progress_signal.emit(percent_complete)
 
+    # max_value = np.amax(video)
+    # if max_value > 2047:
+    #     video_max = 4095
+    # elif max_value > 1023:
+    #     video_max = 2047
+    # elif max_value > 511:
+    #     video_max = 1023
+    # elif max_value > 255:
+    #     video_max = 511
+    # elif max_value > 1:
+    #     video_max = 255
+    # else:
+    #     video_max = 1
+
+    # video = video*255.0/video_max
+
     mc_video = video.copy()
 
     counter = 0
@@ -216,12 +210,12 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
 
         params_movie = {'fname': video_path,
                         'max_shifts': (max_shift, max_shift),  # maximum allow rigid shift (2,2)
-                        'niter_rig': 4,
-                        'splits_rig': 4,  # for parallelization split the movies in  num_splits chuncks across time
+                        'niter_rig': 1,
+                        'splits_rig': 4 if video.shape[0] > 10 else 1,  # for parallelization split the movies in  num_splits chuncks across time
                         'num_splits_to_process_rig': None,  # if none all the splits are processed and the movie is saved
                         'strides': (patch_stride, patch_stride),  # intervals at which patches are laid out for motion correction
                         'overlaps': (patch_overlap, patch_overlap),  # overlap between pathes (size of patch strides+overlaps)
-                        'splits_els': 4,  # for parallelization split the movies in  num_splits chuncks across time
+                        'splits_els': 4 if video.shape[0] > 10 else 1,  # for parallelization split the movies in  num_splits chuncks across time
                         'num_splits_to_process_els': [None],  # if none all the splits are processed and the movie is saved
                         'upsample_factor_grid': 4,  # upsample factor to avoid smearing when merging patches
                         'max_deviation_rigid': int(max_shift/2) - 1,  # maximum deviation allowed for patch with respect to rigid shift         
@@ -260,7 +254,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
 
         # Create motion correction object
         mc = MotionCorrect(fname, min_mov,
-                           dview=dview, max_shifts=max_shifts, niter_rig=niter_rig, splits_rig=splits_rig, 
+                           dview=None, max_shifts=max_shifts, niter_rig=niter_rig, splits_rig=splits_rig, 
                            num_splits_to_process_rig=num_splits_to_process_rig, 
                         strides= strides, overlaps= overlaps, splits_els=splits_els,
                         num_splits_to_process_els=num_splits_to_process_els, 
@@ -431,17 +425,23 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
 
     return mc_video
 
-def calculate_adjusted_image(normalized_image, contrast, gamma):
-    return adjust_gamma(adjust_contrast(normalized_image, contrast), gamma)/255.0
+def calculate_adjusted_image(image, contrast, gamma):
+    return adjust_gamma(adjust_contrast(image, contrast), gamma)
 
-def calculate_background_mask(adjusted_image, background_threshold):
-    return adjusted_image < background_threshold/255.0
+def calculate_background_mask(adjusted_image, background_threshold, video_max):
+    return dilation(adjusted_image*255.0/video_max < background_threshold, disk(1))
 
-def calculate_equalized_image(adjusted_image, background_mask, window_size):
-    new_image_10 = order_statistic(adjusted_image, 0.1, int(window_size))
-    new_image_90 = order_statistic(adjusted_image, 0.9, int(window_size))
+def calculate_equalized_image(adjusted_image, background_mask, window_size, video_max):
+    image = adjusted_image/np.amax(adjusted_image)
 
-    image_difference = adjusted_image - new_image_10
+    # print(np.amax(image), image.dtype)
+    new_image_10 = order_statistic(image, 0.1, int(window_size))
+    new_image_90 = order_statistic(image, 0.9, int(window_size))
+
+    # print(new_image_10)
+    # print(new_image_90)
+
+    image_difference = image - new_image_10
     image_difference[image_difference < 0] = 0
 
     image_range = new_image_90 - new_image_10
@@ -449,18 +449,34 @@ def calculate_equalized_image(adjusted_image, background_mask, window_size):
 
     equalized_image = rescale_0_1(image_difference/image_range)
 
-    equalized_image[equalized_image < 0.05] = 0
+    # print(equalized_image)
+
+    equalized_image[equalized_image < 0.1] = 0
     equalized_image[equalized_image > 1] = 1
 
     equalized_image[background_mask] = 0
 
-    return 1.0 - equalized_image
+    equalized_image = (1.0 - equalized_image)
 
-def calculate_soma_threshold_image(equalized_image, soma_threshold):
-    nuclei_image = equalized_image.copy()
+    return equalized_image*video_max
+
+def calculate_soma_threshold_image(equalized_image, soma_threshold, video_max):
+    nuclei_image = equalized_image/video_max
+
+    nuclei_image[nuclei_image < 1] = 0
+
+    nuclei_image = remove_small_objects(nuclei_image.astype(bool), 2, connectivity=2, in_place=True).astype(float)
 
     soma_mask = local_maxima(h_maxima(nuclei_image, soma_threshold/255.0, selem=square(3)), selem=square(3))
+    soma_mask = remove_small_objects(soma_mask.astype(bool), 2, connectivity=2, in_place=True)
     # self.soma_masks[i] = remove_small_objects(self.soma_masks[i].astype(bool), 2, connectivity=2, in_place=True)
+
+    # print(soma_mask)
+    # print(np.amax(soma_mask))
+
+    # cv2.imshow('image',soma_mask.astype(np.uint8)*255)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
 
     nuclei_image_c = 1 - nuclei_image
 
@@ -476,13 +492,14 @@ def calculate_soma_threshold_image(equalized_image, soma_threshold):
 
     return soma_mask, I_mod, soma_threshold_image
 
-def calculate_roi_properties(labels):
+def calculate_roi_properties(labels, mean_image):
     unique_labels = np.unique(labels)
 
     n = len(unique_labels)
 
     roi_areas = np.zeros(n)
     roi_circs = np.zeros(n)
+    roi_edges = np.zeros(n)
 
     for i in range(len(unique_labels)):
         l = unique_labels[i]
@@ -490,11 +507,10 @@ def calculate_roi_properties(labels):
         if l <= 1:
             continue
 
-        mask = np.zeros(labels.shape, dtype="uint8")
-        mask[labels == l] = 255
+        mask = labels == l
 
         # detect contours in the mask and grab the largest one
-        cnts = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
+        cnts = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
 
         if len(cnts) > 0:
             c = max(cnts, key=cv2.contourArea)
@@ -502,97 +518,65 @@ def calculate_roi_properties(labels):
             area = cv2.contourArea(c)
 
             perimeter = cv2.arcLength(c, True)
+
+            # a = dilation(mask, disk(1))
+            # b = erosion(mask, disk(1))
+
+            # edge_mask = a ^ b
 
             if area > 0:
                 roi_circs[i] = (perimeter**2)/(4*np.pi*area)
 
             roi_areas[i] = area
 
-    return roi_areas, roi_circs
+            # roi_edges[i] = np.mean(mean_image[edge_mask])/np.mean(mean_image[b])
 
-def find_rois(original_image, cells_mask, starting_image):
-    if len(original_image.shape) == 2:
-        rgb_image = cv2.cvtColor((original_image*255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
-    else:
-        rgb_image = (original_image*255).copy()
+    return roi_areas, roi_circs, roi_edges
 
+def find_rois(cells_mask, starting_image, mean_image):
+    # w = Watershed()
+    # labels = w.apply(equalized_image)
     labels = watershed(starting_image, label(cells_mask))
 
-    unique_labels = np.unique(labels)
+    roi_areas, roi_circs, roi_edges = calculate_roi_properties(labels, mean_image)
 
-    n = len(unique_labels)
+    return labels, roi_areas, roi_circs, roi_edges
 
-    roi_areas = np.zeros(n)
-    roi_circs = np.zeros(n)
-
-    for l in unique_labels:
-        if l <= 1:
-            continue
-
-        mask = np.zeros(original_image.shape, dtype="uint8")
-        mask[labels == l] = 255
-
-        # detect contours in the mask and grab the largest one
-        cnts = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
-
-        if len(cnts) > 0:
-            c = max(cnts, key=cv2.contourArea)
-
-            area = cv2.contourArea(c)
-
-            perimeter = cv2.arcLength(c, True)
-
-            if area > 0:
-                roi_circs[l-1] = (perimeter**2)/(4*np.pi*area)
-
-            roi_areas[l-1] = area
-
-    return labels, roi_areas, roi_circs
-
-def filter_rois(image, labels, min_area, max_area, min_circ, max_circ, roi_areas, roi_circs, correlations, min_correlation, locked_rois=[]):
-    filtered_labels = labels.copy()
+def filter_rois(image, rois, min_area, max_area, min_circ, max_circ, min_edge_contrast, roi_areas, roi_circs, roi_edges, correlations, min_correlation, locked_rois=[]):
+    filtered_rois = rois.copy()
     filtered_out_rois = []
 
-    for l in np.unique(labels):
-        if ((not (min_area <= roi_areas[l-1] <= max_area)) or (not (min_circ <= roi_circs[l-1] <= max_circ)) or l <= 1) and l not in locked_rois:
-            mask = labels == l
+    for l in np.unique(rois):
+        if ((not (min_area <= roi_areas[l-1] <= max_area)) or (not (min_circ <= roi_circs[l-1] <= max_circ)) or (not (min_edge_contrast <= roi_edges[l-1])) or l <= 1) and l not in locked_rois:
+            mask = rois == l
             
-            filtered_labels[mask] = 0
+            filtered_rois[mask] = 0
             filtered_out_rois.append(l)
         else:
-            mask = labels == l
-
-            # a = dilation(mask, disk(1))
-            # b = erosion(mask, disk(1))
-
-            # difference = np.mean(image[a - b]) - np.mean(image[b])
-
-            # if (difference != np.nan and difference < 4.0):
-            #     filtered_labels[mask] = 0
-            #     filtered_out_rois.append(l)
+            mask = rois == l
 
             correlation = np.mean(correlations[mask])
 
             if correlation < min_correlation:
-                filtered_labels[mask] = 0
+                filtered_rois[mask] = 0
                 filtered_out_rois.append(l)
 
-    return filtered_labels, filtered_out_rois
+    return filtered_rois, filtered_out_rois
 
-def filter_labels(labels, removed_rois):
-    if removed_rois is not None:
+def remove_rois(rois, rois_to_remove):
+    if rois_to_remove is not None:
         if python_version == 3:
-            new_labels = labels.copy()
+            new_rois = rois.copy()
         else:
-            new_labels = labels[:]
+            new_rois = rois[:]
 
-        for i in range(len(new_labels)):
-            for roi in removed_rois[i]:
-                new_labels[i][new_labels[i] == roi] = 0
+        for i in range(len(new_rois)):
+            for roi in rois_to_remove[i]:
+                new_rois[i][new_rois[i] == roi] = 0
 
-        return new_labels
+        return new_rois
     else:
-        return labels
+        return rois
 
 def get_roi_containing_point(labels, roi_point):
     roi = labels[roi_point[1], roi_point[0]]
@@ -633,7 +617,14 @@ def calc_activity_of_roi(labels, video, roi, z=0):
 
 def add_roi_to_overlay(overlay, roi_mask, labels):
     l = np.amax(labels[roi_mask > 0])
-    overlay[roi_mask > 0] = colors[l]
+
+    mask = labels == l
+
+    b = erosion(mask, disk(1))
+
+    mask = mask ^ b
+    
+    overlay[mask] = np.array([255, 0, 0]).astype(np.uint8)
 
 def calculate_shift(mean_image_1, mean_image_2):
     nonzeros_1 = np.nonzero(mean_image_1 > 0)
@@ -652,18 +643,23 @@ def calculate_shift(mean_image_1, mean_image_2):
     return int(shift[0]), int(shift[1])
 
 def draw_rois(rgb_image, labels, selected_roi, erased_rois, filtered_out_rois, locked_rois, newly_erased_rois=None, roi_overlay=None):
-    global colors
     image = rgb_image.copy()
 
     if roi_overlay is None:
         n_rois = len(np.unique(labels))
-        roi_overlay = np.zeros(image.shape).astype(np.uint8)
+        roi_overlay = np.zeros(image.shape)
 
         for l in np.unique(labels):
-            if l < 1 or l in filtered_out_rois:
+            if l < 1 or l in filtered_out_rois or l in erased_rois:
                 continue
 
-            roi_overlay[labels == l] = colors[l]
+            mask = labels == l
+
+            b = erosion(mask, disk(1))
+
+            mask = mask ^ b
+
+            roi_overlay[mask] = np.array([255, 0, 0]).astype(np.uint8)
 
     if newly_erased_rois is not None:
         for l in newly_erased_rois:
@@ -674,18 +670,16 @@ def draw_rois(rgb_image, labels, selected_roi, erased_rois, filtered_out_rois, l
             mask = labels == l
             roi_overlay[mask] = 0
 
-    final_roi_overlay = image.copy()
-    mask = roi_overlay != 0
-    final_roi_overlay[mask] = roi_overlay[mask]
-
-    cv2.addWeighted(final_roi_overlay, 0.5, image, 0.5, 0, image)
+    final_overlay = image.copy()
+    final_overlay[roi_overlay > 0] = roi_overlay[roi_overlay > 0]
+    cv2.addWeighted(final_overlay, 0.5, image, 0.5, 0, image)
 
     if selected_roi is not None:
         mask = labels == selected_roi
 
         b = erosion(mask, disk(1))
 
-        mask = mask - b
+        mask = mask ^ b
 
         image[mask] = np.array([0, 255, 0]).astype(np.uint8)
 
@@ -695,7 +689,7 @@ def draw_rois(rgb_image, labels, selected_roi, erased_rois, filtered_out_rois, l
 
             b = erosion(mask, disk(1))
 
-            mask = mask - b
+            mask = mask ^ b
 
             image[mask] = np.array([255, 255, 0]).astype(np.uint8)
 

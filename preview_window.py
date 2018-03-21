@@ -55,8 +55,7 @@ class PreviewQLabel(QLabel):
             self.setPixmap(self.pix.scaled(self.width(), self.height(), Qt.KeepAspectRatio))
 
             # update scale factor
-            self.scale_factor = min(self.height()/self.image.shape[0], self.width()/self.image.shape[1])
-            print(self.scale_factor)
+            self.scale_factor = self.pixmap().height()/self.image.shape[0]
 
     def mousePressEvent(self, event):
         """
@@ -114,7 +113,8 @@ class PreviewQLabel(QLabel):
 
             self.setPixmap(self.pix.scaled(self.width(), self.height(), Qt.KeepAspectRatio, Qt.FastTransformation))
 
-            self.scale_factor = min(self.height()/image.shape[0], self.width()/image.shape[1])
+            # self.scale_factor = min(self.height()/image.shape[0], self.width()/image.shape[1])
+            self.scale_factor = self.pixmap().height()/image.shape[0]
         
         self.image = image
 
@@ -123,19 +123,16 @@ class PreviewWindow(QMainWindow):
     QMainWindow subclass used to show frames & tracking.
     """
 
-    def __init__(self, main_controller):
+    def __init__(self, controller):
         QMainWindow.__init__(self)
 
         # set controller
-        self.main_controller = main_controller
-
-        # set title
-        self.setWindowTitle("Preview")
+        self.controller = controller
 
         # get parameter window position & size
-        param_window_x      = self.main_controller.param_window.x()
-        param_window_y      = self.main_controller.param_window.y()
-        param_window_width  = self.main_controller.param_window.width()
+        param_window_x      = self.controller.param_window.x()
+        param_window_y      = self.controller.param_window.y()
+        param_window_width  = self.controller.param_window.width()
 
         # set position & size
         self.setGeometry(param_window_x + param_window_width, param_window_y, 10, 10)
@@ -157,16 +154,8 @@ class PreviewWindow(QMainWindow):
         self.image_label = PreviewQLabel(self)
         self.image_label.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.MinimumExpanding)
         self.image_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-        self.image_label.hide()
         self.image_layout.addWidget(self.image_label)
         self.main_layout.addWidget(self.image_widget, 0, 0)
-
-        # initialize variables
-        self.image                 = None  # image to show
-        self.frames                = None  # frames to play
-        self.frame_num             = 0     # current frame #
-        self.n_frames              = 1     # total number of frames
-        self.video_name            = ""    # name of the currently showing video
 
         self.drawing_mask = False # whether the user is drawing a mask
         self.erasing_rois = False # whether the user is erasing ROIs
@@ -189,63 +178,67 @@ class PreviewWindow(QMainWindow):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_frame)
 
+        self.set_initial_state()
+
         self.show()
 
-    def plot_image(self, image, background_mask=None):
-        if image is None:
-            # reset variables
-            self.image                 = None
-            self.frames                = None
-            self.frame_num             = 0
-            self.n_frames              = 1
-            self.video_name            = ""
+    def set_initial_state(self):
+        # reset variables
+        self.image      = None  # image to show
+        self.frames     = None  # frames to play
+        self.frame_num  = 0     # current frame #
+        self.n_frames   = 1     # total number of frames
+        self.video_name = ""    # name of the currently showing video
 
-            self.update_image_label(None)
-            self.image_label.hide()
-        else:
-            if self.image is None:
-                self.image_label.show()
-                self.main_widget.setMinimumSize(QSize(image.shape[1], image.shape[0]))
+        self.update_image_label(None)
+        self.image_label.hide()
+        self.timer.stop()
+        self.setWindowTitle("Preview")
 
-            # normalize the image (to be between 0 and 255)
-            normalized_image = utilities.normalize(image)
+    def plot_image(self, image, background_mask=None, video_max=255):
+        if self.image is None:
+            self.image_label.show()
+            self.main_widget.setMinimumSize(QSize(image.shape[1], image.shape[0]))
 
-            # convert to RGB
-            if len(normalized_image.shape) == 2:
-                normalized_image = cv2.cvtColor(normalized_image.astype(np.uint8), cv2.COLOR_GRAY2RGB)
+        # normalize the image (to be between 0 and 255)
+        normalized_image = utilities.normalize(image, video_max)
 
-            # update image
-            self.image = normalized_image
+        # convert to RGB
+        if len(normalized_image.shape) == 2:
+            normalized_image = cv2.cvtColor(normalized_image.astype(np.uint8), cv2.COLOR_GRAY2RGB)
 
-            # draw the background mask as red
-            if background_mask is not None:
-                self.image[background_mask > 0] = np.array([255, 0, 0]).astype(np.uint8)
+        # update image
+        self.image = normalized_image
 
-            # draw user-drawn masks
-            if self.main_controller.mode == "roi_finding" and len(self.controller.mask_points[self.controller.z]) > 0:
-                # # make a copy of the image
-                # image = self.image.copy()
+        # draw the background mask as red
+        if background_mask is not None:
+            self.image[background_mask > 0] = np.array([255, 0, 0]).astype(np.uint8)
 
-                # combine the masks into one using their union or intersection, depending on whether they are inverted or not
-                masks = np.array(self.controller.masks[self.controller.z])
-                if self.controller.params['invert_masks']:
-                    mask = np.prod(masks, axis=0).astype(bool)
-                else:
-                    mask = np.sum(masks, axis=0).astype(bool)
+        # draw user-drawn masks
+        if self.controller.mode == "roi_finding" and len(self.controller.mask_points[self.controller.z]) > 0:
+            # # make a copy of the image
+            # image = self.image.copy()
 
-                # darken the image outside of the mask
-                self.image[mask == False] = self.image[mask == False]/2
+            # combine the masks into one using their union or intersection, depending on whether they are inverted or not
+            masks = np.array(self.controller.masks[self.controller.z])
+            if self.controller.params['invert_masks']:
+                mask = np.prod(masks, axis=0).astype(bool)
+            else:
+                mask = np.sum(masks, axis=0).astype(bool)
 
-                # draw the points along the individual masks
-                for i in range(len(self.controller.mask_points[self.controller.z])):
-                    mask_points = self.controller.mask_points[self.controller.z][i]
+            # darken the image outside of the mask
+            self.image[mask == False] = self.image[mask == False]/2
 
-                    self.draw_mask_points(mask_points, self.image, selected=(i == self.controller.selected_mask_num))
+            # draw the points along the individual masks
+            for i in range(len(self.controller.mask_points[self.controller.z])):
+                mask_points = self.controller.mask_points[self.controller.z][i]
 
-                # self.image = image
-            
-            # update image label
-            self.update_image_label(self.image)
+                self.draw_mask_points(mask_points, self.image, selected=(i == self.controller.selected_mask_num))
+
+            # self.image = image
+        
+        # update image label
+        self.update_image_label(self.image)
 
     def play_movie(self, frames, fps=60):
         if frames is None:
@@ -268,7 +261,7 @@ class PreviewWindow(QMainWindow):
             self.frame_num = 0
 
             # normalize the frames (to be between 0 and 255)
-            self.frames = utilities.normalize(frames).astype(np.uint8)
+            self.frames = (utilities.normalize(frames)).astype(np.uint8)
 
             # get the number of frames
             self.n_frames = self.frames.shape[0]
@@ -276,8 +269,9 @@ class PreviewWindow(QMainWindow):
             # start the timer to update the frames
             self.timer.start(int(1000.0/fps))
 
-    def set_video_name(self, video_name):
-        self.video_name = video_name
+    def video_opened(self, video_path):
+        self.video_name = os.path.basename(video_path)
+        self.timer.stop()
 
     def set_fps(self, fps):
         # restart the timer with the new fps
@@ -292,7 +286,7 @@ class PreviewWindow(QMainWindow):
             self.image_label.hide()
         else:
             # convert to RGB
-            frame = cv2.cvtColor(frame.astype(np.uint8), cv2.COLOR_GRAY2RGB)
+            frame = cv2.cvtColor(utilities.normalize(frame).astype(np.uint8), cv2.COLOR_GRAY2RGB)
 
             # update image label
             self.update_image_label(frame)
@@ -310,7 +304,7 @@ class PreviewWindow(QMainWindow):
             self.frame_num = self.frame_num % self.n_frames
 
             # update window title
-            self.setWindowTitle("{}. Z={}. Frame {}/{}.".format(self.video_name, self.main_controller.params['z'], self.frame_num + 1, self.n_frames))
+            self.setWindowTitle("{}. Z={}. Frame {}/{}.".format(self.video_name, self.controller.params['z'], self.frame_num + 1, self.n_frames))
 
     def update_image_label(self, image):
         self.image_label.update_pixmap(image)
@@ -442,9 +436,9 @@ class PreviewWindow(QMainWindow):
         self.controller.shift_labels(previous_point, current_point)
 
     def mouse_pressed(self, point):
-        if self.main_controller.mode == "roi_finding" and self.drawing_mask:
+        if self.controller.mode == "roi_finding" and self.drawing_mask:
             self.add_mask_point(point)
-        elif self.main_controller.mode == "roi_filtering" and not self.drawing_rois:
+        elif self.controller.mode == "roi_filtering" and not self.drawing_rois:
             # store this point
             self.click_end_point = point
 
@@ -455,17 +449,17 @@ class PreviewWindow(QMainWindow):
             self.erase_roi_at_point(end_point)
         elif self.drawing_rois and clicked:
             self.draw_tentative_roi(start_point, end_point)
-        elif self.main_controller.mode == "roi_filtering" and clicked:
+        elif self.controller.mode == "roi_filtering" and clicked:
             self.shift_labels(self.click_end_point, end_point)
 
             # store this point
             self.click_end_point = end_point
 
     def mouse_released(self, start_point, end_point, mouse_moved=False):
-        if self.main_controller.mode == "roi_finding":
+        if self.controller.mode == "roi_finding":
             if not self.drawing_mask and not mouse_moved:
                 self.select_mask(end_point)
-        elif self.main_controller.mode == "roi_filtering":
+        elif self.controller.mode == "roi_filtering":
             if self.erasing_rois:
                 self.end_erase_rois()
             elif self.drawing_rois:
@@ -474,7 +468,7 @@ class PreviewWindow(QMainWindow):
                 self.select_roi(end_point)
 
     def closeEvent(self, ce):
-        if not self.main_controller.closing:
+        if not self.controller.closing:
             ce.ignore()
         else:
             ce.accept()

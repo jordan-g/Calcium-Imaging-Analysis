@@ -8,7 +8,7 @@ import numpy as np
 import math
 from skimage.morphology import reconstruction, square, disk, cube
 
-def imimposemin(I, BW, conn=None):
+def imimposemin(I, BW, conn=None, max_value=255):
     if not I.ndim in (2, 3):
         raise Exception("'I' must be a 2-D or 3D array.")
 
@@ -77,8 +77,8 @@ def imimposemin(I, BW, conn=None):
         J = 255 - J
 
     try:
-        J[BW]                 = -math.inf
+        J[BW] = -math.inf
     except:
-        J[BW]                 = -float("inf")
+        J[BW] = -float("inf")
 
     return J

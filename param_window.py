@@ -98,7 +98,7 @@ class ParamWindow(QMainWindow):
         self.add_videos_action = QAction('Add Videos...', self)
         self.add_videos_action.setShortcut('Ctrl+O')
         self.add_videos_action.setStatusTip('Add video files for processing.')
-        self.add_videos_action.triggered.connect(self.controller.select_and_open_video)
+        self.add_videos_action.triggered.connect(self.controller.select_videos_to_import)
 
         self.show_rois_action = QAction('Show ROIs', self, checkable=True)
         self.show_rois_action.setShortcut('R')
@@ -125,8 +125,18 @@ class ParamWindow(QMainWindow):
         view_menu = menubar.addMenu('&View')
         view_menu.addAction(self.show_rois_action)
 
-    def videos_opened(self, video_paths):
-        self.videos_widget.videos_opened(video_paths)
+    def video_opened(self, max_z, z):
+        self.stacked_widget.setDisabled(False)
+        self.statusBar().showMessage("")
+        self.main_param_widget.param_sliders["z"].setMaximum(max_z)
+        self.main_param_widget.param_sliders["z"].setValue(z)
+        self.main_param_widget.param_textboxes["z"].setText(str(z))
+        self.videos_widget.save_mc_video_button.setEnabled(False)
+        self.motion_correction_widget.use_mc_video_checkbox.setChecked(False)
+        self.motion_correction_widget.use_mc_video_checkbox.setDisabled(True)
+
+    def videos_imported(self, video_paths):
+        self.videos_widget.videos_imported(video_paths)
 
         self.main_param_widget.setDisabled(False)
         self.stacked_widget.setDisabled(False)
@@ -167,9 +177,6 @@ class ParamWindow(QMainWindow):
     def update_process_videos_progress(self, percent):
         self.videos_widget.update_process_videos_progress(percent)
 
-    def rois_created(self):
-        pass
-
     def closeEvent(self, event):
         self.controller.close_all()
 
@@ -196,7 +203,7 @@ class VideosWidget(QWidget):
         self.open_file_button.setStyleSheet('font-weight: bold;')
         self.open_file_button.setIcon(QIcon("icons/open_file_icon.png"))
         self.open_file_button.setIconSize(QSize(16,16))
-        self.open_file_button.clicked.connect(self.controller.select_and_open_video)
+        self.open_file_button.clicked.connect(self.controller.select_videos_to_import)
         self.button_layout.addWidget(self.open_file_button)
 
         self.remove_videos_button = HoverButton('Remove', None, self.parent_widget.statusBar())
@@ -283,7 +290,7 @@ class VideosWidget(QWidget):
 
         self.main_layout.addWidget(HLine())
 
-    def videos_opened(self, video_paths):
+    def videos_imported(self, video_paths):
         self.motion_correct_checkbox.setEnabled(True)
         for video_path in video_paths:
             self.videos_list.addItem(os.path.basename(video_path))
@@ -461,7 +468,7 @@ class MotionCorrectionWidget(ParamWidget):
     def __init__(self, parent_widget, controller):
         ParamWidget.__init__(self, parent_widget, controller, "Motion Correction Parameters", stylesheet=TITLE_STYLESHEET)
 
-        self.controller = controller.motion_correction_controller
+        self.controller = controller
 
         self.add_param_slider(label_name="Maximum Shift", name="max_shift", minimum=1, maximum=100, moved=self.update_param, released=self.update_param, description="Maximum shift (in pixels) allowed for motion correction.", int_values=True)
         self.add_param_slider(label_name="Patch Stride", name="patch_stride", minimum=1, maximum=100, moved=self.update_param, released=self.update_param, description="Stride length (in pixels) of each patch used in motion correction.", int_values=True)
@@ -517,7 +524,7 @@ class MotionCorrectionWidget(ParamWidget):
         self.accept_button.setIcon(QIcon("icons/skip_icon.png"))
         self.accept_button.setIconSize(QSize(16,16))
         # self.accept_button.setMaximumWidth(100)
-        self.accept_button.clicked.connect(self.controller.accept)
+        self.accept_button.clicked.connect(lambda:self.controller.show_roi_finding_params())
         self.button_layout_2.addWidget(self.accept_button)
 
     def preview_contrast(self):
@@ -542,6 +549,10 @@ class MotionCorrectionWidget(ParamWidget):
             self.motion_correct_button.setText('Motion Correct')
             self.motion_correct_button.setHoverMessage("Perform motion correction on the video.")
             self.accept_button.setEnabled(True)
+        elif percent == -1:
+            self.mc_progress_label.setText("")
+            self.motion_correct_button.setText('Motion Correct')
+            self.motion_correct_button.setHoverMessage("Perform motion correction on the video.")
         else:
             self.mc_progress_label.setText("Motion correcting... {}%.".format(int(percent)))
 
@@ -549,7 +560,7 @@ class ROIFindingWidget(ParamWidget):
     def __init__(self, parent_widget, controller):
         ParamWidget.__init__(self, parent_widget, controller, "ROI Finding Parameters")
 
-        self.controller = controller.roi_finding_controller
+        self.controller = controller
 
         self.add_param_slider(label_name="Normalization Window Size", name="window_size", minimum=2, maximum=30, moved=self.update_param, multiplier=1, pressed=self.update_param, released=self.update_param, description="Size (in pixels) of the window used to normalize brightness across the image.", int_values=True)
         # self.add_param_slider(label_name="Soma Threshold", name="soma_threshold", minimum=1, maximum=255, moved=self.update_param, multiplier=1, pressed=self.controller.show_soma_threshold_image, released=self.update_param, description="Threshold for soma centers.", int_values=True)
@@ -558,6 +569,13 @@ class ROIFindingWidget(ParamWidget):
         # self.add_param_slider(label_name="Compactness", name="compactness", minimum=1, maximum=50, moved=self.update_param, multiplier=1, released=self.update_param, description="Compactness parameter (not currently used).", int_values=True)
 
         self.main_layout.addStretch()
+
+        self.blur_checkbox = HoverCheckBox("Apply blur", None, self.parent_widget.statusBar())
+        self.blur_checkbox.setHoverMessage("Apply some blurring and other filters to remove noise and bring out edges of neurons.")
+        self.blur_checkbox.setChecked(False)
+        self.blur_checkbox.setContentsMargins(5, 0, 0, 0)
+        self.blur_checkbox.clicked.connect(lambda:self.controller.set_apply_blur(self.blur_checkbox.isChecked()))
+        self.param_layout.addWidget(self.blur_checkbox)
 
         self.main_layout.addWidget(HLine())
 
@@ -618,7 +636,7 @@ class ROIFindingWidget(ParamWidget):
         self.motion_correct_button.setHoverMessage("Go back to motion correction.")
         self.motion_correct_button.setIcon(QIcon("icons/skip_back_icon.png"))
         self.motion_correct_button.setIconSize(QSize(16,16))
-        self.motion_correct_button.clicked.connect(self.controller.motion_correct)
+        self.motion_correct_button.clicked.connect(lambda:self.controller.show_motion_correction_params())
         self.button_layout.addWidget(self.motion_correct_button)
 
         self.process_video_button = HoverButton('Find ROIs', None, self.parent_widget.statusBar())
@@ -626,14 +644,14 @@ class ROIFindingWidget(ParamWidget):
         self.process_video_button.setIcon(QIcon("icons/accept_icon.png"))
         self.process_video_button.setIconSize(QSize(16,16))
         self.process_video_button.setStyleSheet('font-weight: bold;')
-        self.process_video_button.clicked.connect(self.controller.process_video)
+        self.process_video_button.clicked.connect(self.controller.find_rois)
         self.button_layout.addWidget(self.process_video_button)
 
         self.filter_rois_button = HoverButton('ROI Filtering', None, self.parent_widget.statusBar())
         self.filter_rois_button.setHoverMessage("Automatically and manually filter the found ROIs.")
         self.filter_rois_button.setIcon(QIcon("icons/skip_icon.png"))
         self.filter_rois_button.setIconSize(QSize(16,16))
-        self.filter_rois_button.clicked.connect(self.controller.filter_rois)
+        self.filter_rois_button.clicked.connect(self.controller.show_roi_filtering_params)
         # self.filter_rois_button.setDisabled(True)
         self.button_layout.addWidget(self.filter_rois_button)
 
@@ -650,12 +668,10 @@ class ROIFindingWidget(ParamWidget):
             self.process_video_button.setText('Find ROIs')
             self.process_video_button.setHoverMessage("Find ROIs using the watershed algorithm.")
             self.filter_rois_button.setEnabled(True)
-            self.motion_correct_button.setEnabled(True)
         elif percent == -1:
             self.roi_finding_progress_label.setText("")
             self.process_video_button.setText('Find ROIs')
             self.process_video_button.setHoverMessage("Find ROIs using the watershed algorithm.")
-            self.motion_correct_button.setEnabled(True)
         else:
             self.roi_finding_progress_label.setText("Finding ROIs... {}%.".format(int(percent)))
 
@@ -663,14 +679,14 @@ class ROIFilteringWidget(ParamWidget):
     def __init__(self, parent_widget, controller):
         ParamWidget.__init__(self, parent_widget, controller, "ROI Filtering Parameters")
 
-        self.main_controller = controller
-        self.controller = controller.roi_filtering_controller
+        self.controller = controller
 
         self.add_param_slider(label_name="Minimum Area", name="min_area", minimum=1, maximum=500, moved=self.update_param, multiplier=1, released=self.update_param, description="Minimum ROI area.")
         self.add_param_slider(label_name="Maximum Area", name="max_area", minimum=1, maximum=500, moved=self.update_param, multiplier=1, released=self.update_param, description="Maximum ROI area.")
         self.add_param_slider(label_name="Minimum Circulature", name="min_circ", minimum=0, maximum=500, moved=self.update_param, multiplier=100, released=self.update_param, description="Minimum ROI circulature.")
         self.add_param_slider(label_name="Maximum Circulature", name="max_circ", minimum=0, maximum=500, moved=self.update_param, multiplier=100, released=self.update_param, description="Maximum ROI circulature.")
         self.add_param_slider(label_name="Minimum Correlation", name="min_correlation", minimum=0, maximum=1000, moved=self.update_param, multiplier=1000, released=self.update_param, description="Minimum mean pixel correlation of ROI.")
+        self.add_param_slider(label_name="Minimum Edge Contrast", name="min_edge_contrast", minimum=0, maximum=1000, moved=self.update_param, multiplier=100, released=self.update_param, description="Minimum contrast between the edge & center of ROI.")
 
         self.main_layout.addStretch()
         
@@ -696,14 +712,14 @@ class ROIFilteringWidget(ParamWidget):
         self.roi_button_layout.addWidget(self.erase_rois_button)
 
         self.undo_button = HoverButton('Undo', None, self.parent_widget.statusBar())
-        self.undo_button.setHoverMessage("Undo the previous erase action.")
+        self.undo_button.setHoverMessage("Undo the previous action.")
         self.undo_button.setIcon(QIcon("icons/undo_icon.png"))
         self.undo_button.setIconSize(QSize(16, 16))
-        self.undo_button.clicked.connect(self.controller.undo_erase)
+        self.undo_button.clicked.connect(self.controller.undo)
         self.roi_button_layout.addWidget(self.undo_button)
 
         self.reset_button = HoverButton('Reset', None, self.parent_widget.statusBar())
-        self.reset_button.setHoverMessage("Reset erased ROIs.")
+        self.reset_button.setHoverMessage("Reset ROIs.")
         self.reset_button.setIcon(QIcon("icons/reset_icon.png"))
         self.reset_button.setIconSize(QSize(16, 16))
         self.reset_button.clicked.connect(self.controller.reset_erase)
@@ -772,7 +788,6 @@ class ROIFilteringWidget(ParamWidget):
         self.show_rois_checkbox.setObjectName("Show ROIs")
         self.show_rois_checkbox.setChecked(False)
         self.show_rois_checkbox.clicked.connect(lambda:self.controller.show_roi_image(self.show_rois_checkbox.isChecked()))
-        self.show_rois_checkbox.setDisabled(True)
         self.button_layout.addWidget(self.show_rois_checkbox)
 
         self.button_layout.addStretch()
@@ -781,14 +796,14 @@ class ROIFilteringWidget(ParamWidget):
         self.motion_correct_button.setHoverMessage("Go back to motion correction.")
         self.motion_correct_button.setIcon(QIcon("icons/skip_back_icon.png"))
         self.motion_correct_button.setIconSize(QSize(16,16))
-        self.motion_correct_button.clicked.connect(self.controller.motion_correct)
+        self.motion_correct_button.clicked.connect(lambda:self.controller.show_motion_correction_params())
         self.button_layout.addWidget(self.motion_correct_button)
 
         self.find_rois_button = HoverButton('ROI Finding', None, self.parent_widget.statusBar())
         self.find_rois_button.setHoverMessage("Go back to ROI segmentation.")
         self.find_rois_button.setIcon(QIcon("icons/skip_back_icon.png"))
         self.find_rois_button.setIconSize(QSize(16,16))
-        self.find_rois_button.clicked.connect(self.controller.find_rois)
+        self.find_rois_button.clicked.connect(lambda:self.controller.show_roi_finding_params())
         self.button_layout.addWidget(self.find_rois_button)
 
         self.filter_rois_button = HoverButton('Filter ROIs', None, self.parent_widget.statusBar())
@@ -796,7 +811,7 @@ class ROIFilteringWidget(ParamWidget):
         self.filter_rois_button.setIcon(QIcon("icons/accept_icon.png"))
         self.filter_rois_button.setIconSize(QSize(16,16))
         self.filter_rois_button.setStyleSheet('font-weight: bold;')
-        self.filter_rois_button.clicked.connect(lambda:self.controller.filter_rois(self.main_controller.z, update_overlay=True))
+        self.filter_rois_button.clicked.connect(lambda:self.controller.filter_rois(self.controller.z))
         self.button_layout.addWidget(self.filter_rois_button)
 
     def roi_erasing_started(self):
@@ -811,6 +826,7 @@ class ROIFilteringWidget(ParamWidget):
         self.undo_button.setEnabled(False)
         self.param_widget.setEnabled(False)
         self.draw_rois_button.setEnabled(False)
+        self.erase_rois_button.setText("Finished")
 
     def roi_erasing_ended(self):
         self.filter_rois_button.setEnabled(True)
@@ -820,6 +836,7 @@ class ROIFilteringWidget(ParamWidget):
         self.undo_button.setEnabled(True)
         self.param_widget.setEnabled(True)
         self.draw_rois_button.setEnabled(True)
+        self.erase_rois_button.setText("Erase ROIs")
 
     def roi_drawing_started(self):
         self.filter_rois_button.setEnabled(False)
@@ -833,6 +850,7 @@ class ROIFilteringWidget(ParamWidget):
         self.undo_button.setEnabled(False)
         self.param_widget.setEnabled(False)
         self.erase_rois_button.setEnabled(False)
+        self.draw_rois_button.setText("Finished")
 
     def roi_drawing_ended(self):
         self.filter_rois_button.setEnabled(True)
@@ -842,6 +860,7 @@ class ROIFilteringWidget(ParamWidget):
         self.undo_button.setEnabled(True)
         self.param_widget.setEnabled(True)
         self.erase_rois_button.setEnabled(True)
+        self.draw_rois_button.setText("Draw")
 
 class HoverCheckBox(QCheckBox):
     def __init__(self, text, parent=None, status_bar=None):

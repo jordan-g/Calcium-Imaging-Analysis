@@ -17,5 +17,5 @@ if __name__ == "__main__":
     if pyqt_version == 5:
         app.setAttribute(Qt.AA_UseHighDpiPixmaps)
     controller = Controller()
-    controller.select_and_open_video()
+    controller.select_videos_to_import()
     app.exec_()
