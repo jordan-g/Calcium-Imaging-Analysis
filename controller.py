@@ -331,7 +331,7 @@ class Controller():
 
             if save_path is not None and len(save_path) > 0:
                 # create a dictionary to hold the ROI data
-                roi_data = {'labels'           : self.rois,
+                roi_data = {'rois'           : self.rois,
                             'roi_areas'        : self.roi_areas,
                             'roi_circs'        : self.roi_circs,
                             'roi_edges'        : self.roi_edges,
@@ -380,12 +380,12 @@ class Controller():
                 roi_data = roi_data[()]
 
                 # make sure the ROI array shape matches the video
-                if np.array(roi_data['labels']).shape != self.video.shape[1:]:
+                if np.array(roi_data['rois']).shape != self.video.shape[1:]:
                     print("Error: ROI array shape does not match the video shape.")
                     return
 
                 # set ROI variables
-                self.rois              = roi_data['labels']
+                self.rois              = roi_data['rois']
                 self.original_rois     = self.rois[:]
                 self.roi_areas         = roi_data['roi_areas']
                 self.roi_circs         = roi_data['roi_circs']
@@ -1215,7 +1215,7 @@ class Controller():
             # add this state to the history
             self.add_to_history()
 
-    def shift_labels(self, start_point, end_point):
+    def shift_rois(self, start_point, end_point):
         # get the x and y shift
         y_shift = end_point[1] - start_point[1]
         x_shift = end_point[0] - start_point[0]
@@ -1591,7 +1591,7 @@ class ROIFindingThread(QThread):
         # print(self.min_area, self.max_area, self.min_circ, self.max_circ)
 
     def run(self):
-        labels            = [ [] for i in range(self.video.shape[1]) ]
+        rois              = [ [] for i in range(self.video.shape[1]) ]
         roi_areas         = [ [] for i in range(self.video.shape[1]) ]
         roi_circs         = [ [] for i in range(self.video.shape[1]) ]
         roi_edges         = [ [] for i in range(self.video.shape[1]) ]
@@ -1628,8 +1628,7 @@ class ROIFindingThread(QThread):
                 out[mask] = I_mod[mask]
                 I_mod = out.copy()
 
-            # labels[z], roi_areas[z], roi_circs[z], roi_edges[z] = utilities.find_rois(equalized_image, self.mean_images[z])
-            labels[z], roi_areas[z], roi_circs[z], roi_edges[z] = utilities.find_rois(soma_mask, I_mod, self.mean_images[z])
+            rois[z], roi_areas[z], roi_circs[z], roi_edges[z] = utilities.find_rois(soma_mask, I_mod, self.mean_images[z])
 
             if not self.running:
                 self.running = False
@@ -1642,11 +1641,11 @@ class ROIFindingThread(QThread):
                 masks = np.array(self.masks[z])
                 mask = np.sum(masks, axis=0).astype(bool)
 
-                out = np.zeros(labels[z].shape).astype(int)
-                out[mask] = labels[z][mask]
-                labels[z] = out.copy()
+                out = np.zeros(rois[z].shape).astype(int)
+                out[mask] = rois[z][mask]
+                rois[z] = out.copy()
 
-            _, filtered_out_rois[z] = utilities.filter_rois(self.mean_images[z], labels[z], self.min_area, self.max_area, self.min_circ, self.max_circ, self.min_edge_contrast, roi_areas[z], roi_circs[z], roi_edges[z], self.correlation_images[z], self.min_correlation)
+            _, filtered_out_rois[z] = utilities.filter_rois(self.mean_images[z], rois[z], self.min_area, self.max_area, self.min_circ, self.max_circ, self.min_edge_contrast, roi_areas[z], roi_circs[z], roi_edges[z], self.correlation_images[z], self.min_correlation)
 
             if not self.running:
                 self.running = False
@@ -1655,8 +1654,8 @@ class ROIFindingThread(QThread):
 
             self.progress.emit(int(100.0*float(z + 1)/self.video.shape[1]))
 
-        if labels is not None:
-            self.finished.emit(labels, roi_areas, roi_circs, roi_edges, filtered_out_rois)
+        if rois is not None:
+            self.finished.emit(rois, roi_areas, roi_circs, roi_edges, filtered_out_rois)
 
         self.running = False
 
@@ -1757,39 +1756,39 @@ class ProcessVideosThread(QThread):
 
             self.progress.emit(int(100.0*float(i + (2/3))/len(self.video_paths)))
 
-            labels = self.rois[:]
+            rois = self.rois[:]
 
             if self.motion_correct:
                 vid = mc_video
             else:
                 vid = video
 
-            # print(labels[0].shape, vid.shape, video_shape)
+            # print(rois[0].shape, vid.shape, video_shape)
 
-            # if labels[0].shape[0] > vid.shape[2] or labels[0].shape[1] > vid.shape[3]:
-            #     print("Cropping labels...")
-            #     height_pad =  (labels[0].shape[0] - vid.shape[2])//2
-            #     width_pad  =  (labels[0].shape[1] - vid.shape[3])//2
+            # if rois[0].shape[0] > vid.shape[2] or rois[0].shape[1] > vid.shape[3]:
+            #     print("Cropping rois...")
+            #     height_pad =  (rois[0].shape[0] - vid.shape[2])//2
+            #     width_pad  =  (rois[0].shape[1] - vid.shape[3])//2
 
-            #     for i in range(len(labels)):
-            #         labels[i] = labels[i][height_pad:, width_pad:]
-            #         labels[i] = labels[i][:vid.shape[2], :vid.shape[3]]
-            # elif labels[0].shape[0] < vid.shape[2] or labels[0].shape[1] < vid.shape[3]:
-            #     print("Padding labels...")
-            #     height_pad_pre =  (vid.shape[2] - labels[0].shape[0])//2
-            #     width_pad_pre  =  (vid.shape[3] - labels[0].shape[1])//2
+            #     for i in range(len(rois)):
+            #         rois[i] = rois[i][height_pad:, width_pad:]
+            #         rois[i] = rois[i][:vid.shape[2], :vid.shape[3]]
+            # elif rois[0].shape[0] < vid.shape[2] or rois[0].shape[1] < vid.shape[3]:
+            #     print("Padding rois...")
+            #     height_pad_pre =  (vid.shape[2] - rois[0].shape[0])//2
+            #     width_pad_pre  =  (vid.shape[3] - rois[0].shape[1])//2
 
-            #     height_pad_post = vid.shape[2] - labels[0].shape[0] - height_pad_pre
-            #     width_pad_post  = vid.shape[3] - labels[0].shape[1] - width_pad_pre
+            #     height_pad_post = vid.shape[2] - rois[0].shape[0] - height_pad_pre
+            #     width_pad_post  = vid.shape[3] - rois[0].shape[1] - width_pad_pre
 
             #     # print(height_pad_pre, height_pad_post, width_pad_pre, width_pad_post)
 
-            #     for i in range(len(labels)):
-            #         labels[i] = np.pad(labels[i], ((height_pad_pre, height_pad_post), (width_pad_pre, width_pad_post)), 'constant')
+            #     for i in range(len(rois)):
+            #         rois[i] = np.pad(rois[i], ((height_pad_pre, height_pad_post), (width_pad_pre, width_pad_post)), 'constant')
 
-            # print(labels[0].shape, vid.shape, video_shape)
+            # print(rois[0].shape, vid.shape, video_shape)
 
-            # shift the labels to match the first video
+            # shift the rois to match the first video
             if self.apply_blur:
                 mean_images = [ ndi.median_filter(utilities.sharpen(ndi.gaussian_filter(denoise_tv_chambolle(utilities.mean(vid, z), weight=0.01, multichannel=False), 1)), 3) for z in range(vid.shape[1]) ]
             else:
@@ -1800,21 +1799,21 @@ class ProcessVideosThread(QThread):
                     y_shift, x_shift = utilities.calculate_shift(first_mean_images[z], mean_images[z])
 
                     if np.abs(y_shift) < 20 and np.abs(x_shift) < 20:
-                        labels[z] = np.roll(labels[z], -y_shift, axis=0)
-                        labels[z] = np.roll(labels[z], -x_shift, axis=1)
+                        rois[z] = np.roll(rois[z], -y_shift, axis=0)
+                        rois[z] = np.roll(rois[z], -x_shift, axis=1)
 
                         if y_shift >= 0 and x_shift >= 0:
-                            labels[z][:y_shift, :] = 0
-                            labels[z][:, :x_shift] = 0
+                            rois[z][:y_shift, :] = 0
+                            rois[z][:, :x_shift] = 0
                         elif y_shift < 0 and x_shift >= 0:
-                            labels[z][y_shift:, :] = 0
-                            labels[z][:, :x_shift] = 0
+                            rois[z][y_shift:, :] = 0
+                            rois[z][:, :x_shift] = 0
                         elif y_shift >= 0 and x_shift < 0:
-                            labels[z][:y_shift, :] = 0
-                            labels[z][:, x_shift:] = 0
+                            rois[z][:y_shift, :] = 0
+                            rois[z][:, x_shift:] = 0
                         else:
-                            labels[z][y_shift:, :] = 0
-                            labels[z][:, x_shift:] = 0
+                            rois[z][y_shift:, :] = 0
+                            rois[z][:, x_shift:] = 0
 
                 print("Saving ROI image of z plane {}...".format(z))
 
@@ -1822,11 +1821,11 @@ class ProcessVideosThread(QThread):
 
                 rgb_image = cv2.cvtColor(utilities.normalize(adjusted_image, video_max), cv2.COLOR_GRAY2RGB)
 
-                roi_image, _ = utilities.draw_rois(rgb_image, labels[z], None, None, [], None, roi_overlay=None)
+                roi_image, _ = utilities.draw_rois(rgb_image, rois[z], None, None, [], None, roi_overlay=None)
 
                 cv2.imwrite(os.path.join(video_dir_path, 'z_{}_rois.png'.format(z)), roi_image)
 
-            np.save(os.path.join(video_dir_path, 'all_rois.npy'), labels)
+            np.save(os.path.join(video_dir_path, 'all_rois.npy'), rois)
 
             if first_mean_images is None:
                 first_mean_images = mean_images[:]
@@ -1834,19 +1833,19 @@ class ProcessVideosThread(QThread):
             results = [ {} for z in range(video.shape[1]) ]
 
             for z in range(video.shape[1]):
-                np.save(os.path.join(video_dir_path, 'z_{}_rois.npy'.format(z)), labels[z])
+                np.save(os.path.join(video_dir_path, 'z_{}_rois.npy'.format(z)), rois[z])
 
                 print("Calculating ROI activities for z={}...".format(z))
                 vid_z = vid[:, z, :, :].transpose(1, 2, 0)
-                label_nums = np.unique(labels[z])
+                roi_nums = np.unique(rois[z])
                 last_percent_printed = 0
-                for i in range(len(label_nums)):
-                    l = label_nums[i]
-                    percent = int((i/len(label_nums))*100.0)
+                for i in range(len(roi_nums)):
+                    l = roi_nums[i]
+                    percent = int((i/len(roi_nums))*100.0)
                     if percent % 10 == 0 and percent > last_percent_printed:
                         print("{}% done.".format(percent))
                         last_percent_printed = percent
-                    activity = utilities.calc_activity_of_roi(labels[z], vid_z, l, z=z)
+                    activity = utilities.calc_activity_of_roi(rois[z], vid_z, l, z=z)
 
                     results[z][l] = activity
 

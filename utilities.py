@@ -492,22 +492,22 @@ def calculate_soma_threshold_image(equalized_image, soma_threshold, video_max):
 
     return soma_mask, I_mod, soma_threshold_image
 
-def calculate_roi_properties(labels, mean_image):
-    unique_labels = np.unique(labels)
+def calculate_roi_properties(rois, mean_image):
+    unique_rois = np.unique(rois)
 
-    n = len(unique_labels)
+    n = len(unique_rois)
 
     roi_areas = np.zeros(n)
     roi_circs = np.zeros(n)
     roi_edges = np.zeros(n)
 
-    for i in range(len(unique_labels)):
-        l = unique_labels[i]
+    for i in range(len(unique_rois)):
+        l = unique_rois[i]
 
         if l <= 1:
             continue
 
-        mask = labels == l
+        mask = rois == l
 
         # detect contours in the mask and grab the largest one
         cnts = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
@@ -535,12 +535,12 @@ def calculate_roi_properties(labels, mean_image):
 
 def find_rois(cells_mask, starting_image, mean_image):
     # w = Watershed()
-    # labels = w.apply(equalized_image)
-    labels = watershed(starting_image, label(cells_mask))
+    # rois = w.apply(equalized_image)
+    rois = watershed(starting_image, label(cells_mask))
 
-    roi_areas, roi_circs, roi_edges = calculate_roi_properties(labels, mean_image)
+    roi_areas, roi_circs, roi_edges = calculate_roi_properties(rois, mean_image)
 
-    return labels, roi_areas, roi_circs, roi_edges
+    return rois, roi_areas, roi_circs, roi_edges
 
 def filter_rois(image, rois, min_area, max_area, min_circ, max_circ, min_edge_contrast, roi_areas, roi_circs, roi_edges, correlations, min_correlation, locked_rois=[]):
     filtered_rois = rois.copy()
@@ -578,20 +578,20 @@ def remove_rois(rois, rois_to_remove):
     else:
         return rois
 
-def get_roi_containing_point(labels, roi_point):
-    roi = labels[roi_point[1], roi_point[0]]
+def get_roi_containing_point(rois, roi_point):
+    roi = rois[roi_point[1], roi_point[0]]
 
     if roi < 1:
         return None
 
     return roi
 
-def get_rois_near_point(labels, roi_point, radius):
-    mask = np.zeros(labels.shape)
+def get_rois_near_point(rois, roi_point, radius):
+    mask = np.zeros(rois.shape)
 
     cv2.circle(mask, roi_point, radius, 1, -1)
 
-    rois = np.unique(labels[mask == 1]).tolist()
+    rois = np.unique(rois[mask == 1]).tolist()
 
     return rois
 
@@ -606,19 +606,19 @@ def get_mask_containing_point(masks, mask_point, inverted=False):
                 return mask, i
     return None, -1
 
-def calc_activity_of_roi(labels, video, roi, z=0):
+def calc_activity_of_roi(rois, video, roi, z=0):
     mask = np.zeros(video.shape, dtype=bool)
-    mask[:, :, :] = labels[:, :, np.newaxis] == roi
+    mask[:, :, :] = rois[:, :, np.newaxis] == roi
 
     # print(mask.shape, vid.shape, vid[mask].shape)
-    # print(np.mean(np.multiply(video[0, z, :, :], labels == roi)))
+    # print(np.mean(np.multiply(video[0, z, :, :], rois == roi)))
     # print(np.nanmax(np.where(mask, video, np.nan), axis=(0, 1)))
     return np.nanmean(np.where(mask, video, np.nan), axis=(0, 1))
 
-def add_roi_to_overlay(overlay, roi_mask, labels):
-    l = np.amax(labels[roi_mask > 0])
+def add_roi_to_overlay(overlay, roi_mask, rois):
+    l = np.amax(rois[roi_mask > 0])
 
-    mask = labels == l
+    mask = rois == l
 
     b = erosion(mask, disk(1))
 
@@ -642,18 +642,18 @@ def calculate_shift(mean_image_1, mean_image_2):
 
     return int(shift[0]), int(shift[1])
 
-def draw_rois(rgb_image, labels, selected_roi, erased_rois, filtered_out_rois, locked_rois, newly_erased_rois=None, roi_overlay=None):
+def draw_rois(rgb_image, rois, selected_roi, erased_rois, filtered_out_rois, locked_rois, newly_erased_rois=None, roi_overlay=None):
     image = rgb_image.copy()
 
     if roi_overlay is None:
-        n_rois = len(np.unique(labels))
+        n_rois = len(np.unique(rois))
         roi_overlay = np.zeros(image.shape)
 
-        for l in np.unique(labels):
+        for l in np.unique(rois):
             if l < 1 or l in filtered_out_rois or l in erased_rois:
                 continue
 
-            mask = labels == l
+            mask = rois == l
 
             b = erosion(mask, disk(1))
 
@@ -663,11 +663,11 @@ def draw_rois(rgb_image, labels, selected_roi, erased_rois, filtered_out_rois, l
 
     if newly_erased_rois is not None:
         for l in newly_erased_rois:
-            mask = labels == l
+            mask = rois == l
             roi_overlay[mask] = 0
     elif erased_rois is not None:
         for l in erased_rois:
-            mask = labels == l
+            mask = rois == l
             roi_overlay[mask] = 0
 
     final_overlay = image.copy()
@@ -675,7 +675,7 @@ def draw_rois(rgb_image, labels, selected_roi, erased_rois, filtered_out_rois, l
     cv2.addWeighted(final_overlay, 0.5, image, 0.5, 0, image)
 
     if selected_roi is not None:
-        mask = labels == selected_roi
+        mask = rois == selected_roi
 
         b = erosion(mask, disk(1))
 
@@ -685,7 +685,7 @@ def draw_rois(rgb_image, labels, selected_roi, erased_rois, filtered_out_rois, l
 
     if locked_rois is not None:
         for l in locked_rois:
-            mask = labels == l
+            mask = rois == l
 
             b = erosion(mask, disk(1))
 
