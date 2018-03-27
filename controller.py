@@ -1049,7 +1049,7 @@ class Controller():
             self.roi_finding_thread.finished.connect(self.roi_finding_ended)
 
             # set the parameters of the ROI finding thread
-            self.roi_finding_thread.set_parameters(self.video, self.mean_images, self.masks, self.params["min_area"], self.params["max_area"], self.params["min_circ"], self.params["max_circ"], self.params['min_edge_contrast'], self.params['min_correlation'], self.params['soma_threshold'], self.params['window_size'], self.params['background_threshold'], self.params['contrast'], self.params['gamma'], self.correlation_images, self.video_max)
+            self.roi_finding_thread.set_parameters(self.video, self.mean_images, self.masks, self.params["min_area"], self.params["max_area"], self.params["min_circ"], self.params["max_circ"], self.params['min_edge_contrast'], self.params['min_correlation'], self.params['soma_threshold'], self.params['window_size'], self.params['background_threshold'], self.params['contrast'], self.params['gamma'], self.correlation_images, self.video_max, self.params['invert_masks'])
 
             # start the thread
             self.roi_finding_thread.start()
@@ -1570,7 +1570,7 @@ class ROIFindingThread(QThread):
 
         self.running = False
 
-    def set_parameters(self, video, mean_images, masks, min_area, max_area, min_circ, max_circ, min_edge_contrast, min_correlation, soma_threshold, window_size, background_threshold, contrast, gamma, correlation_images, video_max):
+    def set_parameters(self, video, mean_images, masks, min_area, max_area, min_circ, max_circ, min_edge_contrast, min_correlation, soma_threshold, window_size, background_threshold, contrast, gamma, correlation_images, video_max, invert_masks):
         self.video                = video
         self.mean_images          = mean_images
         self.masks                = masks
@@ -1587,6 +1587,7 @@ class ROIFindingThread(QThread):
         self.gamma                = gamma
         self.correlation_images   = correlation_images
         self.video_max            = video_max
+        self.invert_masks         = invert_masks
 
         # print(self.min_area, self.max_area, self.min_circ, self.max_circ)
 
@@ -1614,19 +1615,13 @@ class ROIFindingThread(QThread):
 
             if len(self.masks[z]) > 0:
                 masks = np.array(self.masks[z])
-                mask = np.sum(masks, axis=0).astype(bool)
+                if not self.invert_masks:
+                    mask = np.sum(masks, axis=0).astype(bool)
+                else:
+                    mask = np.prod(masks, axis=0).astype(bool)
 
-                out = np.zeros(adjusted_image.shape)
-                out[mask] = adjusted_image[mask]
-                adjusted_image = out.copy()
-
-                out = np.zeros(soma_mask.shape)
-                out[mask] = soma_mask[mask]
-                soma_mask = out.copy()
-
-                out = np.zeros(I_mod.shape)
-                out[mask] = I_mod[mask]
-                I_mod = out.copy()
+                soma_mask[mask == False] = 1
+                I_mod[mask == False] = 0
 
             rois[z], roi_areas[z], roi_circs[z], roi_edges[z] = utilities.find_rois(soma_mask, I_mod, self.mean_images[z])
 
