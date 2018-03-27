@@ -451,24 +451,56 @@ def calculate_equalized_image(adjusted_image, background_mask, window_size, vide
 
     # print(equalized_image)
 
-    equalized_image[equalized_image < 0.1] = 0
-    equalized_image[equalized_image > 1] = 1
+    # equalized_image[equalized_image < 0.1] = 0
+    # equalized_image[equalized_image > 1] = 1
 
     equalized_image[background_mask] = 0
+
+    # cv2.imshow('image', (equalized_image*255).astype(np.uint8))
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
 
     equalized_image = (1.0 - equalized_image)
 
     return equalized_image*video_max
 
-def calculate_soma_threshold_image(equalized_image, soma_threshold, video_max):
+def calculate_soma_threshold_image(equalized_image, soma_threshold, background_mask, mean_image, video_max):
     nuclei_image = equalized_image/video_max
 
-    nuclei_image[nuclei_image < 1] = 0
+    # nuclei_image[nuclei_image < 1] = 0
 
-    nuclei_image = remove_small_objects(nuclei_image.astype(bool), 2, connectivity=2, in_place=True).astype(float)
+    # nuclei_image = remove_small_objects(nuclei_image.astype(bool), 2, connectivity=2, in_place=True).astype(float)
 
-    soma_mask = local_maxima(h_maxima(nuclei_image, soma_threshold/255.0, selem=square(3)), selem=square(3))
-    soma_mask = remove_small_objects(soma_mask.astype(bool), 2, connectivity=2, in_place=True)
+    # cv2.imshow('image', (nuclei_image*255).astype(np.uint8))
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+
+    soma_mask = local_maxima(h_maxima(nuclei_image, soma_threshold, selem=square(5)), selem=square(5))
+    soma_mask[background_mask] = 0
+    nuclei_image[background_mask] = 0
+
+    thresh_image = nuclei_image.copy()
+    thresh_image[thresh_image < 0.9] = 0
+
+    # cv2.imshow('image', (thresh_image*255).astype(np.uint8))
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+
+    dist_image = ndi.distance_transform_edt(thresh_image)
+
+    # cv2.imshow('image', (dist_image*255).astype(np.uint8))
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+
+    # print(dist_image.max())
+    soma_mask[dist_image < 0.3*dist_image.max()] = 0
+
+    # soma_mask = remove_small_objects(soma_mask.astype(bool), 2, connectivity=2, in_place=True)
+
+    # cv2.imshow('image', (soma_mask*255).astype(np.uint8))
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+
     # self.soma_masks[i] = remove_small_objects(self.soma_masks[i].astype(bool), 2, connectivity=2, in_place=True)
 
     # print(soma_mask)
@@ -481,6 +513,10 @@ def calculate_soma_threshold_image(equalized_image, soma_threshold, video_max):
     nuclei_image_c = 1 - nuclei_image
 
     I_mod = imimposemin(nuclei_image_c.astype(float), soma_mask)
+
+    # cv2.imshow('image',(I_mod*255).astype(np.uint8))
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
 
     try:
         inf = math.inf

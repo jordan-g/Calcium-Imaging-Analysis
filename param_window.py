@@ -94,6 +94,10 @@ class ParamWindow(QMainWindow):
         self.show_rois_action.setEnabled(False)
         self.save_roi_image_action.setEnabled(False)
 
+        self.roi_finding_widget.show_rois_checkbox.setChecked(False)
+        self.roi_finding_widget.motion_correct_button.setEnabled(True)
+        self.roi_finding_widget.filter_rois_button.setEnabled(True)
+
     def create_menus(self):
         self.add_videos_action = QAction('Add Videos...', self)
         self.add_videos_action.setShortcut('Ctrl+O')

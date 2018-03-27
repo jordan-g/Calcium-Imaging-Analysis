@@ -47,7 +47,7 @@ DEFAULT_PARAMS = {'gamma'               : 1.0,
                   'window_size'         : 7,
                   'background_threshold': 10,
                   'invert_masks'        : False,
-                  'soma_threshold'      : 0.8,
+                  'soma_threshold'      : 0.2,
                   'min_area'            : 10,
                   'max_area'            : 100,
                   'min_circ'            : 0,
@@ -464,6 +464,13 @@ class Controller():
             # switch to showing motion correction params
             self.show_motion_correction_params()
 
+            # reset variables
+            self.reset_motion_correction_variables()
+            self.reset_roi_finding_variables(reset_rois=True)
+            self.reset_roi_filtering_variables(reset_rois=True)
+
+            self.find_new_rois = True
+
             # reset param window & preview window to their initial states
             self.param_window.set_initial_state()
             self.preview_window.set_initial_state()
@@ -603,7 +610,7 @@ class Controller():
             self.adjusted_image                                   = utilities.calculate_adjusted_image(self.mean_images[self.z], self.params['contrast'], self.params['gamma'])
             self.background_mask                                  = utilities.calculate_background_mask(self.adjusted_image, self.params['background_threshold'], self.video_max)
             self.equalized_image                                  = utilities.calculate_equalized_image(self.adjusted_image, self.background_mask, self.params['window_size'], self.video_max)
-            self.soma_mask, self.I_mod, self.soma_threshold_image = utilities.calculate_soma_threshold_image(self.equalized_image, self.params['soma_threshold'], self.video_max)
+            self.soma_mask, self.I_mod, self.soma_threshold_image = utilities.calculate_soma_threshold_image(self.equalized_image, self.params['soma_threshold'], self.background_mask, self.adjusted_image, self.video_max)
 
         self.show_roi_image(show=self.roi_finding_param_widget.show_rois_checkbox.isChecked())
 
@@ -1092,7 +1099,7 @@ class Controller():
 
         # create ROI image
         rgb_image = cv2.cvtColor(utilities.normalize(self.adjusted_image, self.video_max), cv2.COLOR_GRAY2RGB)
-        self.roi_image, self.roi_overlay = utilities.draw_rois(rgb_image, self.rois[self.z], None, None, self.filtered_out_rois[self.z], None)
+        self.roi_image, self.roi_overlay = utilities.draw_rois(rgb_image, self.rois[self.z], None, [], self.filtered_out_rois[self.z], [])
 
         # show the ROI image
         self.show_roi_image(True)
@@ -1603,7 +1610,7 @@ class ROIFindingThread(QThread):
             adjusted_image  = utilities.calculate_adjusted_image(self.mean_images[z], self.contrast, self.gamma)
             background_mask = utilities.calculate_background_mask(adjusted_image, self.background_threshold, self.video_max)
             equalized_image = utilities.calculate_equalized_image(adjusted_image, background_mask, self.window_size, self.video_max)
-            soma_mask, I_mod, soma_threshold_image = utilities.calculate_soma_threshold_image(equalized_image, self.soma_threshold, self.video_max)
+            soma_mask, I_mod, soma_threshold_image = utilities.calculate_soma_threshold_image(equalized_image, self.soma_threshold, background_mask, adjusted_image, self.video_max)
 
             if not self.running:
                 self.running = False
