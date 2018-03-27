@@ -432,8 +432,8 @@ class PreviewWindow(QMainWindow):
     def draw_roi(self, start_point, end_point):
         self.controller.create_roi(start_point, end_point)
 
-    def shift_labels(self, previous_point, current_point):
-        self.controller.shift_labels(previous_point, current_point)
+    def shift_rois(self, previous_point, current_point):
+        self.controller.shift_rois(previous_point, current_point)
 
     def mouse_pressed(self, point):
         if self.controller.mode == "roi_finding" and self.drawing_mask:
@@ -450,7 +450,7 @@ class PreviewWindow(QMainWindow):
         elif self.drawing_rois and clicked:
             self.draw_tentative_roi(start_point, end_point)
         elif self.controller.mode == "roi_filtering" and clicked:
-            self.shift_labels(self.click_end_point, end_point)
+            self.shift_rois(self.click_end_point, end_point)
 
             # store this point
             self.click_end_point = end_point
