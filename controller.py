@@ -1753,6 +1753,8 @@ class ProcessVideosThread(QThread):
 
             rois = self.rois[:]
 
+            print(np.unique(self.rois))
+
             if self.motion_correct:
                 vid = mc_video
             else:
@@ -1810,15 +1812,15 @@ class ProcessVideosThread(QThread):
                             rois[z][y_shift:, :] = 0
                             rois[z][:, x_shift:] = 0
 
-                print("Saving ROI image of z plane {}...".format(z))
+                # print("Saving ROI image of z plane {}...".format(z))
 
-                adjusted_image = utilities.calculate_adjusted_image(mean_images[z], self.params['contrast'], self.params['gamma'])
+                # adjusted_image = utilities.calculate_adjusted_image(mean_images[z], self.params['contrast'], self.params['gamma'])
 
-                rgb_image = cv2.cvtColor(utilities.normalize(adjusted_image, video_max), cv2.COLOR_GRAY2RGB)
+                # rgb_image = cv2.cvtColor(utilities.normalize(adjusted_image, video_max), cv2.COLOR_GRAY2RGB)
 
-                roi_image, _ = utilities.draw_rois(rgb_image, rois[z], None, None, [], None, roi_overlay=None)
+                # roi_image, _ = utilities.draw_rois(rgb_image, rois[z], None, None, [], None, roi_overlay=None)
 
-                cv2.imwrite(os.path.join(video_dir_path, 'z_{}_rois.png'.format(z)), roi_image)
+                # cv2.imwrite(os.path.join(video_dir_path, 'z_{}_rois.png'.format(z)), roi_image)
 
             np.save(os.path.join(video_dir_path, 'all_rois.npy'), rois)
 
@@ -1831,29 +1833,59 @@ class ProcessVideosThread(QThread):
                 np.save(os.path.join(video_dir_path, 'z_{}_rois.npy'.format(z)), rois[z])
 
                 print("Calculating ROI activities for z={}...".format(z))
-                vid_z = vid[:, z, :, :].transpose(1, 2, 0)
-                roi_nums = np.unique(rois[z])
-                last_percent_printed = 0
-                for i in range(len(roi_nums)):
-                    l = roi_nums[i]
-                    percent = int((i/len(roi_nums))*100.0)
-                    if percent % 10 == 0 and percent > last_percent_printed:
-                        print("{}% done.".format(percent))
-                        last_percent_printed = percent
-                    activity = utilities.calc_activity_of_roi(rois[z], vid_z, l, z=z)
+                centroids, traces = utilities.calculate_centroids_and_traces(rois[z], vid[:, z, :, :])
 
-                    results[z][l] = activity
-
-                # add CSV saving here
                 print("Saving CSV for z={}...".format(z))
+
+                roi_nums = np.unique(rois[z]).tolist()
+                # remove ROI #0 (this is the background)
+                try:
+                    index = roi_nums.index(0)
+                    del roi_nums[index]
+                except:
+                    pass
+
                 with open(os.path.join(video_dir_path, 'z_{}_traces.csv'.format(z)), 'w') as file:
                     writer = csv.writer(file)
 
-                    writer.writerow(['ROI #'] + [ 'Frame {}'.format(i) for i in range(video.shape[0]) ])
+                    writer.writerow([''] + [ "ROI #{}".format(roi) for roi in roi_nums ])
 
-                    for l in np.unique(self.rois[z])[1:]:
-                        writer.writerow([l] + results[z][l].tolist())
+                    for i in range(traces.shape[0]):
+                        writer.writerow([i+1] + traces[i].tolist())
+
+                with open(os.path.join(video_dir_path, 'z_{}_centroids.csv'.format(z)), 'w') as file:
+                    writer = csv.writer(file)
+
+                    writer.writerow(['Label', 'X', 'Y'])
+
+                    for i in range(centroids.shape[0]):
+                        writer.writerow(["ROI #{}".format(roi_nums[i])] + centroids[i].tolist())
+
                 print("Done.")
+
+                # vid_z = vid[:, z, :, :].transpose(1, 2, 0)
+                # roi_nums = np.unique(rois[z])
+                # last_percent_printed = 0
+                # for i in range(len(roi_nums)):
+                #     l = roi_nums[i]
+                #     percent = int((i/len(roi_nums))*100.0)
+                #     if percent % 10 == 0 and percent > last_percent_printed:
+                #         print("{}% done.".format(percent))
+                #         last_percent_printed = percent
+                #     activity = utilities.calc_activity_of_roi(rois[z], vid_z, l, z=z)
+
+                #     results[z][l] = activity
+
+
+                # print("Saving CSV for z={}...".format(z))
+                # with open(os.path.join(video_dir_path, 'z_{}_traces.csv'.format(z)), 'w') as file:
+                #     writer = csv.writer(file)
+
+                #     writer.writerow(['ROI #'] + [ 'Frame {}'.format(i) for i in range(video.shape[0]) ])
+
+                #     for l in np.unique(self.rois[z])[1:]:
+                #         writer.writerow([l] + results[z][l].tolist())
+                # print("Done.")
 
             if not self.running:
                 self.running = False

@@ -24,7 +24,7 @@ import os
 import glob
 import sys
 
-from Watershed import Watershed
+# from Watershed import Watershed
 
 if sys.version_info[0] < 3:
     python_version = 2
@@ -533,6 +533,62 @@ def calculate_roi_properties(rois, mean_image):
 
     return roi_areas, roi_circs, roi_edges
 
+def calculate_centroids_and_traces(rois, video):
+    roi_nums = np.unique(rois).tolist()
+
+    # print(roi_nums)
+
+    # remove ROI #0 (this is the background)
+    try:
+        index = roi_nums.index(0)
+        del roi_nums[index]
+    except:
+        pass
+
+    n_rois = len(roi_nums)
+
+    centroids = np.zeros((n_rois, 2))
+    traces = np.zeros((video.shape[0], n_rois))
+
+    # traces[1:, 0] = np.arange(video.shape[0])
+
+    for i in range(n_rois):
+        roi = roi_nums[i]
+        mask = rois == roi
+
+        contours = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
+
+        if len(contours) > 0:
+            contour = contours[0]
+
+            M = cv2.moments(contour)
+            center_x = int(M["m10"] / M["m00"])
+            center_y = int(M["m01"] / M["m00"])
+
+            centroids[i] = [center_x, center_y]
+
+        # traces[0, i+1]  = roi
+        # a = np.ma.array(video, mask=np.repeat(np.invert(mask)[np.newaxis, :, :], video.shape[0], axis=0))
+        # traces[1:, i+1] = np.ma.average(a, axis=(1, 2))
+
+
+        coords = np.nonzero(mask)
+        min_y = min(coords[0])
+        max_y = max(coords[0])
+        min_x = min(coords[1])
+        max_x = max(coords[1])
+
+        mask = mask[min_y:max_y+1, min_x:max_x+1]
+
+        mask[mask == 0] = np.nan
+        # trace_sum = np.sum(video*mask[np.newaxis, :, :], axis=(1, 2))
+        # count = np.count_nonzero(mask)
+        # traces[1:, i+1] = trace_sum/count
+        traces[:, i] = np.nanmean(video[:, min_y:max_y+1, min_x:max_x+1]*mask[np.newaxis, :, :], axis=(1, 2))
+        # traces[1:, i+1] = np.nanmean(np.where(mask[np.newaxis, :, :], video, np.nan), axis=(1, 2))
+
+    return centroids, traces
+
 def find_rois(cells_mask, starting_image, mean_image):
     # w = Watershed()
     # rois = w.apply(equalized_image)
@@ -547,7 +603,7 @@ def filter_rois(image, rois, min_area, max_area, min_circ, max_circ, min_edge_co
     filtered_out_rois = []
 
     for l in np.unique(rois):
-        if ((not (min_area <= roi_areas[l-1] <= max_area)) or (not (min_circ <= roi_circs[l-1] <= max_circ)) or (not (min_edge_contrast <= roi_edges[l-1])) or l <= 1) and l not in locked_rois:
+        if ((not (min_area <= roi_areas[l-1] <= max_area)) or (not (min_circ <= roi_circs[l-1] <= max_circ)) or l <= 1) and l not in locked_rois:
             mask = rois == l
             
             filtered_rois[mask] = 0
@@ -650,7 +706,7 @@ def draw_rois(rgb_image, rois, selected_roi, erased_rois, filtered_out_rois, loc
         roi_overlay = np.zeros(image.shape)
 
         for l in np.unique(rois):
-            if l < 1 or l in filtered_out_rois or l in erased_rois:
+            if (filtered_out_rois is not None and erased_rois is not None) and (l < 1 or l in filtered_out_rois or l in erased_rois):
                 continue
 
             mask = rois == l
