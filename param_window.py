@@ -98,7 +98,7 @@ class ParamWindow(QMainWindow):
         self.add_videos_action = QAction('Add Videos...', self)
         self.add_videos_action.setShortcut('Ctrl+O')
         self.add_videos_action.setStatusTip('Add video files for processing.')
-        self.add_videos_action.triggered.connect(self.controller.select_videos_to_import)
+        self.add_videos_action.triggered.connect(self.controller.import_videos)
 
         self.show_rois_action = QAction('Show ROIs', self, checkable=True)
         self.show_rois_action.setShortcut('R')
@@ -203,7 +203,7 @@ class VideosWidget(QWidget):
         self.open_file_button.setStyleSheet('font-weight: bold;')
         self.open_file_button.setIcon(QIcon("icons/open_file_icon.png"))
         self.open_file_button.setIconSize(QSize(16,16))
-        self.open_file_button.clicked.connect(self.controller.select_videos_to_import)
+        self.open_file_button.clicked.connect(self.controller.import_videos)
         self.button_layout.addWidget(self.open_file_button)
 
         self.remove_videos_button = HoverButton('Remove', None, self.parent_widget.statusBar())
@@ -389,7 +389,7 @@ class ParamWidget(QWidget):
         slider.setSingleStep(1)
         slider.setMinimum(minimum)
         slider.setMaximum(maximum)
-        slider.setValue(self.controller.params[name]*multiplier)
+        slider.setValue(self.controller.controller.params[name]*multiplier)
         slider.sliderMoved.connect(moved)
         if pressed:
             slider.sliderPressed.connect(pressed)
@@ -562,7 +562,7 @@ class ROIFindingWidget(ParamWidget):
 
         self.controller = controller
 
-        self.add_param_slider(label_name="Normalization Window Size", name="window_size", minimum=2, maximum=30, moved=self.update_param, multiplier=1, pressed=self.update_param, released=self.update_param, description="Size (in pixels) of the window used to normalize brightness across the image.", int_values=True)
+        # self.add_param_slider(label_name="Normalization Window Size", name="window_size", minimum=2, maximum=30, moved=self.update_param, multiplier=1, pressed=self.update_param, released=self.update_param, description="Size (in pixels) of the window used to normalize brightness across the image.", int_values=True)
         # self.add_param_slider(label_name="Soma Threshold", name="soma_threshold", minimum=1, maximum=255, moved=self.update_param, multiplier=1, pressed=self.controller.show_soma_threshold_image, released=self.update_param, description="Threshold for soma centers.", int_values=True)
         # self.add_param_slider(label_name="Neuropil Threshold", name="neuropil_threshold", minimum=1, maximum=255, moved=self.update_param, multiplier=1, pressed=self.controller.show_neuropil_mask, released=self.update_param, description="Threshold for neuropil.", int_values=True)
         self.add_param_slider(label_name="Background Threshold", name="background_threshold", minimum=1, maximum=255, moved=self.update_param, multiplier=1, pressed=self.update_param, released=self.update_param, description="Threshold for background.", int_values=True)
@@ -587,7 +587,7 @@ class ROIFindingWidget(ParamWidget):
 
         self.invert_masks_checkbox = QCheckBox("Invert masks")
         self.invert_masks_checkbox.setObjectName("Invert masks")
-        self.invert_masks_checkbox.setChecked(self.controller.params['invert_masks'])
+        self.invert_masks_checkbox.setChecked(self.controller.controller.params['invert_masks'])
         self.invert_masks_checkbox.clicked.connect(lambda:self.controller.set_invert_masks(self.invert_masks_checkbox.isChecked()))
         self.mask_button_layout.addWidget(self.invert_masks_checkbox)
 
@@ -685,8 +685,6 @@ class ROIFilteringWidget(ParamWidget):
         self.add_param_slider(label_name="Maximum Area", name="max_area", minimum=1, maximum=500, moved=self.update_param, multiplier=1, released=self.update_param, description="Maximum ROI area.")
         self.add_param_slider(label_name="Minimum Circulature", name="min_circ", minimum=0, maximum=500, moved=self.update_param, multiplier=100, released=self.update_param, description="Minimum ROI circulature.")
         self.add_param_slider(label_name="Maximum Circulature", name="max_circ", minimum=0, maximum=500, moved=self.update_param, multiplier=100, released=self.update_param, description="Maximum ROI circulature.")
-        self.add_param_slider(label_name="Minimum Correlation", name="min_correlation", minimum=0, maximum=1000, moved=self.update_param, multiplier=1000, released=self.update_param, description="Minimum mean pixel correlation of ROI.")
-        self.add_param_slider(label_name="Minimum Edge Contrast", name="min_edge_contrast", minimum=0, maximum=1000, moved=self.update_param, multiplier=100, released=self.update_param, description="Minimum contrast between the edge & center of ROI.")
 
         self.main_layout.addStretch()
         

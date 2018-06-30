@@ -499,7 +499,6 @@ def calculate_roi_properties(rois, mean_image):
 
     roi_areas = np.zeros(n)
     roi_circs = np.zeros(n)
-    roi_edges = np.zeros(n)
 
     for i in range(len(unique_rois)):
         l = unique_rois[i]
@@ -519,19 +518,12 @@ def calculate_roi_properties(rois, mean_image):
 
             perimeter = cv2.arcLength(c, True)
 
-            # a = dilation(mask, disk(1))
-            # b = erosion(mask, disk(1))
-
-            # edge_mask = a ^ b
-
             if area > 0:
                 roi_circs[i] = (perimeter**2)/(4*np.pi*area)
 
             roi_areas[i] = area
 
-            # roi_edges[i] = np.mean(mean_image[edge_mask])/np.mean(mean_image[b])
-
-    return roi_areas, roi_circs, roi_edges
+    return roi_areas, roi_circs
 
 def calculate_centroids_and_traces(rois, video):
     roi_nums = np.unique(rois).tolist()
@@ -594,11 +586,11 @@ def find_rois(cells_mask, starting_image, mean_image):
     # rois = w.apply(equalized_image)
     rois = watershed(starting_image, label(cells_mask))
 
-    roi_areas, roi_circs, roi_edges = calculate_roi_properties(rois, mean_image)
+    roi_areas, roi_circs = calculate_roi_properties(rois, mean_image)
 
-    return rois, roi_areas, roi_circs, roi_edges
+    return rois, roi_areas, roi_circs
 
-def filter_rois(image, rois, min_area, max_area, min_circ, max_circ, min_edge_contrast, roi_areas, roi_circs, roi_edges, correlations, min_correlation, locked_rois=[]):
+def filter_rois(image, rois, min_area, max_area, min_circ, max_circ, roi_areas, roi_circs, locked_rois=[]):
     filtered_rois = rois.copy()
     filtered_out_rois = []
 
@@ -608,14 +600,6 @@ def filter_rois(image, rois, min_area, max_area, min_circ, max_circ, min_edge_co
             
             filtered_rois[mask] = 0
             filtered_out_rois.append(l)
-        else:
-            mask = rois == l
-
-            correlation = np.mean(correlations[mask])
-
-            if correlation < min_correlation:
-                filtered_rois[mask] = 0
-                filtered_out_rois.append(l)
 
     return filtered_rois, filtered_out_rois
 

@@ -1,4 +1,5 @@
 from __future__ import division
+
 import sys
 import os
 import time
@@ -21,102 +22,194 @@ except:
     from PyQt5.QtGui import *
     from PyQt5.QtWidgets import *
     pyqt_version = 5
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize
+from matplotlib.collections import LineCollection
+
+import random
 
 # color table to use for showing images
 gray_color_table = [qRgb(i, i, i) for i in range(256)]
 
-class PreviewQLabel(QLabel):
-    """
-    QLabel subclass used to show a preview image.
-    """
+class PlotCanvas(FigureCanvas):
+    def __init__(self, window=None, width=5, height=5, dpi=100):
+        fig = Figure(figsize=(width, height), dpi=dpi)
+        self.axes = plt.Axes(fig, [0., 0., 1., 1.])
+        self.axes.set_axis_off()
+        fig.add_axes(self.axes)
+        self.new_load = True
+        self.preview_window = window
+ 
+        FigureCanvas.__init__(self, fig)
+ 
+        self.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.MinimumExpanding)
+        FigureCanvas.updateGeometry(self)
+        fig.canvas.mpl_connect('button_press_event', self.on_click)
+        fig.canvas.mpl_connect('motion_notify_event', self.on_mouse_move)
+        fig.canvas.mpl_connect('button_release_event', self.on_release)
 
-    def __init__(self, preview_window):
-        QLabel.__init__(self)
-        
-        self.preview_window    = preview_window
-        self.scale_factor      = None
-        self.pix               = None  # image label's pixmap
-        self.pix_size          = None  # size of image label's pixmap
-        self.image             = None
+        # initialize imshow
+        self.plot = None
+        self.background_mask_plot = None
+        self.background_mask_contour_plot = None
+        self.mask_line_collections = None
+        self.mask_plot = None
         self.click_start_coord = None # coordinate where the user pressed down the mouse button
 
-        # accept clicks
-        self.setAcceptDrops(True)
+    def on_click(self, event):
+        x, y = event.xdata, event.ydata
 
-        # track when the user moves the mouse over the label, even if they haven't clicked
-        self.setMouseTracking(True)
+        self.click_start_coord = (int(x), int(y))
 
-    def resizeEvent(self, event):
-        """
-        Function called when the user resizes the window.
-        """
+        self.prev_coord = self.click_start_coord
 
-        if self.pix is not None:
-            self.setPixmap(self.pix.scaled(self.width(), self.height(), Qt.KeepAspectRatio))
+        self.preview_window.mouse_pressed(self.click_start_coord)
 
-            # update scale factor
-            self.scale_factor = self.pixmap().height()/self.image.shape[0]
+    def on_mouse_move(self, event):
+        x, y = event.xdata, event.ydata
 
-    def mousePressEvent(self, event):
-        """
-        Function called when the user presses down the mouse button.
-        """
+        self.click_end_coord = (int(x), int(y))
 
-        if self.scale_factor:
-            self.click_start_coord = (int(event.x()/self.scale_factor), int(event.y()/self.scale_factor))
-
-            self.prev_coord = self.click_start_coord
-
-            self.preview_window.mouse_pressed(self.click_start_coord)
-
-    def mouseMoveEvent(self, event):
-        """
-        Function called when the user presses moves the mouse button over the label.
-        """
-
-        if self.scale_factor:
-            self.click_end_coord = (int(event.x()/self.scale_factor), int(event.y()/self.scale_factor))
-
-            self.preview_window.mouse_moved(self.click_start_coord, self.click_end_coord, clicked=(event.buttons() & Qt.LeftButton))
-    
-            self.prev_coord = self.click_end_coord
-
-    def mouseReleaseEvent(self, event):
-        """
-        Function called when the user releases the mouse button.
-        """
-
-        if self.scale_factor:
-            self.click_end_coord = (int(event.x()/self.scale_factor), int(event.y()/self.scale_factor))
-
-            print("User clicked {}.".format(self.click_end_coord))
-
-            self.preview_window.mouse_released(self.click_start_coord, self.click_end_coord, mouse_moved=(self.click_end_coord != self.click_start_coord))
-
-    def update_pixmap(self, image):
-        if image is None:
-            self.scale_factor   = None
-            self.pix            = None  # image label's pixmap
-            self.pix_size       = None  # size of image label's pixmap
-            self.clear()
-        else:
-            # get image info
-            height, width, bytesPerComponent = image.shape
-            bytesPerLine = bytesPerComponent * width
-            
-            # create qimage
-            qimage = QImage(image.data, image.shape[1], image.shape[0], bytesPerLine, QImage.Format_RGB888)
-            qimage.setColorTable(gray_color_table)
-
-            # generate pixmap
-            self.pix = QPixmap(qimage)
-
-            self.setPixmap(self.pix.scaled(self.width(), self.height(), Qt.KeepAspectRatio, Qt.FastTransformation))
-
-            # self.scale_factor = min(self.height()/image.shape[0], self.width()/image.shape[1])
-            self.scale_factor = self.pixmap().height()/image.shape[0]
+        self.preview_window.mouse_moved(self.click_start_coord, self.click_end_coord, clicked=(event.button == 1))
         
-        self.image = image
+        self.prev_coord = self.click_end_coord
+
+    def on_release(self, event):
+        x, y = event.xdata, event.ydata
+
+        self.click_end_coord = (int(x), int(y))
+
+        # print("User clicked {}.".format(self.click_end_coord))
+
+        self.preview_window.mouse_released(self.click_start_coord, self.click_end_coord, mouse_moved=(self.click_end_coord != self.click_start_coord))
+ 
+    def show_image(self, image, vmax, background_mask=None, mask_points=None, tentative_mask_point=None, mask=None, selected_mask_num=-1):
+        self.axes.draw_artist(self.axes.patch)
+
+        if self.plot is None:
+            self.plot = self.axes.imshow(image, interpolation='nearest', vmin=0, vmax=vmax, cmap='gray')
+        else:
+            self.plot.set_data(image)
+
+            self.axes.draw_artist(self.plot)
+
+        if self.background_mask_contour_plot is not None:
+            for coll in self.background_mask_contour_plot.collections:
+                coll.remove()
+            self.background_mask_contour_plot = None
+
+        if self.mask_line_collections is not None:
+            for coll in self.mask_line_collections:
+                coll.remove()
+            self.mask_line_collections = None
+
+        if self.background_mask_plot is None:
+            if background_mask is not None:
+                background_mask_image = np.zeros(background_mask.shape + (4,))
+                background_mask_image[:, :, 0] = 1
+                background_mask_image[:, :, -1] = 0.5
+                background_mask_image[background_mask == 0] = 0
+
+                self.background_mask_plot = self.axes.imshow(background_mask_image, interpolation='nearest')
+
+                self.axes.draw_artist(self.background_mask_plot)
+
+                self.background_mask_contour_plot = self.axes.contour(np.arange(background_mask_image.shape[1]), np.arange(background_mask_image.shape[1]), background_mask_image[:, :, 0], levels=[0], colors='r', linewidths=1)
+
+                for coll in self.background_mask_contour_plot.collections:
+                    self.axes.draw_artist(coll)
+        else:
+            if background_mask is not None:
+                background_mask_image = np.zeros(background_mask.shape + (4,))
+                background_mask_image[:, :, 0] = 1
+                background_mask_image[:, :, -1] = 0.5
+                background_mask_image[background_mask == 0] = 0
+
+                self.background_mask_plot.set_data(background_mask_image)
+
+                self.axes.draw_artist(self.background_mask_plot)
+
+                self.background_mask_contour_plot = self.axes.contour(np.arange(background_mask_image.shape[1]), np.arange(background_mask_image.shape[1]), background_mask_image[:, :, 0], levels=[0], colors='r', linewidths=1)
+
+                for coll in self.background_mask_contour_plot.collections:
+                    self.axes.draw_artist(coll)
+            else:
+                try:
+                    self.background_mask_plot.remove()
+                    self.background_mask_plot = None
+                except:
+                    pass
+
+        if self.mask_plot is None:
+            if mask is not None:
+                mask_image = np.zeros(mask.shape + (4,))
+                mask_image[:, :, -1] = 0.6
+                mask_image[mask != 0] = 0
+
+                self.mask_plot = self.axes.imshow(mask_image, interpolation='nearest')
+
+                self.axes.draw_artist(self.mask_plot)
+        else:
+            if mask is not None:
+                mask_image = np.zeros(mask.shape + (4,))
+                mask_image[:, :, -1] = 0.6
+                mask_image[mask != 0] = 0
+
+                self.mask_plot.set_data(mask_image)
+
+                self.axes.draw_artist(self.mask_plot)
+            else:
+                try:
+                    self.mask_plot.remove()
+                    self.mask_plot = None
+                except:
+                    pass
+
+        if mask_points is not None:
+            self.mask_line_collections = []
+
+            # draw the points along the individual masks
+            for i in range(len(mask_points)):
+                points = mask_points[i]
+
+                if len(points) > 0:
+                    segments = np.zeros((len(points)-1, 2, 2))
+                    for j in range(segments.shape[0]):
+                        segments[j, 0, :] = points[j]
+                        segments[j, 1, :] = points[j+1]
+
+                    if selected_mask_num == i:
+                        color = 'g'
+                    else:
+                        color = 'y'
+
+                    collection = LineCollection(segments, linewidths=1, colors=color, linestyle='solid')
+                    self.axes.add_collection(collection)
+                    self.mask_line_collections.append(collection)
+
+                    self.axes.draw_artist(collection)
+
+                    scatter_plot = self.axes.scatter([ point[0] for point in points[:-1] ], [ point[1] for point in points[:-1] ], c=color, s=10)
+                    self.axes.draw_artist(scatter_plot)
+
+                    if i == len(mask_points)-1 and tentative_mask_point is not None:
+                        segment = np.zeros((1, 2, 2))
+                        segment[0, 0, :] = points[-2]
+                        segment[0, 1, :] = tentative_mask_point
+
+                        collection = LineCollection(segment, linewidths=1, colors='gray', linestyle='solid')
+                        self.axes.add_collection(collection)
+                        self.mask_line_collections.append(collection)
+
+                        self.axes.draw_artist(collection)
+
+                        scatter_plot = self.axes.scatter(tentative_mask_point[0], tentative_mask_point[1], c='gray', s=10)
+                        self.axes.draw_artist(scatter_plot)
+
+        self.blit(self.axes.bbox)
+        self.flush_events()
 
 class PreviewWindow(QMainWindow):
     """
@@ -151,16 +244,14 @@ class PreviewWindow(QMainWindow):
         self.image_widget = QWidget(self)
         self.image_layout = QHBoxLayout(self.image_widget)
         self.image_layout.setContentsMargins(0, 0, 0, 0)
-        self.image_label = PreviewQLabel(self)
-        self.image_label.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.MinimumExpanding)
-        self.image_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-        self.image_layout.addWidget(self.image_label)
         self.main_layout.addWidget(self.image_widget, 0, 0)
 
-        self.drawing_mask = False # whether the user is drawing a mask
-        self.erasing_rois = False # whether the user is erasing ROIs
-        self.drawing_rois = False # whether the user is drawing ROIs
-        self.mask_points  = []    # list holding the points of the mask being drawn
+        self.drawing_mask    = False # whether the user is drawing a mask
+        self.erasing_rois    = False # whether the user is erasing ROIs
+        self.drawing_rois    = False # whether the user is drawing ROIs
+        self.mask_points     = []    # list holding the points of the mask being drawn
+        self.mask            = None
+        self.background_mask = None
 
         # create a shortcut for ending mask creation
         self.done_creating_mask_shortcut = QShortcut(QKeySequence('Return'), self)
@@ -178,6 +269,9 @@ class PreviewWindow(QMainWindow):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_frame)
 
+        self.image_plot = PlotCanvas(self, width=5, height=5)
+        self.image_layout.addWidget(self.image_plot)
+        
         self.set_initial_state()
 
         self.show()
@@ -190,55 +284,36 @@ class PreviewWindow(QMainWindow):
         self.n_frames   = 1     # total number of frames
         self.video_name = ""    # name of the currently showing video
 
-        self.update_image_label(None)
-        self.image_label.hide()
+        self.image_plot.hide()
         self.timer.stop()
         self.setWindowTitle("Preview")
 
     def plot_image(self, image, background_mask=None, video_max=255):
         if self.image is None:
-            self.image_label.show()
+            self.image_plot.show()
             self.main_widget.setMinimumSize(QSize(image.shape[1], image.shape[0]))
 
-        # normalize the image (to be between 0 and 255)
-        normalized_image = utilities.normalize(image, video_max)
-
-        # convert to RGB
-        if len(normalized_image.shape) == 2:
-            normalized_image = cv2.cvtColor(normalized_image.astype(np.uint8), cv2.COLOR_GRAY2RGB)
-
         # update image
-        self.image = normalized_image
-
-        # draw the background mask as red
-        if background_mask is not None:
-            self.image[background_mask > 0] = np.array([255, 0, 0]).astype(np.uint8)
+        self.image = image
+        self.background_mask = background_mask
 
         # draw user-drawn masks
-        if self.controller.mode == "roi_finding" and len(self.controller.mask_points[self.controller.z]) > 0:
-            # # make a copy of the image
-            # image = self.image.copy()
-
+        if self.controller.mode == "roi_finding" and len(self.controller.controller.mask_points[self.controller.z]) > 0:
             # combine the masks into one using their union or intersection, depending on whether they are inverted or not
-            masks = np.array(self.controller.masks[self.controller.z])
-            if self.controller.params['invert_masks']:
-                mask = np.prod(masks, axis=0).astype(bool)
+            masks = np.array(self.controller.controller.masks[self.controller.z])
+            if self.controller.controller.params['invert_masks']:
+                self.mask = np.prod(masks, axis=0).astype(bool)
             else:
-                mask = np.sum(masks, axis=0).astype(bool)
-
-            # darken the image outside of the mask
-            self.image[mask == False] = self.image[mask == False]/2
-
-            # draw the points along the individual masks
-            for i in range(len(self.controller.mask_points[self.controller.z])):
-                mask_points = self.controller.mask_points[self.controller.z][i]
-
-                self.draw_mask_points(mask_points, self.image, selected=(i == self.controller.selected_mask_num))
+                self.mask = np.sum(masks, axis=0).astype(bool)
 
             # self.image = image
+            mask_points = self.controller.controller.mask_points[self.controller.z]
+        else:
+            mask_points = []
+            self.mask = None
         
-        # update image label
-        self.update_image_label(self.image)
+        # update image plot
+        self.update_image_plot(self.image, background_mask=self.background_mask, mask_points=mask_points, mask=self.mask, selected_mask_num=self.controller.selected_mask_num)
 
     def play_movie(self, frames, fps=60):
         if frames is None:
@@ -249,13 +324,13 @@ class PreviewWindow(QMainWindow):
             self.n_frames              = 1
             self.video_name            = ""
 
-            self.update_image_label(None)
-            self.image_label.hide()
+            self.update_image_plot(None)
+            self.image_plot.hide()
         else:
             if self.frames is None:
-                self.image_label.show()
+                self.image_plot.show()
                 self.main_widget.setMinimumSize(QSize(frames.shape[2], frames.shape[1]))
-                self.image_label.new_load = True
+                self.image_plot.new_load = True
 
             # set frame number to 0
             self.frame_num = 0
@@ -269,9 +344,12 @@ class PreviewWindow(QMainWindow):
             # start the timer to update the frames
             self.timer.start(int(1000.0/fps))
 
-    def video_opened(self, video_path):
-        self.video_name = os.path.basename(video_path)
-        self.timer.stop()
+    def play_video(self, video, video_path, fps):
+        if video_path is not None:
+            self.video_name = os.path.basename(video_path)
+        else:
+            self.video_name = ""
+        self.play_movie(video, fps=fps)
 
     def set_fps(self, fps):
         # restart the timer with the new fps
@@ -280,96 +358,55 @@ class PreviewWindow(QMainWindow):
 
     def show_frame(self, frame):
         if frame is None:
-            self.update_image_label(None)
+            self.update_image_plot(None)
             self.frame_num = 0
             self.n_frames  = 1
-            self.image_label.hide()
+            self.image_plot.hide()
         else:
             # convert to RGB
             frame = cv2.cvtColor(utilities.normalize(frame).astype(np.uint8), cv2.COLOR_GRAY2RGB)
 
-            # update image label
-            self.update_image_label(frame)
+            # update image plot
+            self.update_image_plot(frame)
 
     def update_frame(self):
         if self.frames is not None:
             # convert the current frame to RGB
             frame = cv2.cvtColor(self.frames[self.frame_num], cv2.COLOR_GRAY2RGB)
 
-            # update image label
-            self.update_image_label(frame)
+            # update image plot
+            self.update_image_plot(frame)
 
             # increment frame number (keeping it between 0 and n_frames)
             self.frame_num += 1
             self.frame_num = self.frame_num % self.n_frames
 
             # update window title
-            self.setWindowTitle("{}. Z={}. Frame {}/{}.".format(self.video_name, self.controller.params['z'], self.frame_num + 1, self.n_frames))
+            self.setWindowTitle("{}. Z={}. Frame {}/{}.".format(self.video_name, self.controller.z, self.frame_num + 1, self.n_frames))
 
-    def update_image_label(self, image):
-        self.image_label.update_pixmap(image)
-
-    def draw_mask_points(self, mask_points, image=None, selected=False):
-        # make a copy of the current image if none is provided
-        if image is None:
-            image = self.image.copy()
-
-        # set color of points along the selected vs. not selected mask
-        if selected:
-            color = (0, 255, 0)
-        else:
-            color = (255, 255, 0)
-
-        # get the number of points along the mask
-        n_points = len(mask_points)
-
-        # draw the points along the mask
-        if n_points >= 1:
-            for i in range(n_points):
-                if i < n_points - 1:
-                    cv2.line(image, mask_points[i], mask_points[i+1], color, 1)
-                cv2.circle(image, mask_points[i], 2, color, -1)
-
-    def draw_tentative_mask_point(self, tentative_mask_point, last_mask_point, image=None):
-        # make a copy of the current image if none is provided
-        if image is None:
-            image = self.image.copy()
-
-        # draw a line connecting the tentative point to the last mask point
-        cv2.line(image, last_mask_point, tentative_mask_point, (128, 128, 128), 1)
+    def update_image_plot(self, image, background_mask=None, mask_points=None, tentative_mask_point=None, mask=None, selected_mask_num=-1):
+        self.image_plot.show_image(image, self.controller.controller.video_max, background_mask=background_mask, mask_points=mask_points, tentative_mask_point=tentative_mask_point, mask=mask, selected_mask_num=selected_mask_num)
 
     def add_mask_point(self, mask_point):
         # add the point to the list of mask points
         self.mask_points.append(mask_point)
 
-        # make a copy of the current image
-        image = self.image.copy()
+        mask_points = self.controller.controller.mask_points[self.controller.z] + [self.mask_points + [self.mask_points[0]]]
 
-        # draw any existing masks that have been created
-        for mask_points in self.controller.mask_points[self.controller.z]:
-            self.draw_mask_points(mask_points, image)
-        
-        # draw the points of the current mask being created
-        self.draw_mask_points(self.mask_points + [self.mask_points[0]], image)
-
-        # update image label
-        self.update_image_label(image)
+        # update image plot
+        self.update_image_plot(self.image, background_mask=self.background_mask, mask_points=mask_points, mask=self.mask)
 
     def add_tentative_mask_point(self, mask_point):
         # make a copy of the current image
         image = self.image.copy()
 
-        # draw any existing masks that have been created
-        for mask_points in self.controller.mask_points[self.controller.z]:
-            self.draw_mask_points(mask_points, image)
-
-        # draw the points of the current mask being created, including the tentative point
         if len(self.mask_points) > 0:
-            self.draw_mask_points(self.mask_points + [self.mask_points[0]], image)
-            self.draw_tentative_mask_point(mask_point, self.mask_points[-1], image)
+            mask_points = self.controller.controller.mask_points[self.controller.z] + [self.mask_points + [self.mask_points[0]]]
+        else:
+            mask_points = self.controller.controller.mask_points[self.controller.z] + [[]]
 
-        # update image label
-        self.update_image_label(image)
+        # update image plot
+        self.update_image_plot(image, background_mask=self.background_mask, mask_points=mask_points, tentative_mask_point=mask_point, mask=self.mask)
 
     def erase_roi_at_point(self, roi_point):
         # tell the controller to remove ROIs near this point
@@ -381,12 +418,12 @@ class PreviewWindow(QMainWindow):
         cv2.circle(overlay, roi_point, 10, (255, 0, 0), -1)
         cv2.addWeighted(overlay, 0.5, image, 0.5, 0, image)
 
-        # update image label
-        self.update_image_label(image)
+        # update image plot
+        self.update_image_plot(image)
 
     def end_erase_rois(self):
-        # update image label
-        self.update_image_label(self.image)
+        # update image plot
+        self.update_image_plot(self.image)
 
     def start_drawing_mask(self):
         self.drawing_mask = True
@@ -426,8 +463,8 @@ class PreviewWindow(QMainWindow):
             # draw the boundary on the image
             image[mask == 1] = np.array([255, 255, 0]).astype(np.uint8)
 
-            # update image label
-            self.update_image_label(image)
+            # update image plot
+            self.update_image_plot(image)
 
     def draw_roi(self, start_point, end_point):
         self.controller.create_roi(start_point, end_point)
