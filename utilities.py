@@ -1,4 +1,5 @@
 from __future__ import division
+
 import numpy as np
 import cv2
 import scipy.ndimage as ndi
@@ -15,14 +16,32 @@ from skimage.filters import rank
 from skimage.external.tifffile import imread, imsave
 # from skimage.exposure import *
 
-import caiman as cm
-from caiman.motion_correction import tile_and_correct, motion_correction_piecewise, MotionCorrect
+import sys
+import os
+# sys.path.insert(0, os.path.join(os.path.dirname(sys.path[0]),'CaImAn'))
+# print(sys.path)
+
 from imimposemin import imimposemin
 import math
 
-import os
 import glob
-import sys
+
+import caiman as cm
+from caiman.motion_correction import tile_and_correct, motion_correction_piecewise, MotionCorrect
+from caiman.utils.utils import download_demo
+from caiman.utils.visualization import plot_contours, nb_view_patches, nb_plot_contour, get_contours
+from caiman.source_extraction.cnmf import cnmf as cnmf
+from caiman.motion_correction import MotionCorrect
+from caiman.source_extraction.cnmf.utilities import detrend_df_f
+from caiman.components_evaluation import estimate_components_quality_auto
+from caiman.base.rois import register_ROIs
+from caiman.source_extraction.cnmf.temporal import update_temporal_components
+from caiman.source_extraction.cnmf.pre_processing import preprocess_data
+import pdb
+from functools import partial
+from scipy.sparse import hstack
+
+from multiprocessing import Pool
 
 # from Watershed import Watershed
 
@@ -145,80 +164,121 @@ def adjust_contrast(image, contrast):
 
 def adjust_gamma(image, gamma):
     return skimage.exposure.adjust_gamma(image, gamma)
+    
+def motion_correct_multiple_videos(video_paths, max_shift, patch_stride, patch_overlap, progress_signal=None, thread=None, use_multiprocessing=True):
+    video_lengths = []
+    
+    for i in range(len(video_paths)):
+        video_path = video_paths[i]
 
-def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, progress_signal=None, thread=None, mc_z=-1):
+        video = imread(video_path)
+            
+        if len(video.shape) == 3:
+            # add a z dimension
+            video = video[:, np.newaxis, :, :]
+        
+        video_lengths.append(video.shape[0])
+            
+        if i == 0:
+            final_video = video
+        else:
+            final_video = np.concatenate([final_video, video], axis=0)
+    
+    final_video_path = "video_temp.tif"
+
+    # imsave(final_video_path, final_video)
+
+    # print(video_lengths)
+
+    mc_video, mc_borders = motion_correct(final_video, final_video_path, max_shift, patch_stride, patch_overlap, progress_signal=progress_signal, thread=thread, use_multiprocessing=use_multiprocessing)
+    
+    # print(mc_video.shape)
+
+    if mc_video.shape[0] == 1:
+        return [], []
+    
+    mc_videos = []
+    
+    for i in range(len(video_paths)):
+        if i == 0:
+            mc_videos.append(mc_video[:video_lengths[0]])
+        else:
+            mc_videos.append(mc_video[np.sum(video_lengths[:i]):np.sum(video_lengths[:i]) + video_lengths[i]])
+
+    os.remove(final_video_path)
+
+    # print([ video.shape for video in mc_videos ])
+            
+    return mc_videos, mc_borders
+
+def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, progress_signal=None, thread=None, use_multiprocessing=True):
     full_video_path = video_path
 
     directory = os.path.dirname(full_video_path)
     filename  = os.path.basename(full_video_path)
 
     if thread is not None and thread.running == False:
-        return np.zeros(1)
+        return np.zeros(1), [ None for z in z_range ]
 
-    # Create the cluster
-    c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
+    def check_if_cancelled():
+        if thread is not None and thread.running == False:
+            if use_multiprocessing:
+                cm.stop_server()
 
-    if thread is not None and thread.running == False:
+            log_files = glob.glob('Yr*_LOG_*')
+            for log_file in log_files:
+                os.remove(log_file)
+
+            return np.zeros(1), [ None for z in z_range ]
+
+    if use_multiprocessing:
+        if os.name == 'nt':
+            backend = 'multiprocessing'
+        else:
+            backend = 'ipyparallel'
+
+        # Create the cluster
         cm.stop_server()
-        log_files = glob.glob('Yr*_LOG_*')
-        for log_file in log_files:
-            os.remove(log_file)
-
-        return np.zeros(1)
-
-    if mc_z == -1:
-        z_range = list(range(video.shape[1]))
+        c, dview, n_processes = cm.cluster.setup_cluster(backend=backend, n_processes=None, single_thread=False)
     else:
-        z_range = [mc_z]
+        dview = None
+
+    check_if_cancelled()
+
+    z_range = list(range(video.shape[1]))
 
     if progress_signal:
         # send an update signal to the GUI
         percent_complete = int(100.0*float(0.1)/len(z_range))
         progress_signal.emit(percent_complete)
 
-    # max_value = np.amax(video)
-    # if max_value > 2047:
-    #     video_max = 4095
-    # elif max_value > 1023:
-    #     video_max = 2047
-    # elif max_value > 511:
-    #     video_max = 1023
-    # elif max_value > 255:
-    #     video_max = 511
-    # elif max_value > 1:
-    #     video_max = 255
-    # else:
-    #     video_max = 1
-
-    # video = video*255.0/video_max
-
     mc_video = video.copy()
+
+    mc_borders = [ None for z in z_range ]
 
     counter = 0
 
     for z in z_range:
-        # print(z)
         video_path = os.path.join(directory, os.path.splitext(filename)[0] + "_z_{}_temp.tif".format(z))
         imsave(video_path, video[:, z, :, :])
 
         mc_video[:, z, :, :] *= 0
 
         a = imread(video_path)
-        # print(a.shape)
 
         # --- PARAMETERS --- #
 
         params_movie = {'fname': video_path,
                         'max_shifts': (max_shift, max_shift),  # maximum allow rigid shift (2,2)
                         'niter_rig': 1,
-                        'splits_rig': 4 if video.shape[0] > 10 else 1,  # for parallelization split the movies in  num_splits chuncks across time
+                        'splits_rig': 1,  # for parallelization split the movies in  num_splits chuncks across time
                         'num_splits_to_process_rig': None,  # if none all the splits are processed and the movie is saved
                         'strides': (patch_stride, patch_stride),  # intervals at which patches are laid out for motion correction
                         'overlaps': (patch_overlap, patch_overlap),  # overlap between pathes (size of patch strides+overlaps)
-                        'splits_els': 4 if video.shape[0] > 10 else 1,  # for parallelization split the movies in  num_splits chuncks across time
+                        'splits_els': 1,  # for parallelization split the movies in  num_splits chuncks across time
                         'num_splits_to_process_els': [None],  # if none all the splits are processed and the movie is saved
                         'upsample_factor_grid': 4,  # upsample factor to avoid smearing when merging patches
-                        'max_deviation_rigid': int(max_shift/2) - 1,  # maximum deviation allowed for patch with respect to rigid shift         
+                        'max_deviation_rigid': 3,  # maximum deviation allowed for patch with respect to rigid shift         
                         }
 
         # load movie (in memory!)
@@ -254,7 +314,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
 
         # Create motion correction object
         mc = MotionCorrect(fname, min_mov,
-                           dview=None, max_shifts=max_shifts, niter_rig=niter_rig, splits_rig=splits_rig, 
+                           dview=dview, max_shifts=max_shifts, niter_rig=niter_rig, splits_rig=splits_rig, 
                            num_splits_to_process_rig=num_splits_to_process_rig, 
                         strides= strides, overlaps= overlaps, splits_els=splits_els,
                         num_splits_to_process_els=num_splits_to_process_els, 
@@ -262,22 +322,9 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
                         shifts_opencv = True, nonneg_movie = True)
 
         # Do rigid motion correction
-        mc.motion_correct_rigid(save_movie=True)
+        mc.motion_correct_rigid(save_movie=False)
 
-        if thread is not None and thread.running == False:
-            cm.stop_server()
-            log_files = glob.glob('Yr*_LOG_*')
-            for log_file in log_files:
-                os.remove(log_file)
-
-            try:
-                os.remove(mc.fname_tot_rig)
-                os.remove(mc.fname_tot_els)
-                os.remove(video_path)
-            except:
-                pass
-
-            return np.zeros(1)
+        check_if_cancelled()
 
         if progress_signal:
             # send an update signal to the GUI
@@ -287,27 +334,14 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         # print(mc.fname_tot_rig)
 
         # Load rigid motion corrected movie
-        m_rig = cm.load(mc.fname_tot_rig)
+        # m_rig = cm.load(mc.fname_tot_rig)
 
         # --- ELASTIC MOTION CORRECTION --- #
 
         # Do elastic motion correction
         mc.motion_correct_pwrigid(save_movie=True, template=mc.total_template_rig, show_template=False)
 
-        if thread is not None and thread.running == False:
-            cm.stop_server()
-            log_files = glob.glob('Yr*_LOG_*')
-            for log_file in log_files:
-                os.remove(log_file)
-
-            try:
-                os.remove(mc.fname_tot_rig)
-                os.remove(mc.fname_tot_els)
-                os.remove(video_path)
-            except:
-                pass
-
-            return np.zeros(1)
+        check_if_cancelled()
 
         if progress_signal:
             # send an update signal to the GUI
@@ -316,90 +350,26 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
 
         # # Save elastic shift border
         bord_px_els = np.ceil(np.maximum(np.max(np.abs(mc.x_shifts_els)),
-                                         np.max(np.abs(mc.y_shifts_els)))).astype(np.int)
+                                 np.max(np.abs(mc.y_shifts_els)))).astype(np.int)  
         # np.savez(mc.fname_tot_els + "_bord_px_els.npz", bord_px_els)
 
-        # Load elastic motion corrected movie
-        m_els = cm.load(mc.fname_tot_els)
+        fnames = mc.fname_tot_els   # name of the pw-rigidly corrected file.
+        border_to_0 = bord_px_els     # number of pixels to exclude
+        fname_new = cm.save_memmap(fnames, base_name='memmap_', order = 'C',
+                                   border_to_0 = bord_px_els) # exclude borders
 
-        # downsample_factor = 1
-        # cm.concatenate([m_orig.resize(1, 1, downsample_factor)+offset_mov, m_rig.resize(1, 1, downsample_factor), m_els.resize(
-        #     1, 1, downsample_factor)], axis=2).play(fr=60, gain=5, magnification=0.75, offset=0)
+        # now load the file
+        Yr, dims, T = cm.load_memmap(fname_new)
+        d1, d2 = dims
+        images = np.reshape(Yr.T, [T] + list(dims), order='F') 
 
-        # Crop elastic shifts out of the movie and save
-        fnames = [mc.fname_tot_els]
-        border_to_0 = bord_px_els
-        idx_x=slice(border_to_0,-border_to_0,None)
-        idx_y=slice(border_to_0,-border_to_0,None)
-        idx_xy=(idx_x,idx_y)
-        # idx_xy = None
-        add_to_movie = -np.nanmin(m_els) + 1  # movie must be positive
+        mc_borders[z] = bord_px_els
 
-        # print(m_els.shape)
-        images = m_els[:, idx_xy[0], idx_xy[1]].copy()
-        images += add_to_movie
-
-        # remove_init = 0 # if you need to remove frames from the beginning of each file
-        # downsample_factor = 1 
-        # base_name = fname.split('/')[-1][:-4]
-        # name_new = cm.save_memmap_each(fnames, dview=dview, base_name=base_name, resize_fact=(
-        #     1, 1, downsample_factor), remove_init=remove_init, idx_xy=idx_xy, add_to_movie=add_to_movie, border_to_0=0)
-        # name_new.sort()
-
-        # # If multiple files were saved in C format, put them together in a single large file 
-        # if len(name_new) > 1:
-        #     fname_new = cm.save_memmap_join(
-        #         name_new, base_name='Yr', n_chunks=20, dview=dview)
-        # else:
-        #     print('One file only, not saving!')
-        #     fname_new = name_new[0]
-
-        # print("Final movie saved in: {}.".format(fname_new))
-
-        # Yr, dims, T = cm.load_memmap(fname_new)
-        # d1, d2 = dims
-        # images = np.reshape(Yr.T, [T] + list(dims), order='F')
-        # Y = np.reshape(Yr, dims + (T,), order='F')
-
-        a = np.nan_to_num(images)
-
-        height_pad = video.shape[2] - a.shape[1]
-        width_pad  = video.shape[3] - a.shape[2]
-
-        # print("Pad", height_pad, width_pad)
-
-        height_pad_pre  = height_pad//2
-        height_pad_post = height_pad - height_pad_pre
-
-        width_pad_pre  = width_pad//2
-        width_pad_post = width_pad - width_pad_pre
-
-        b = np.pad(a, ((0, 0), (height_pad_pre, height_pad_post), (width_pad_pre, width_pad_post)), 'constant')
-        # print(b.shape)
-
-        mc_video[:, z, :, :] = b
+        mc_video[:, z, :, :] = images
 
         os.remove(video_path)
 
-        # out = np.zeros(m_els.shape)
-        # out[:] = m_els[:]
-
-        # out = np.nan_to_num(out)
-
-        if thread is not None and thread.running == False:
-            cm.stop_server()
-            log_files = glob.glob('Yr*_LOG_*')
-            for log_file in log_files:
-                os.remove(log_file)
-
-            try:
-                os.remove(mc.fname_tot_rig)
-                os.remove(mc.fname_tot_els)
-                os.remove(video_path)
-            except:
-                pass
-
-            return np.zeros(1)
+        check_if_cancelled()
 
         if progress_signal:
             # send an update signal to the GUI
@@ -415,15 +385,17 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
 
         counter += 1
 
-    cm.stop_server()
+    check_if_cancelled()
+
+    if use_multiprocessing:
+        dview.terminate()
+        cm.stop_server()
+
     log_files = glob.glob('Yr*_LOG_*')
     for log_file in log_files:
         os.remove(log_file)
 
-    if thread is not None and thread.running == False:
-        return np.zeros(1)
-
-    return mc_video
+    return mc_video, mc_borders
 
 def calculate_adjusted_image(image, contrast, gamma):
     return adjust_gamma(adjust_contrast(image, contrast), gamma)
@@ -499,7 +471,6 @@ def calculate_roi_properties(rois, mean_image):
 
     roi_areas = np.zeros(n)
     roi_circs = np.zeros(n)
-    roi_edges = np.zeros(n)
 
     for i in range(len(unique_rois)):
         l = unique_rois[i]
@@ -519,19 +490,27 @@ def calculate_roi_properties(rois, mean_image):
 
             perimeter = cv2.arcLength(c, True)
 
-            # a = dilation(mask, disk(1))
-            # b = erosion(mask, disk(1))
-
-            # edge_mask = a ^ b
-
             if area > 0:
                 roi_circs[i] = (perimeter**2)/(4*np.pi*area)
 
             roi_areas[i] = area
 
-            # roi_edges[i] = np.mean(mean_image[edge_mask])/np.mean(mean_image[b])
+    return roi_areas, roi_circs
 
-    return roi_areas, roi_circs, roi_edges
+def calculate_translation(image_1, image_2):
+    # get rid of the color channels by performing a grayscale transform
+   # the type cast into 'float' is to avoid overflows
+   im1_gray = image_1.astype('float')
+   im2_gray = image_2.astype('float')
+
+   # get rid of the averages, otherwise the results are not good
+   im1_gray -= np.mean(im1_gray)
+   im2_gray -= np.mean(im2_gray)
+
+   # calculate the correlation image; note the flipping of onw of the images
+   correlation = scipy.signal.fftconvolve(im1_gray, im2_gray[::-1,::-1], mode='same')
+
+   return np.unravel_index(np.argmax(correlation), correlation.shape)
 
 def calculate_centroids_and_traces(rois, video):
     roi_nums = np.unique(rois).tolist()
@@ -589,35 +568,455 @@ def calculate_centroids_and_traces(rois, video):
 
     return centroids, traces
 
-def find_rois(cells_mask, starting_image, mean_image):
-    # w = Watershed()
-    # rois = w.apply(equalized_image)
-    rois = watershed(starting_image, label(cells_mask))
+# def find_rois(cells_mask, starting_image, mean_image):
+#     # w = Watershed()
+#     # rois = w.apply(equalized_image)
+#     rois = watershed(starting_image, label(cells_mask))
 
-    roi_areas, roi_circs, roi_edges = calculate_roi_properties(rois, mean_image)
+#     roi_areas, roi_circs = calculate_roi_properties(rois, mean_image)
 
-    return rois, roi_areas, roi_circs, roi_edges
+#     return rois, roi_areas, roi_circs
 
-def filter_rois(image, rois, min_area, max_area, min_circ, max_circ, min_edge_contrast, roi_areas, roi_circs, roi_edges, correlations, min_correlation, locked_rois=[]):
-    filtered_rois = rois.copy()
-    filtered_out_rois = []
+def find_rois_multiple_videos(video_paths, params, use_mc_video=True, masks=None, background_mask=None, mc_borders=None, progress_signal=None, thread=None, use_multiprocessing=True):
+    for i in range(len(video_paths)):
+        video_path = video_paths[i]
 
-    for l in np.unique(rois):
-        if ((not (min_area <= roi_areas[l-1] <= max_area)) or (not (min_circ <= roi_circs[l-1] <= max_circ)) or l <= 1) and l not in locked_rois:
-            mask = rois == l
-            
-            filtered_rois[mask] = 0
-            filtered_out_rois.append(l)
+        video = imread(video_path)
+        if len(video.shape) == 3:
+            # add a z dimension
+            video = video[:, np.newaxis, :, :]
+
+        if i == 0:
+            final_video = video.copy()
         else:
-            mask = rois == l
+            final_video = np.concatenate([final_video, video], axis=0)
 
-            correlation = np.mean(correlations[mask])
+    final_video_path = "video_concatenated.tif"
+    imsave(final_video_path, final_video)
 
-            if correlation < min_correlation:
-                filtered_rois[mask] = 0
-                filtered_out_rois.append(l)
+    roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = find_rois(final_video, final_video_path, params, masks=masks, background_mask=background_mask, mc_borders=mc_borders, progress_signal=progress_signal, thread=thread, use_multiprocessing=use_multiprocessing)
 
-    return filtered_rois, filtered_out_rois
+    # A = np.dot(roi_spatial_footprints[0].toarray(), roi_temporal_footprints[0]).reshape((final_video.shape[2], final_video.shape[3], final_video.shape[0])).transpose((2, 0, 1)).astype(np.uint16)
+    # imsave("A.tif", A)
+
+    os.remove(final_video_path)
+
+    return roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints
+
+def calculate_temporal_components(video_paths, roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints):
+    for i in range(len(video_paths)):
+        video_path = video_paths[i]
+
+        video = imread(video_path)
+        if len(video.shape) == 3:
+            # add a z dimension
+            video = video[:, np.newaxis, :, :]
+
+        if i == 0:
+            final_video = video.copy()
+        else:
+            final_video = np.concatenate([final_video, video], axis=0)
+
+    roi_temporal_footprints = [ None for i in range(final_video.shape[1]) ]
+    roi_temporal_residuals = [ None for i in range(final_video.shape[1]) ]
+    bg_temporal_footprints = [ None for i in range(final_video.shape[1]) ]
+
+    for z in range(final_video.shape[1]):
+        print(z)
+        final_video_path = "video_concatenated_z_{}.tif".format(z)
+        imsave(final_video_path, final_video[:, z, :, :])
+
+        fname_new = cm.save_memmap([final_video_path], base_name='memmap_', order='C') # exclude borders
+
+        # # now load the file
+        Yr, dims, T = cm.load_memmap(fname_new)
+        # d1, d2 = dims
+        # images = np.reshape(Yr.T, [T] + list(dims), order='F').transpose((1, 2, 0)).reshape((d1*d2, T))
+
+        images = final_video[:, z, :, :].transpose((1, 2, 0)).reshape((final_video.shape[2]*final_video.shape[3], final_video.shape[0]))
+
+        # print(images.shape)
+        # print(roi_spatial_footprints[z].shape)
+        # print(bg_spatial_footprints[z].shape)
+        Cin = np.zeros((roi_spatial_footprints[z].shape[1], final_video.shape[0]))
+        fin = np.zeros((bg_spatial_footprints[z].shape[1], final_video.shape[0]))
+
+        print(images.shape)
+
+        Yr, sn, g, psx = preprocess_data(Yr, dview=None)
+
+        roi_temporal_footprints[z], _, _, bg_temporal_footprints[z], _, _, _, _, _, roi_temporal_residuals[z], _ = update_temporal_components(images, roi_spatial_footprints[z], bg_spatial_footprints[z], Cin, fin, bl=None, c1=None, g=g, sn=sn, nb=2, ITER=2, block_size=5000, num_blocks_per_run=20, debug=False, dview=None, p=0, method='cvx')
+
+        # for i in range(10):
+        #     roi_temporal_footprints[z], _, _, bg_temporal_footprints[z], _, _, _, _, _, roi_temporal_residuals[z], _ = update_temporal_components(images, roi_spatial_footprints[z], bg_spatial_footprints[z], roi_temporal_footprints[z], bg_temporal_footprints[z], bl=None, c1=None, g=None, sn=None, nb=2, ITER=2000, block_size=5000, num_blocks_per_run=20, debug=False, dview=None, p=0)
+
+        # os.remove(final_video_path)
+
+        print(roi_temporal_footprints[z].shape)
+
+    return roi_temporal_footprints, roi_temporal_residuals, bg_temporal_footprints
+
+def do_cnmf(video, params, roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints, use_multiprocessing=True):
+    if use_multiprocessing:
+        if os.name == 'nt':
+            backend = 'multiprocessing'
+        else:
+            backend = 'ipyparallel'
+
+        cm.stop_server()
+        c, dview, n_processes = cm.cluster.setup_cluster(backend=backend, n_processes=None, single_thread=False)
+    else:
+        dview = None
+
+    video_path = "video_temp.tif"
+    imsave(video_path, video)
+
+    # dataset dependent parameters
+    fnames         = [video_path]          # filename to be processed
+    fr             = params['imaging_fps'] # imaging rate in frames per second
+    decay_time     = params['decay_time']  # length of a typical transient in seconds
+    
+    # parameters for source extraction and deconvolution
+    p              = params['autoregressive_order']             # order of the autoregressive system
+    gnb            = params['num_bg_components']                # number of global background components
+    merge_thresh   = params['merge_threshold']                  # merging threshold, max correlation allowed
+    rf             = None                                       # half-size of the patches in pixels. e.g., if rf=25, patches are 50x50
+    stride_cnmf    = 6                                          # amount of overlap between the patches in pixels
+    K              = roi_spatial_footprints.shape[1]                   # number of components per patch
+    gSig           = [params['half_size'], params['half_size']] # expected half size of neurons
+    init_method    = 'greedy_roi'                               # initialization method (if analyzing dendritic data using 'sparse_nmf')
+    rolling_sum    = True
+    rolling_length = 50
+    is_dendrites   = False                                      # flag for analyzing dendritic data
+    alpha_snmf     = None                                       # sparsity penalty for dendritic data analysis through sparse NMF
+
+    # parameters for component evaluation
+    min_SNR        = params['min_snr']          # signal to noise ratio for accepting a component
+    rval_thr       = params['min_spatial_corr'] # space correlation threshold for accepting a component
+    cnn_thr        = params['cnn_threshold']    # threshold for CNN based classifier
+
+    border_pix = 0
+
+    fname_new = cm.save_memmap(fnames, base_name='memmap_', order='C') # exclude borders
+
+    # now load the file
+    Yr, dims, T = cm.load_memmap(fname_new)
+    d1, d2 = dims
+    images = np.reshape(Yr.T, [T] + list(dims), order='F')
+
+
+    cnm = cnmf.CNMF(n_processes=8, k=K, gSig=gSig, merge_thresh= merge_thresh, 
+                    p = p,  dview=dview, rf=rf, stride=stride_cnmf, memory_fact=1,
+                    method_init=init_method, alpha_snmf=alpha_snmf, rolling_sum=rolling_sum,
+                    only_init_patch = True, skip_refinement=False, gnb = gnb, border_pix = border_pix, ssub=1, ssub_B=1, tsub=1, Ain=roi_spatial_footprints, Cin=roi_temporal_footprints, b_in=bg_spatial_footprints, f_in=bg_temporal_footprints, do_merge=False)
+
+    cnm = cnm.fit(images)
+
+    C, A, b, f, S, bl, c1, sn, g, YrA, lam = update_temporal_components(Yr, roi_spatial_footprints, bg_spatial_footprints, cnm.C, cnm.f, bl=None, c1=None, g=None, sn=None, nb=1, ITER=2, block_size=5000, num_blocks_per_run=20, debug=False, dview=None, p=0)
+
+    roi_spatial_footprints  = A
+    roi_temporal_footprints = C
+    roi_temporal_residuals  = YrA
+    bg_spatial_footprints   = b
+    bg_temporal_footprints  = f
+
+    # pdb.set_trace()
+
+    if use_multiprocessing:
+        dview.terminate()
+        cm.stop_server()
+
+    return roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints
+
+def find_rois(video, video_path, params, masks=None, background_mask=None, mc_borders=None, progress_signal=None, thread=None, use_multiprocessing=True):
+    full_video_path = video_path
+
+    directory = os.path.dirname(full_video_path)
+    filename  = os.path.basename(full_video_path)
+
+    roi_spatial_footprints  = [ None for i in range(video.shape[1]) ]
+    roi_temporal_footprints = [ None for i in range(video.shape[1]) ]
+    roi_temporal_residuals  = [ None for i in range(video.shape[1]) ]
+    bg_spatial_footprints   = [ None for i in range(video.shape[1]) ]
+    bg_temporal_footprints  = [ None for i in range(video.shape[1]) ]
+
+    if thread is not None and thread.running == False:
+        if use_multiprocessing:
+            cm.stop_server()
+        log_files = glob.glob('Yr*_LOG_*')
+        for log_file in log_files:
+            os.remove(log_file)
+
+        return roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints
+
+    # Create the cluster
+    if use_multiprocessing:
+        if os.name == 'nt':
+            backend = 'multiprocessing'
+        else:
+            backend = 'ipyparallel'
+
+        cm.stop_server()
+        c, dview, n_processes = cm.cluster.setup_cluster(backend=backend, n_processes=None, single_thread=False)
+    else:
+        dview = None
+
+    for z in range(video.shape[1]):
+        fname = os.path.splitext(filename)[0] + "_masked_z_{}.tif".format(z)
+
+        video_path = os.path.join(directory, fname)
+        imsave(video_path, video[:, z, :, :])
+
+        # dataset dependent parameters
+        fnames         = [video_path]          # filename to be processed
+        fr             = params['imaging_fps'] # imaging rate in frames per second
+        decay_time     = params['decay_time']  # length of a typical transient in seconds
+        
+        # parameters for source extraction and deconvolution
+        p              = params['autoregressive_order']             # order of the autoregressive system
+        gnb            = params['num_bg_components']                # number of global background components
+        merge_thresh   = params['merge_threshold']                  # merging threshold, max correlation allowed
+        rf             = None                                       # half-size of the patches in pixels. e.g., if rf=25, patches are 50x50
+        stride_cnmf    = 6                                          # amount of overlap between the patches in pixels
+        K              = params['num_components']                   # number of components per patch
+        gSig           = [params['half_size'], params['half_size']] # expected half size of neurons
+        init_method    = 'greedy_roi'                               # initialization method (if analyzing dendritic data using 'sparse_nmf')
+        rolling_sum    = True
+        rolling_length = 50
+        is_dendrites   = False                                      # flag for analyzing dendritic data
+        alpha_snmf     = None                                       # sparsity penalty for dendritic data analysis through sparse NMF
+
+        # parameters for component evaluation
+        min_SNR        = params['min_snr']          # signal to noise ratio for accepting a component
+        rval_thr       = params['min_spatial_corr'] # space correlation threshold for accepting a component
+        cnn_thr        = params['cnn_threshold']    # threshold for CNN based classifier
+
+        if mc_borders[z] is not None:
+            border_pix = mc_borders[z]
+        else:
+            border_pix = 0
+
+        fname_new = cm.save_memmap(fnames, base_name='memmap_', order='C') # exclude borders
+
+        # now load the file
+        Yr, dims, T = cm.load_memmap(fname_new)
+        d1, d2 = dims
+        images = np.reshape(Yr.T, [T] + list(dims), order='F')
+
+
+        cnm = cnmf.CNMF(n_processes=8, k=K, gSig=gSig, merge_thresh= merge_thresh, 
+                        p = p,  dview=dview, rf=rf, stride=stride_cnmf, memory_fact=1,
+                        method_init=init_method, alpha_snmf=alpha_snmf, rolling_sum=rolling_sum,
+                        only_init_patch = False, gnb = gnb, border_pix = border_pix, ssub=1, ssub_B=1, tsub=1)
+
+        cnm = cnm.fit(images)
+
+        if progress_signal:
+            # send an update signal to the GUI
+            percent_complete = int(100.0*float(z+0.5)/video.shape[1])
+            progress_signal.emit(percent_complete)
+
+        if thread is not None and thread.running == False:
+            if use_multiprocessing:
+                cm.stop_server()
+            log_files = glob.glob('Yr*_LOG_*')
+            for log_file in log_files:
+                os.remove(log_file)
+
+            roi_spatial_footprints  = [ None for i in range(video.shape[1]) ]
+            roi_temporal_footprints = [ None for i in range(video.shape[1]) ]
+            roi_temporal_residuals  = [ None for i in range(video.shape[1]) ]
+            bg_spatial_footprints   = [ None for i in range(video.shape[1]) ]
+            bg_temporal_footprints  = [ None for i in range(video.shape[1]) ]
+            return roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints
+
+        if progress_signal:
+            # send an update signal to the GUI
+            percent_complete = int(100.0*float(z+1)/video.shape[1])
+            progress_signal.emit(percent_complete)
+
+        roi_spatial_footprints[z]  = cnm.A
+        roi_temporal_footprints[z] = cnm.C
+        roi_temporal_residuals[z]  = cnm.YrA
+        bg_spatial_footprints[z]   = cnm.b
+        bg_temporal_footprints[z]  = cnm.f
+
+    if use_multiprocessing:
+        dview.terminate()
+        cm.stop_server()
+    log_files = glob.glob('Yr*_LOG_*')
+    for log_file in log_files:
+        os.remove(log_file)
+
+    return roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints
+
+def filter_rois(video, roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints, params):
+    # filtered_out_rois = [ None for i in range(video.shape[1]) ]
+
+    # pdb.set_trace()
+
+    # for z in range(video.shape[1]):
+    idx_components, idx_components_bad, SNR_comp, r_values, cnn_preds = \
+            estimate_components_quality_auto(video.transpose([1, 2, 0]), roi_spatial_footprints, roi_temporal_footprints, bg_spatial_footprints, bg_temporal_footprints, 
+                                             roi_temporal_residuals, params['imaging_fps'], params['decay_time'], params['half_size'], (video.shape[-2], video.shape[-1]), 
+                                             dview = None, min_SNR=params['min_snr'], 
+                                             r_values_min = params['min_spatial_corr'], use_cnn = params['use_cnn'], 
+                                             thresh_cnn_lowest = params['cnn_threshold'], gSig_range=[ (i, i) for i in range(max(1, params['half_size']-5), params['half_size']+5) ])
+
+    filtered_out_rois = list(idx_components_bad)
+
+    for i in range(roi_spatial_footprints.shape[-1]):
+        area = np.sum(roi_spatial_footprints[:, i] > 0)
+        if (area < params['min_area'] or area > params['max_area']) and i not in filtered_out_rois:
+            filtered_out_rois.append(i)
+
+    return filtered_out_rois
+
+def find_rois_refine(video, video_path, params, masks=None, background_mask=None, mc_borders=None, roi_spatial_footprints=None, roi_temporal_footprints=None, roi_temporal_residuals=None, bg_spatial_footprints=None, bg_temporal_footprints=None, progress_signal=None, thread=None):
+    full_video_path = video_path
+
+    directory = os.path.dirname(full_video_path)
+    filename  = os.path.basename(full_video_path)
+
+    roi_spatial_footprints  = [ None for i in range(video.shape[1]) ]
+    roi_temporal_footprints = [ None for i in range(video.shape[1]) ]
+    roi_temporal_residuals  = [ None for i in range(video.shape[1]) ]
+    bg_spatial_footprints   = [ None for i in range(video.shape[1]) ]
+    bg_temporal_footprints  = [ None for i in range(video.shape[1]) ]
+
+    try:
+        if thread is not None and thread.running == False:
+            # cm.stop_server()
+            log_files = glob.glob('Yr*_LOG_*')
+            for log_file in log_files:
+                os.remove(log_file)
+
+            return roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints
+
+        # Create the cluster
+        # cm.stop_server()
+        # c, dview, n_processes = cm.cluster.setup_cluster(backend='multiprocessing', n_processes=8, single_thread=False)
+
+        for z in range(video.shape[1]):
+            # if masks is not None and len(masks) > 0 and masks[0] is not None:
+            #     masks = np.array(masks[z])
+            #     if params["invert_masks"]:
+            #         mask = np.prod(masks, axis=0).astype(bool)
+            #     else:
+            #         mask = np.sum(masks, axis=0).astype(bool)
+
+            #     if background_mask is not None:
+            #         final_mask = (background_mask + mask).astype(bool)
+            #     else:
+            #         final_mask = mask.astype(bool)
+            # elif background_mask is not None:
+            #     final_mask = background_mask.astype(bool)
+            # else:
+            #     final_mask = None
+
+            # if final_mask is not None:
+            #     video[:, z, final_mask] = 0
+
+            fname = os.path.splitext(filename)[0] + "_masked_z_{}.tif".format(z)
+
+            video_path = os.path.join(directory, fname)
+            imsave(video_path, video[:, z, :, :])
+
+            # dataset dependent parameters
+            fnames         = [video_path]          # filename to be processed
+            fr             = params['imaging_fps'] # imaging rate in frames per second
+            decay_time     = params['decay_time']  # length of a typical transient in seconds
+            
+            # parameters for source extraction and deconvolution
+            p              = params['autoregressive_order']             # order of the autoregressive system
+            gnb            = params['num_bg_components']                # number of global background components
+            merge_thresh   = params['merge_threshold']                  # merging threshold, max correlation allowed
+            rf             = None                                       # half-size of the patches in pixels. e.g., if rf=25, patches are 50x50
+            stride_cnmf    = 6                                          # amount of overlap between the patches in pixels
+            K              = params['num_components']                   # number of components per patch
+            gSig           = [params['half_size'], params['half_size']] # expected half size of neurons
+            init_method    = 'greedy_roi'                               # initialization method (if analyzing dendritic data using 'sparse_nmf')
+            rolling_sum    = True
+            rolling_length = 50
+            is_dendrites   = False                                      # flag for analyzing dendritic data
+            alpha_snmf     = None                                       # sparsity penalty for dendritic data analysis through sparse NMF
+
+            # parameters for component evaluation
+            min_SNR        = params['min_snr']          # signal to noise ratio for accepting a component
+            rval_thr       = params['min_spatial_corr'] # space correlation threshold for accepting a component
+            cnn_thr        = params['cnn_threshold']    # threshold for CNN based classifier
+
+            if mc_borders[z] is not None:
+                border_pix = mc_borders[z]
+            else:
+                border_pix = 0
+
+            fname_new = cm.save_memmap(fnames, base_name='memmap_', order='C') # exclude borders
+
+            # now load the file
+            Yr, dims, T = cm.load_memmap(fname_new)
+            d1, d2 = dims
+            images = np.reshape(Yr.T, [T] + list(dims), order='F')
+
+            A_in, C_in, b_in, f_in = roi_spatial_footprints[z][:,idx_components], roi_temporal_footprints[z][idx_components], bg_spatial_footprints[z], bg_temporal_footprints[z]
+            cnm = cnmf.CNMF(n_processes=8, k=A_in.shape[-1], gSig=gSig, p=p, dview=None,
+                            merge_thresh=merge_thresh,  Ain=A_in, Cin=C_in, b_in = b_in,
+                            f_in=f_in, rf = None, stride = None, gnb = gnb, 
+                            method_deconvolution='oasis', check_nan = True)
+
+            cnm = cnm.fit(images)
+
+            if progress_signal:
+                # send an update signal to the GUI
+                percent_complete = int(100.0*float(z+0.5)/video.shape[1])
+                progress_signal.emit(percent_complete)
+
+            if thread is not None and thread.running == False:
+                # cm.stop_server()
+                log_files = glob.glob('Yr*_LOG_*')
+                for log_file in log_files:
+                    os.remove(log_file)
+
+                roi_spatial_footprints  = [ None for i in range(video.shape[1]) ]
+                roi_temporal_footprints = [ None for i in range(video.shape[1]) ]
+                bg_spatial_footprints   = [ None for i in range(video.shape[1]) ]
+                bg_temporal_footprints  = [ None for i in range(video.shape[1]) ]
+                return roi_spatial_footprints, roi_temporal_footprints, bg_spatial_footprints, bg_temporal_footprints
+                
+            if progress_signal:
+                # send an update signal to the GUI
+                percent_complete = int(100.0*float(z+1)/video.shape[1])
+                progress_signal.emit(percent_complete)
+
+            roi_spatial_footprints[z]  = cnm.A
+            roi_temporal_footprints[z] = cnm.C
+            roi_temporal_residuals[z]  = cnm.YrA
+            bg_spatial_footprints[z]   = cnm.b
+            bg_temporal_footprints[z]  = cnm.f
+
+        cm.stop_server()
+        log_files = glob.glob('Yr*_LOG_*')
+        for log_file in log_files:
+            os.remove(log_file)
+    except:
+        log_files = glob.glob('Yr*_LOG_*')
+        for log_file in log_files:
+            os.remove(log_file)
+
+    return roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints
+
+# def filter_rois(image, rois, min_area, max_area, min_circ, max_circ, roi_areas, roi_circs, locked_rois=[]):
+#     filtered_rois = rois.copy()
+#     filtered_out_rois = []
+
+#     for l in np.unique(rois):
+#         if ((not (min_area <= roi_areas[l-1] <= max_area)) or (not (min_circ <= roi_circs[l-1] <= max_circ)) or l <= 1) and l not in locked_rois:
+#             mask = rois == l
+            
+#             filtered_rois[mask] = 0
+#             filtered_out_rois.append(l)
+
+#     return filtered_rois, filtered_out_rois
 
 def remove_rois(rois, rois_to_remove):
     if rois_to_remove is not None:
@@ -634,20 +1033,47 @@ def remove_rois(rois, rois_to_remove):
     else:
         return rois
 
-def get_roi_containing_point(rois, roi_point):
-    roi = rois[roi_point[1], roi_point[0]]
+def get_roi_containing_point(rois, manual_rois, roi_point, video_shape):
+    flattened_point = roi_point[0]*video_shape[0] + roi_point[1]
 
-    if roi < 1:
-        return None
+    try:
+        rois = rois.toarray()
+    except:
+        pass
+    # if isinstance(rois, scipy.sparse.coo_matrix)
 
-    return roi
+    if rois is not None:
+        roi = np.argmax(rois[flattened_point, :])
+        
+        if rois[flattened_point, roi] != 0:
+            return False, roi
 
-def get_rois_near_point(rois, roi_point, radius):
-    mask = np.zeros(rois.shape)
+    if manual_rois is not None:
+        roi = np.argmax(manual_rois[flattened_point, :])
+
+        if manual_rois[flattened_point, roi] != 0:
+            return True, roi
+
+    return False, None
+
+
+    # roi = rois[roi_point[1], roi_point[0]]
+
+    # if roi < 1:
+    #     return None
+
+def get_rois_near_point(rois, roi_point, radius, video_shape):
+    # pdb.set_trace()
+
+    mask = np.zeros(video_shape)
 
     cv2.circle(mask, roi_point, radius, 1, -1)
 
-    rois = np.unique(rois[mask == 1]).tolist()
+    rois_2d = rois.toarray().reshape((video_shape[0], video_shape[1], rois.shape[-1]))
+
+    rois = np.nonzero(np.sum(rois_2d*mask[:, :, np.newaxis], axis=(0, 1)))[0].tolist()
+
+    # rois = np.unique(rois[mask == 1]).tolist()
 
     return rois
 
@@ -662,14 +1088,17 @@ def get_mask_containing_point(masks, mask_point, inverted=False):
                 return mask, i
     return None, -1
 
-def calc_activity_of_roi(rois, video, roi, z=0):
-    mask = np.zeros(video.shape, dtype=bool)
-    mask[:, :, :] = rois[:, :, np.newaxis] == roi
+def calc_activity_of_roi(mask, video, z):
+    time_mask = np.repeat(mask[np.newaxis, :, :], video.shape[0], axis=0)
+
+    # pdb.set_trace()
 
     # print(mask.shape, vid.shape, vid[mask].shape)
     # print(np.mean(np.multiply(video[0, z, :, :], rois == roi)))
     # print(np.nanmax(np.where(mask, video, np.nan), axis=(0, 1)))
-    return np.nanmean(np.where(mask, video, np.nan), axis=(0, 1))
+    return np.nanmean(np.where(time_mask, video[:, z, :, :], np.nan), axis=(1, 2))
+
+    # return rois[roi]
 
 def add_roi_to_overlay(overlay, roi_mask, rois):
     l = np.amax(rois[roi_mask > 0])

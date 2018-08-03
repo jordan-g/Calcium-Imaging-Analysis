@@ -1,5 +1,7 @@
 import sys
 from controller import Controller
+from gui_controller import GUIController
+from plot_window import Window
 
 # import the Qt library
 try:
@@ -17,5 +19,7 @@ if __name__ == "__main__":
     if pyqt_version == 5:
         app.setAttribute(Qt.AA_UseHighDpiPixmaps)
     controller = Controller()
-    controller.select_videos_to_import()
+    gui_controller = GUIController(controller)
+    gui_controller.import_videos()
+
     app.exec_()
