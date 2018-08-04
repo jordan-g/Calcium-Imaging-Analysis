@@ -1,7 +1,6 @@
 import sys
 from controller import Controller
 from gui_controller import GUIController
-from plot_window import Window
 
 # import the Qt library
 try:
