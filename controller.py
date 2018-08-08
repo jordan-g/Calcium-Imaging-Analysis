@@ -238,7 +238,8 @@ class Controller():
         # self.reset_motion_correction_variables()
         # self.reset_roi_finding_variables(reset_rois=reset_rois)
         # self.reset_roi_filtering_variables(reset_rois=reset_rois)
-        self.mc_borders = [ None for i in range(self.video.shape[1]) ]
+        if self.mc_borders is None:
+            self.mc_borders = [ None for i in range(self.video.shape[1]) ]
 
         return True
 

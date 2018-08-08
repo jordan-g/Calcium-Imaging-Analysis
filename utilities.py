@@ -205,7 +205,7 @@ def motion_correct_multiple_videos(video_paths, max_shift, patch_stride, patch_o
         else:
             mc_videos.append(mc_video[np.sum(video_lengths[:i]):np.sum(video_lengths[:i]) + video_lengths[i]])
 
-    os.remove(final_video_path)
+    # os.remove(final_video_path)
 
     # print([ video.shape for video in mc_videos ])
             
@@ -388,7 +388,13 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
     check_if_cancelled()
 
     if use_multiprocessing:
-        dview.terminate()
+        if backend == 'multiprocessing':
+            dview.close()
+        else:
+            try:
+                dview.terminate()
+            except:
+                dview.shutdown()
         cm.stop_server()
 
     log_files = glob.glob('Yr*_LOG_*')
@@ -842,7 +848,13 @@ def find_rois(video, video_path, params, masks=None, background_mask=None, mc_bo
         bg_temporal_footprints[z]  = cnm.f
 
     if use_multiprocessing:
-        dview.terminate()
+        if backend == 'multiprocessing':
+            dview.close()
+        else:
+            try:
+                dview.terminate()
+            except:
+                dview.shutdown()
         cm.stop_server()
     log_files = glob.glob('Yr*_LOG_*')
     for log_file in log_files:

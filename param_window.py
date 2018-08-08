@@ -75,7 +75,7 @@ class ParamWindow(QMainWindow):
         self.tab_widget.addTab(self.loading_widget, "1. Video Selection")
         self.tab_widget.addTab(self.motion_correction_widget, "2. Motion Correction")
         self.tab_widget.addTab(self.roi_finding_widget, "3. ROI Finding")
-        self.tab_widget.addTab(self.roi_filtering_widget, "4. Refinement")
+        self.tab_widget.addTab(self.roi_filtering_widget, "4. Refinement && Saving")
         # self.tab_widget.setTabEnabled(1, False)
         self.tab_widget.currentChanged.connect(self.tab_selected)
 
@@ -328,7 +328,6 @@ class LoadingWidget(QWidget):
             self.parent_widget.remove_videos_action.setEnabled(False)
             index = None
 
-
 class ParamWidget(QWidget):
     def __init__(self, parent_widget, controller, title, stylesheet=TITLE_STYLESHEET):
         QWidget.__init__(self)
@@ -524,7 +523,7 @@ class MotionCorrectionWidget(ParamWidget):
         self.button_widget_2 = QWidget(self)
         self.button_layout_2 = QHBoxLayout(self.button_widget_2)
         self.button_layout_2.setContentsMargins(5, 5, 5, 5)
-        self.button_layout_2.setSpacing(5)
+        self.button_layout_2.setSpacing(10)
         self.main_layout.addWidget(self.button_widget_2)
 
         self.use_multiprocessing_checkbox = HoverCheckBox("Use multiprocessing", None, self.parent_widget.statusBar())
@@ -925,6 +924,14 @@ class ROIFilteringWidget(ParamWidget):
         self.filter_rois_button.setStyleSheet('font-weight: bold;')
         self.filter_rois_button.clicked.connect(lambda:self.controller.filter_rois(self.controller.z))
         self.button_layout.addWidget(self.filter_rois_button)
+
+        self.process_videos_button = HoverButton('Save Traces...', None, self.parent_widget.statusBar())
+        self.process_videos_button.setHoverMessage("Save traces, ROI centroids and other ROI data.")
+        self.process_videos_button.setIcon(QIcon("icons/save_icon.png"))
+        self.process_videos_button.setIconSize(QSize(16,16))
+        self.process_videos_button.setStyleSheet('font-weight: bold;')
+        self.process_videos_button.clicked.connect(self.controller.process_all_videos)
+        self.button_layout.addWidget(self.process_videos_button)
 
     def roi_erasing_started(self):
         self.filter_rois_button.setEnabled(False)
