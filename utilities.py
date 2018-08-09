@@ -674,6 +674,9 @@ def do_cnmf(video, params, roi_spatial_footprints, roi_temporal_footprints, roi_
     else:
         dview = None
 
+    print("~")
+    print(roi_spatial_footprints.shape)
+
     video_path = "video_temp.tif"
     imsave(video_path, video)
 
@@ -718,7 +721,7 @@ def do_cnmf(video, params, roi_spatial_footprints, roi_temporal_footprints, roi_
 
     cnm = cnm.fit(images)
 
-    C, A, b, f, S, bl, c1, sn, g, YrA, lam = update_temporal_components(Yr, roi_spatial_footprints, bg_spatial_footprints, cnm.C, cnm.f, bl=None, c1=None, g=None, sn=None, nb=1, ITER=2, block_size=5000, num_blocks_per_run=20, debug=False, dview=None, p=0)
+    C, A, b, f, S, bl, c1, sn, g, YrA, lam = update_temporal_components(Yr, cnm.A, cnm.b, cnm.C, cnm.f, bl=None, c1=None, g=None, sn=None, nb=1, ITER=2, block_size=5000, num_blocks_per_run=20, debug=False, dview=dview, p=0)
 
     roi_spatial_footprints  = A
     roi_temporal_footprints = C
@@ -729,7 +732,13 @@ def do_cnmf(video, params, roi_spatial_footprints, roi_temporal_footprints, roi_
     # pdb.set_trace()
 
     if use_multiprocessing:
-        dview.terminate()
+        if backend == 'multiprocessing':
+            dview.close()
+        else:
+            try:
+                dview.terminate()
+            except:
+                dview.shutdown()
         cm.stop_server()
 
     return roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints
@@ -1081,11 +1090,15 @@ def get_rois_near_point(rois, roi_point, radius, video_shape):
 
     cv2.circle(mask, roi_point, radius, 1, -1)
 
-    rois_2d = rois.toarray().reshape((video_shape[0], video_shape[1], rois.shape[-1]))
+    # rois_2d = rois.toarray().reshape((video_shape[0], video_shape[1], rois.shape[-1]))
 
-    rois = np.nonzero(np.sum(rois_2d*mask[:, :, np.newaxis], axis=(0, 1)))[0].tolist()
+    rois_flat = np.argmax(rois.toarray(), axis=-1).reshape(video_shape)
 
-    # rois = np.unique(rois[mask == 1]).tolist()
+    # rois = np.nonzero(np.sum(rois_2d*mask[:, :, np.newaxis], axis=(0, 1)))[0].tolist()
+
+    rois = np.unique(rois_flat[mask == 1]).tolist()
+
+    # print(rois)
 
     return rois
 

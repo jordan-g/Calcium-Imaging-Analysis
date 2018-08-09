@@ -463,16 +463,24 @@ class Controller():
         self.rois[z] = np.roll(self.rois[z], y_shift, axis=0)
         self.rois[z] = np.roll(self.rois[z], x_shift, axis=1)
 
-    def erase_rois_near_point(self, roi_point, z, radius=10): # TODO: Update this
-        # find out which ROIs to erase
-        rois_to_erase = utilities.get_rois_near_point(self.roi_spatial_footprints[z], roi_point, radius, self.video.shape[2:])
+    def select_rois_near_point(self, roi_point, z, radius=10): # TODO: Update this
+        # find out which ROIs to select
+        # rois_to_select = utilities.get_rois_near_point(self.roi_spatial_footprints[z], roi_point, radius, self.video.shape[2:])
 
-        return rois_to_erase
+        _, selected_roi = utilities.get_roi_containing_point(self.roi_spatial_footprints[z], None, roi_point, self.video.shape[2:])
+
+        rois_to_select = []
+        if selected_roi is not None:
+            rois_to_select.append(selected_roi)
+
+        # print(rois_to_select)
+
+        return rois_to_select
 
     def erase_roi(self, label, z): # TODO: call roi_unselected() method of the param window
         # update ROI filtering variables
         self.erased_rois[z].append(label)
-        self.last_erased_rois[z].append([label])
+        # self.last_erased_rois[z].append([label])
         self.removed_rois[z] = self.filtered_out_rois[z] + self.erased_rois[z]
 
         if label in self.locked_rois[z]:

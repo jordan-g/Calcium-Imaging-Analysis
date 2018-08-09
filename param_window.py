@@ -152,6 +152,24 @@ class ParamWindow(QMainWindow):
         self.save_rois_action.setEnabled(False)
         # self.save_rois_action.setShortcutContext(Qt.ApplicationShortcut)
 
+        self.erase_rois_action = QAction('Erase Selected ROIs', self)
+        self.erase_rois_action.setShortcut('Delete')
+        self.erase_rois_action.setStatusTip('Erase the selected ROIs.')
+        self.erase_rois_action.triggered.connect(self.controller.erase_selected_rois)
+        self.erase_rois_action.setEnabled(False)
+
+        self.merge_rois_action = QAction('Merge Selected ROIs', self)
+        self.merge_rois_action.setShortcut('M')
+        self.merge_rois_action.setStatusTip('Merge the selected ROIs.')
+        self.merge_rois_action.triggered.connect(self.controller.merge_selected_rois)
+        self.merge_rois_action.setEnabled(False)
+
+        self.trace_rois_action = QAction('Plot Traces', self)
+        self.trace_rois_action.setShortcut('T')
+        self.trace_rois_action.setStatusTip('Plot traces for the selected ROIs.')
+        self.trace_rois_action.triggered.connect(self.controller.update_trace_plot)
+        self.trace_rois_action.setEnabled(False)
+
         # self.save_roi_image_action = QAction('Save ROI Image...', self)
         # self.save_roi_image_action.setShortcut('Ctrl+Alt+S')
         # self.save_roi_image_action.setStatusTip('Save an image of the current ROIs.')
@@ -175,6 +193,9 @@ class ParamWindow(QMainWindow):
         rois_menu = menubar.addMenu('&ROIs')
         rois_menu.addAction(self.load_rois_action)
         rois_menu.addAction(self.save_rois_action)
+        rois_menu.addAction(self.erase_rois_action)
+        rois_menu.addAction(self.merge_rois_action)
+        rois_menu.addAction(self.trace_rois_action)
 
     def video_opened(self, max_z, z):
         # self.stacked_widget.setDisabled(False)
@@ -633,7 +654,7 @@ class ROIFindingWidget(ParamWidget):
         self.videos_list_layout.addWidget(self.videos_list)
 
         self.add_param_slider(label_name="Autoregressive Model Order", name="autoregressive_order", minimum=0, maximum=2, moved=self.update_param, num=0, multiplier=1, pressed=self.update_param, released=self.update_param, description="Order of the autoregressive model (0, 1 or 2).", int_values=True)
-        self.add_param_slider(label_name="Background Components", name="num_bg_components", minimum=1, maximum=10, moved=self.update_param, num=1, multiplier=1, pressed=self.update_param, released=self.update_param, description="Number of background components.", int_values=True)
+        self.add_param_slider(label_name="Background Components", name="num_bg_components", minimum=1, maximum=100, moved=self.update_param, num=1, multiplier=1, pressed=self.update_param, released=self.update_param, description="Number of background components.", int_values=True)
         self.add_param_slider(label_name="Merge Threshold", name="merge_threshold", minimum=1, maximum=200, moved=self.update_param, num=2, multiplier=200, pressed=self.update_param, released=self.update_param, description="Merging threshold (maximum correlation allowed before merging two components).", int_values=False)
         self.add_param_slider(label_name="Components", name="num_components", minimum=1, maximum=2000, moved=self.update_param, num=3, multiplier=1, pressed=self.update_param, released=self.update_param, description="Number of components to start with.", int_values=True)
         self.add_param_slider(label_name="Neuron Half-Size", name="half_size", minimum=1, maximum=50, moved=self.update_param, num=4, multiplier=1, pressed=self.update_param, released=self.update_param, description="Expected half-size of neurons (pixels).", int_values=True)
@@ -819,8 +840,8 @@ class ROIFilteringWidget(ParamWidget):
 
         self.roi_button_layout.addStretch()
 
-        # self.erase_rois_button = HoverButton('Eraser', None, self.parent_widget.statusBar())
-        # self.erase_rois_button.setHoverMessage("Manually remove ROIs using an eraser tool.")
+        # self.erase_rois_button = HoverButton('Select...', None, self.parent_widget.statusBar())
+        # self.erase_rois_button.setHoverMessage("Select ROIs by dragging the mouse.")
         # self.erase_rois_button.setIcon(QIcon("icons/eraser_icon.png"))
         # self.erase_rois_button.setIconSize(QSize(16, 16))
         # self.erase_rois_button.clicked.connect(self.controller.erase_rois)
@@ -856,7 +877,7 @@ class ROIFilteringWidget(ParamWidget):
         self.roi_button_layout_2.setSpacing(5)
         self.main_layout.addWidget(self.roi_button_widget_2)
 
-        label = QLabel("Selected ROI")
+        label = QLabel("Selected ROIs")
         label.setStyleSheet(SUBTITLE_STYLESHEET)
         self.roi_button_layout_2.addWidget(label)
 
@@ -870,6 +891,14 @@ class ROIFilteringWidget(ParamWidget):
         self.erase_selected_roi_button.setEnabled(False)
         self.roi_button_layout_2.addWidget(self.erase_selected_roi_button)
 
+        self.unerase_selected_roi_button = HoverButton('Restore', None, self.parent_widget.statusBar())
+        self.unerase_selected_roi_button.setHoverMessage("Un-erase the selected ROI.")
+        # self.unerase_selected_roi_button.setIcon(QIcon("icons/trash_icon.png"))
+        self.unerase_selected_roi_button.setIconSize(QSize(16, 16))
+        self.unerase_selected_roi_button.clicked.connect(self.controller.unerase_selected_rois)
+        self.unerase_selected_roi_button.setEnabled(False)
+        self.roi_button_layout_2.addWidget(self.unerase_selected_roi_button)
+
         # self.lock_roi_button = HoverButton('Lock', None, self.parent_widget.statusBar())
         # self.lock_roi_button.setHoverMessage("Lock the currently selected ROI. This prevents it from being filtered out or erased.")
         # self.lock_roi_button.setIcon(QIcon("icons/lock_icon.png"))
@@ -881,11 +910,19 @@ class ROIFilteringWidget(ParamWidget):
 
         self.merge_rois_button = HoverButton('Merge', None, self.parent_widget.statusBar())
         self.merge_rois_button.setHoverMessage("Merge the selected ROIs.")
-        self.merge_rois_button.setIcon(QIcon("icons/draw_icon.png"))
+        # self.merge_rois_button.setIcon(QIcon("icons/draw_icon.png"))
         self.merge_rois_button.setIconSize(QSize(16, 16))
         self.merge_rois_button.clicked.connect(self.controller.merge_selected_rois)
-        self.roi_button_layout.addWidget(self.merge_rois_button)
+        self.roi_button_layout_2.addWidget(self.merge_rois_button)
         self.merge_rois_button.setEnabled(False)
+
+        self.plot_traces_button = HoverButton('Plot Traces', None, self.parent_widget.statusBar())
+        self.plot_traces_button.setHoverMessage("Plot traces of the selected ROIs.")
+        # self.plot_traces_button.setIcon(QIcon("icons/draw_icon.png"))
+        self.plot_traces_button.setIconSize(QSize(16, 16))
+        self.plot_traces_button.clicked.connect(self.controller.plot_traces)
+        self.roi_button_layout_2.addWidget(self.plot_traces_button)
+        self.plot_traces_button.setEnabled(False)
 
         # self.main_layout.addWidget(HLine())
 
@@ -935,27 +972,42 @@ class ROIFilteringWidget(ParamWidget):
 
     def roi_erasing_started(self):
         self.filter_rois_button.setEnabled(False)
-        self.find_rois_button.setEnabled(False)
-        self.motion_correct_button.setEnabled(False)
-        self.enlarge_roi_button.setEnabled(False)
-        self.shrink_roi_button.setEnabled(False)
-        self.lock_roi_button.setEnabled(False)
+        # self.find_rois_button.setEnabled(False)
+        # self.motion_correct_button.setEnabled(False)
+        # self.enlarge_roi_button.setEnabled(False)
+        # self.shrink_roi_button.setEnabled(False)
+        # self.lock_roi_button.setEnabled(False)
+        # self.erase_rois_button.setEnabled(False)
         self.erase_selected_roi_button.setEnabled(False)
-        self.reset_button.setEnabled(False)
-        self.undo_button.setEnabled(False)
+        self.merge_rois_button.setEnabled(False)
+        self.process_videos_button.setEnabled(False)
+        # self.reset_button.setEnabled(False)
+        # self.undo_button.setEnabled(False)
         self.param_widget.setEnabled(False)
-        self.draw_rois_button.setEnabled(False)
-        self.erase_rois_button.setText("Finished")
+        # self.draw_rois_button.setEnabled(False)
+        # self.erase_rois_button.setText("Finished")
+        self.parent_widget.tab_widget.setTabEnabled(0, False)
+        self.parent_widget.tab_widget.setTabEnabled(1, False)
+        self.parent_widget.tab_widget.setTabEnabled(2, False)
+        # self.parent_widget.tab_widget.setTabEnabled(3, False)
 
     def roi_erasing_ended(self):
         self.filter_rois_button.setEnabled(True)
-        self.find_rois_button.setEnabled(True)
-        self.motion_correct_button.setEnabled(True)
-        self.reset_button.setEnabled(True)
-        self.undo_button.setEnabled(True)
+        # self.find_rois_button.setEnabled(True)
+        # self.motion_correct_button.setEnabled(True)
+        # self.erase_selected_roi_button.setEnabled(True)
+        # self.merge_rois_button.setEnabled(True)
+        # self.erase_rois_button.setEnabled(True)
+        self.process_videos_button.setEnabled(True)
+        # self.reset_button.setEnabled(True)
+        # self.undo_button.setEnabled(True)
         self.param_widget.setEnabled(True)
-        self.draw_rois_button.setEnabled(True)
-        self.erase_rois_button.setText("Erase ROIs")
+        # self.draw_rois_button.setEnabled(True)
+        # self.erase_rois_button.setText("Select...")
+        self.parent_widget.tab_widget.setTabEnabled(0, True)
+        self.parent_widget.tab_widget.setTabEnabled(1, True)
+        self.parent_widget.tab_widget.setTabEnabled(2, True)
+        # self.parent_widget.tab_widget.setTabEnabled(3, True)
 
     def roi_drawing_started(self):
         self.filter_rois_button.setEnabled(False)
@@ -968,7 +1020,7 @@ class ROIFilteringWidget(ParamWidget):
         self.reset_button.setEnabled(False)
         self.undo_button.setEnabled(False)
         self.param_widget.setEnabled(False)
-        self.erase_rois_button.setEnabled(False)
+        # self.erase_rois_button.setEnabled(False)
         self.draw_rois_button.setText("Finished")
 
     def roi_drawing_ended(self):
@@ -980,7 +1032,7 @@ class ROIFilteringWidget(ParamWidget):
         self.reset_button.setEnabled(True)
         self.undo_button.setEnabled(True)
         self.param_widget.setEnabled(True)
-        self.erase_rois_button.setEnabled(True)
+        # self.erase_rois_button.setEnabled(True)
         self.draw_rois_button.setText("Draw")
 
     def toggle_use_cnn(self, boolean):
