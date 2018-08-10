@@ -327,6 +327,14 @@ class Controller():
             self.video         = None
             self.mean_images   = None
             self.find_new_rois = True
+            self.masks                   = None
+            self.mask_points             = None
+            self.roi_spatial_footprints  = None
+            self.roi_temporal_footprints = None
+            self.roi_temporal_residuals  = None
+            self.bg_spatial_footprints   = None
+            self.bg_temporal_footprints  = None
+            self.filtered_out_rois       = None
         elif 0 in indices:
             # the first video was removed; open the next one for previewing
             self.open_video(self.video_paths[0])
@@ -394,16 +402,18 @@ class Controller():
             for j in range(len(self.masks[i])):
                 self.masks[i][j] = self.masks[i][j] == False
 
-    def filter_rois(self, z): # TODO: Update this
+    def filter_rois(self): # TODO: Update this
         if self.use_mc_video and self.mc_video is not None:
-            video = self.mc_video
+            video_paths = self.mc_video_paths
         else:
-            video = self.video
+            video_paths = self.video_paths
 
         # filter out ROIs and update the removed ROIs
-        self.filtered_out_rois[z] = utilities.filter_rois(video[:, z, :, :], self.roi_spatial_footprints[z], self.roi_temporal_footprints[z], self.roi_temporal_residuals[z], self.bg_spatial_footprints[z], self.bg_temporal_footprints[z], self.params)
+        self.filtered_out_rois = utilities.filter_rois(video_paths, self.roi_spatial_footprints, self.roi_temporal_footprints, self.roi_temporal_residuals, self.bg_spatial_footprints, self.bg_temporal_footprints, self.params)
         
-        self.removed_rois[z] = self.filtered_out_rois[z] + self.erased_rois[z]
+        print(self.filtered_out_rois)
+        for z in range(self.video.shape[1]):
+            self.removed_rois[z] = self.filtered_out_rois[z] + self.erased_rois[z]
 
     def create_roi(self, start_point, end_point, z): # TODO: Update this
         # find the center of the ROI
@@ -486,6 +496,14 @@ class Controller():
         if label in self.locked_rois[z]:
             index = self.locked_rois[z].index(label)
             del self.locked_rois[z][index]
+
+    def unerase_roi(self, label, z): # TODO: call roi_unselected() method of the param window
+        # update ROI filtering variables
+        if label in self.erased_rois[z]:
+            i = self.erased_rois[z].index(label)
+            del self.erased_rois[z][i]
+
+        self.removed_rois[z] = self.filtered_out_rois[z] + self.erased_rois[z]
 
     def save_params(self):
         json.dump(self.params, open(PARAMS_FILENAME, "w"))

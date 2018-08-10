@@ -7,6 +7,7 @@ import utilities
 import time
 import json
 import os
+import glob
 import sys
 import scipy.ndimage as ndi
 import scipy.signal
@@ -91,6 +92,18 @@ class GUIController():
         # set the current z plane to 0
         self.z = 0
 
+        mmap_files = glob.glob('*.mmap')
+        for mmap_file in mmap_files:
+            os.remove(mmap_file)
+
+        mmap_files = glob.glob('memmap_*')
+        for mmap_file in mmap_files:
+            os.remove(mmap_file)
+
+        mmap_files = glob.glob('*_temp.tif')
+        for mmap_file in mmap_files:
+            os.remove(mmap_file)
+
     def import_videos(self):
         if self.controller.mc_video is not None or (self.controller.roi_spatial_footprints is not None and self.controller.roi_spatial_footprints[0] is not None):
             msg = QMessageBox()
@@ -167,7 +180,13 @@ class GUIController():
                 # calculate ROI finding variables
                 self.image = utilities.calculate_adjusted_image(self.controller.mean_images[self.z], self.controller.params['contrast'], self.controller.params['gamma'])
                 
-                self.show_roi_image(show=self.roi_finding_param_widget.show_rois_checkbox.isChecked())
+                # self.selected_rois = []
+                self.show_roi_image(show=self.roi_finding_param_widget.show_rois_checkbox.isChecked(), force_update=True)
+                
+                # self.preview_window.image_plot.deselect_rois()
+                # self.preview_window.image_plot.erase_rois(self.controller.removed_rois[self.z])
+                if self.mode == "roi_filtering":
+                    self.update_trace_plot()
 
     def show_video(self, video, video_path):
         # calculate gamma- and contrast-adjusted video
@@ -230,21 +249,51 @@ class GUIController():
             self.param_window.update_process_videos_progress(-1)
 
             # self.show_roi_image(show=self.roi_finding_param_widget.show_rois_checkbox.isChecked())
+            self.show_rois = True
+            self.roi_finding_param_widget.show_rois_checkbox.setChecked(True)
 
-            # for z in range(self.controller.video.shape[1]):
-            #     roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = utilities.do_cnmf(self.controller.video[:, z, :, :], self.controller.params, self.controller.roi_spatial_footprints[z], np.ones(self.controller.roi_temporal_footprints[z].shape), np.ones(self.controller.roi_temporal_residuals[z].shape), self.controller.bg_spatial_footprints[z], np.ones(self.controller.bg_temporal_footprints[z].shape), use_multiprocessing=self.controller.use_multiprocessing)
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Warning)
 
-            #     self.controller.roi_spatial_footprints[z]  = roi_spatial_footprints
-            #     self.controller.roi_temporal_footprints[z] = roi_temporal_footprints
-            #     self.controller.roi_temporal_residuals[z]  = roi_temporal_residuals
-            #     self.controller.bg_spatial_footprints[z]   = bg_spatial_footprints
-            #     self.controller.bg_temporal_footprints[z]  = bg_temporal_footprints
+            msg.setText("Do you want to compute new temporal traces? This is required if you are loading ROIs created using one set of videos onto a different set of videos.")
+            msg.setWindowTitle("")
+            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
 
-            # calculate temporal components based on spatial components
-            # roi_temporal_footprints, roi_temporal_residuals, bg_temporal_footprints = utilities.calculate_temporal_components(self.controller.video_paths, self.controller.roi_spatial_footprints, self.controller.roi_temporal_footprints, self.controller.roi_temporal_residuals, self.controller.bg_spatial_footprints, self.controller.bg_temporal_footprints)
-            # self.controller.roi_temporal_footprints = roi_temporal_footprints
-            # self.controller.roi_temporal_residuals  = roi_temporal_residuals
-            # self.controller.bg_temporal_footprints  = bg_temporal_footprints
+            retval = msg.exec_()
+            if retval != QMessageBox.No:
+                if self.controller.use_mc_video and self.controller.mc_video is not None:
+                    video_paths = self.controller.mc_video_paths
+                else:
+                    video_paths = self.controller.video_paths
+
+                for i in range(len(video_paths)):
+                    video_path = video_paths[i]
+
+                    video = imread(video_path)
+                        
+                    if len(video.shape) == 3:
+                        # add a z dimension
+                        video = video[:, np.newaxis, :, :]
+                        
+                    if i == 0:
+                        final_video = video
+                    else:
+                        final_video = np.concatenate([final_video, video], axis=0)
+
+                for z in range(final_video.shape[1]):
+                    roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = utilities.do_cnmf(final_video[:, z, :, :], self.controller.params, self.controller.roi_spatial_footprints[z], np.ones(self.controller.roi_temporal_footprints[z].shape), np.ones(self.controller.roi_temporal_residuals[z].shape), self.controller.bg_spatial_footprints[z], np.ones(self.controller.bg_temporal_footprints[z].shape), use_multiprocessing=self.controller.use_multiprocessing)
+
+                    self.controller.roi_spatial_footprints[z]  = roi_spatial_footprints
+                    self.controller.roi_temporal_footprints[z] = roi_temporal_footprints
+                    self.controller.roi_temporal_residuals[z]  = roi_temporal_residuals
+                    self.controller.bg_spatial_footprints[z]   = bg_spatial_footprints
+                    self.controller.bg_temporal_footprints[z]  = bg_temporal_footprints
+
+                # calculate temporal components based on spatial components
+                roi_temporal_footprints, roi_temporal_residuals, bg_temporal_footprints = utilities.calculate_temporal_components(video_paths, self.controller.roi_spatial_footprints, self.controller.roi_temporal_footprints, self.controller.roi_temporal_residuals, self.controller.bg_spatial_footprints, self.controller.bg_temporal_footprints)
+                self.controller.roi_temporal_footprints = roi_temporal_footprints
+                self.controller.roi_temporal_residuals  = roi_temporal_residuals
+                self.controller.bg_temporal_footprints  = bg_temporal_footprints
 
             # show ROI filtering parameters
             self.show_roi_filtering_params(loading_rois=True)
@@ -279,6 +328,18 @@ class GUIController():
             self.trace_figure      = None
             self.figure_closed     = True
             self.selected_rois     = []
+
+            mmap_files = glob.glob('*.mmap')
+            for mmap_file in mmap_files:
+                os.remove(mmap_file)
+
+            mmap_files = glob.glob('memmap_*')
+            for mmap_file in mmap_files:
+                os.remove(mmap_file)
+
+            mmap_files = glob.glob('*_temp.tif')
+            for mmap_file in mmap_files:
+                os.remove(mmap_file)
 
             # set the current z plane to 0
             self.z = 0
@@ -491,7 +552,7 @@ class GUIController():
         self.param_window.save_rois_action.setDisabled(False)
         # self.roi_finding_param_widget.filter_rois_button.setDisabled(False)
 
-        self.show_roi_image(show=self.roi_finding_param_widget.show_rois_checkbox.isChecked())
+        self.show_roi_image(show=self.roi_finding_param_widget.show_rois_checkbox.isChecked(), force_update=True)
         # self.controller.mc_rois = self.controller.use_mc_video
 
         self.roi_finding_param_widget.roi_finding_ended()
@@ -503,8 +564,9 @@ class GUIController():
         # # show the ROI image
         # self.show_roi_image(True)
 
-        self.trace_figure = TracePlotWindow()
-        self.trace_figure.show()
+        if self.trace_figure is None:
+            self.trace_figure = TracePlotWindow()
+            self.trace_figure.show()
         self.trace_figure.plot(self.controller.roi_temporal_footprints[self.z])
 
     def roi_finding_method_changed(self, index):
@@ -524,6 +586,8 @@ class GUIController():
             # cancel any ongoing motion correction
             self.cancel_motion_correction()
 
+            self.motion_correction_param_widget.motion_correct_button.setEnabled(True)
+
             # create a motion correction thread
             self.motion_correction_thread = MotionCorrectThread(self.motion_correction_param_widget)
             self.motion_correction_thread.progress.connect(self.motion_correction_progress)
@@ -540,17 +604,18 @@ class GUIController():
 
             # notify the param widget
             self.motion_correction_param_widget.motion_correction_started()
-        else:
-            self.cancel_motion_correction()
+        # else:
+            # self.cancel_motion_correction()
 
     def cancel_motion_correction(self):
-        if self.motion_correction_thread is not None:
-            self.motion_correction_thread.running = False
+        pass
+        # if self.motion_correction_thread is not None:
+        #     self.motion_correction_thread.running = False
 
-        self.performing_motion_correction = False
-        self.motion_correction_thread     = None
+        # self.performing_motion_correction = False
+        # self.motion_correction_thread     = None
 
-        self.motion_correction_param_widget.update_motion_correction_progress(100)
+        # self.motion_correction_param_widget.cancelling_motion_correction()
 
     def motion_correction_progress(self, percent):
         # notify the param widget
@@ -592,8 +657,7 @@ class GUIController():
 
             self.set_use_mc_video(True)
 
-    def show_loading_params(self):
-        # switch to showing loading params
+    def show_video_loading_params(self):
         self.param_window.tab_widget.setCurrentIndex(0)
         self.mode = "loading"
 
@@ -624,7 +688,16 @@ class GUIController():
         # cancel any ongoing motion correction
         self.cancel_motion_correction()
 
+        if self.mode in ("loading", "motion_correcting"):
+            update_mean_image = True
+        else:
+            update_mean_image = False
+
         self.preview_window.timer.stop()
+
+        self.roi_finding_param_widget.show_rois_checkbox.setChecked(self.show_rois)
+        if self.controller.roi_spatial_footprints is not None and self.controller.roi_spatial_footprints[self.z] is not None:
+            self.roi_finding_param_widget.show_rois_checkbox.setEnabled(True)
 
         # switch to showing ROI finding params
         self.param_window.tab_widget.setCurrentIndex(2)
@@ -649,16 +722,16 @@ class GUIController():
             self.image           = utilities.calculate_adjusted_image(self.controller.mean_images[self.z], self.controller.params['contrast'], self.controller.params['gamma'])
             self.background_mask = utilities.calculate_background_mask(self.image, self.controller.params['background_threshold'], self.controller.video_max)
             
-        self.show_roi_image(show=self.roi_finding_param_widget.show_rois_checkbox.isChecked())
+        self.show_roi_image(show=self.roi_finding_param_widget.show_rois_checkbox.isChecked(), force_update=update_mean_image)
 
         self.param_window.statusBar().showMessage("")
 
         self.preview_window.setWindowTitle(os.path.basename(self.controller.video_path))
 
     def show_roi_filtering_params(self, loading_rois=False):
-        # switch to showing ROI filtering params
-        self.param_window.tab_widget.setCurrentIndex(3)
-        self.mode = "roi_filtering"
+        self.roi_filtering_param_widget.show_rois_checkbox.setChecked(self.show_rois)
+
+        self.preview_window.timer.stop()
 
         if loading_rois:
             # calculate mean images
@@ -669,6 +742,10 @@ class GUIController():
 
             # reset history variables
             self.reset_history()
+
+        # switch to showing ROI filtering params
+        self.param_window.tab_widget.setCurrentIndex(3)
+        self.mode = "roi_filtering"
 
         # show the ROI image
         self.roi_filtering_param_widget.setEnabled(True)
@@ -788,7 +865,7 @@ class GUIController():
                 #     self.calculate_roi_image(self.z, update_overlay=False)
 
                 # show the ROI image
-                self.show_roi_image(show=self.roi_finding_param_widget.show_rois_checkbox.isChecked())
+                self.show_roi_image(show=self.roi_finding_param_widget.show_rois_checkbox.isChecked(), force_update=True)
             elif param == "background_threshold":
                 # calculate the background mask using the new threshold
                 self.background_mask = utilities.calculate_background_mask(self.image, self.controller.params['background_threshold'], self.controller.video_max)
@@ -812,7 +889,7 @@ class GUIController():
                 #     self.calculate_roi_image(self.z, update_overlay=True)
 
                 # show the ROI image
-                self.show_roi_image(show=self.roi_finding_param_widget.show_rois_checkbox.isChecked())
+                self.show_roi_image(show=self.roi_finding_param_widget.show_rois_checkbox.isChecked(), force_update=True)
         elif self.mode == "roi_filtering":
             if param in ("contrast, gamma"):
                 # calculate a contrast- and gamma-adjusted version of the current z plane's mean image
@@ -823,24 +900,26 @@ class GUIController():
                 #     self.calculate_roi_image(self.z, update_overlay=False)
 
                 # show the ROI image
-                self.show_roi_image(show=self.roi_filtering_param_widget.show_rois_checkbox.isChecked())
+                self.show_roi_image(show=self.roi_filtering_param_widget.show_rois_checkbox.isChecked(), force_update=True)
             if param == "z":
                 self.z = value
+
+                self.selected_rois = []
 
                 # calculate a contrast- and gamma-adjusted version of the new z plane's mean image
                 self.image = utilities.calculate_adjusted_image(self.controller.mean_images[self.z], self.controller.params['contrast'], self.controller.params['gamma'])
 
                 # filter the ROIs at the new z plane
-                self.controller.filter_rois(z=self.z)
+                # self.controller.filter_rois(z=self.z)
 
                 # update the ROI image using the new adjusted image
                 # self.calculate_roi_image(z=self.z, update_overlay=True)
 
                 # show the ROI image
-                self.show_roi_image(show=self.roi_filtering_param_widget.show_rois_checkbox.isChecked())
+                self.show_roi_image(show=self.roi_filtering_param_widget.show_rois_checkbox.isChecked(), update_overlay=True, force_update=True)
 
                 # add the current state to the history only if this is the first time we've switched to this z plane
-                self.add_to_history(only_if_new=True)
+                # self.add_to_history(only_if_new=True)
             elif param in ("min_area", "max_area", "min_circ", "max_circ"):
                 pass
 
@@ -893,12 +972,13 @@ class GUIController():
         # show the ROI image
         self.show_roi_image(show=self.roi_finding_param_widget.show_rois_checkbox.isChecked())
 
-    def show_roi_image(self, show, update_overlay=True):
+    def show_roi_image(self, show, update_overlay=True, force_update=False):
         self.show_rois = show
 
         # plot the ROI image (or the regular image if show is False)
         if show:
-            if self.preview_window.image_plot.flat_contours is None:
+            if self.preview_window.image_plot.flat_contours is None or force_update:
+                print(self.z)
                 self.preview_window.plot_image(self.image, background_mask=self.background_mask, video_max=255.0, update_overlay=update_overlay)
             self.preview_window.image_plot.deselect_rois()
             if len(self.selected_rois) > 0:
@@ -908,7 +988,7 @@ class GUIController():
         else:
             self.preview_window.plot_image(self.image, background_mask=self.background_mask, video_max=self.controller.video_max, update_overlay=False)
 
-        print("Done~")
+        # print("Done~")
 
         # update the param window
         self.param_window.show_rois_action.setChecked(show)
@@ -917,7 +997,7 @@ class GUIController():
         elif self.mode == "roi_filtering":
             self.roi_filtering_param_widget.show_rois_checkbox.setChecked(show)
 
-        print("Done~")
+        # print("Done~")
 
     def save_roi_image(self):
         # let the user pick where to save the ROI images
@@ -1028,8 +1108,8 @@ class GUIController():
 
             self.preview_window.plot_image(self.image, background_mask=self.background_mask, video_max=self.controller.video_max)
 
-    def filter_rois(self, z):
-        self.controller.filter_rois(z)
+    def filter_rois(self):
+        self.controller.filter_rois()
 
         self.selected_rois = []
 
@@ -1108,16 +1188,37 @@ class GUIController():
 
             if len(self.selected_rois) == 1:
                 self.roi_filtering_param_widget.merge_rois_button.setEnabled(False)
-                self.roi_filtering_param_widget.erase_selected_roi_button.setEnabled(True)
+                # self.roi_filtering_param_widget.erase_selected_roi_button.setEnabled(True)
                 self.roi_filtering_param_widget.plot_traces_button.setEnabled(True)
+                if selected_roi not in self.controller.removed_rois[self.z]:
+                    self.roi_filtering_param_widget.erase_selected_roi_button.setEnabled(True)
+                else:
+                    self.roi_filtering_param_widget.unerase_selected_roi_button.setEnabled(True)
+                self.param_window.merge_rois_action.setEnabled(False)
+                self.param_window.trace_rois_action.setEnabled(True)
+                # self.preview_window.trace_rois_action.setEnabled(True)
             elif len(self.selected_rois) > 1:
-                self.roi_filtering_param_widget.merge_rois_button.setEnabled(True)
-                self.roi_filtering_param_widget.erase_selected_roi_button.setEnabled(True)
+                # self.roi_filtering_param_widget.merge_rois_button.setEnabled(True)
+                # self.roi_filtering_param_widget.erase_selected_roi_button.setEnabled(True)
                 self.roi_filtering_param_widget.plot_traces_button.setEnabled(True)
+                if not any(x in self.selected_rois for x in self.controller.removed_rois[self.z]):
+                # if selected_roi not in self.controller.removed_rois[self.z]:
+                    self.roi_filtering_param_widget.erase_selected_roi_button.setEnabled(True)
+                    self.roi_filtering_param_widget.merge_rois_button.setEnabled(True)
+                else:
+                    self.roi_filtering_param_widget.unerase_selected_roi_button.setEnabled(True)
+                    self.roi_filtering_param_widget.merge_rois_button.setEnabled(False)
+                self.param_window.erase_rois_action.setEnabled(True)
+                self.param_window.merge_rois_action.setEnabled(True)
+                self.param_window.trace_rois_action.setEnabled(True)
+                # self.preview_window.trace_rois_action.setEnabled(True)
             else:
                 self.roi_filtering_param_widget.merge_rois_button.setEnabled(False)
                 self.roi_filtering_param_widget.erase_selected_roi_button.setEnabled(False)
                 self.roi_filtering_param_widget.plot_traces_button.setEnabled(False)
+                self.param_window.erase_rois_action.setEnabled(False)
+                self.param_window.merge_rois_action.setEnabled(False)
+                self.param_window.trace_rois_action.setEnabled(False)
 
             # notify the param window
             self.param_window.roi_erasing_ended()
@@ -1165,7 +1266,7 @@ class GUIController():
         else:
             manual_roi_selected, selected_roi = False, None
 
-        if selected_roi is not None and selected_roi not in self.controller.removed_rois[self.z]:
+        if selected_roi is not None:
             # an ROI is selected
             if shift_held:
                 self.selected_rois.append(selected_roi)
@@ -1197,20 +1298,30 @@ class GUIController():
 
             if len(self.selected_rois) == 1:
                 self.roi_filtering_param_widget.merge_rois_button.setEnabled(False)
-                self.roi_filtering_param_widget.erase_selected_roi_button.setEnabled(True)
+                # self.roi_filtering_param_widget.erase_selected_roi_button.setEnabled(True)
                 self.roi_filtering_param_widget.plot_traces_button.setEnabled(True)
-                self.param_window.erase_rois_action.setEnabled(True)
+                if selected_roi not in self.controller.removed_rois[self.z]:
+                    self.roi_filtering_param_widget.erase_selected_roi_button.setEnabled(True)
+                else:
+                    self.roi_filtering_param_widget.unerase_selected_roi_button.setEnabled(True)
                 self.param_window.merge_rois_action.setEnabled(False)
                 self.param_window.trace_rois_action.setEnabled(True)
-                self.preview_window.trace_rois_action.setEnabled(True)
+                # self.preview_window.trace_rois_action.setEnabled(True)
             elif len(self.selected_rois) > 1:
-                self.roi_filtering_param_widget.merge_rois_button.setEnabled(True)
-                self.roi_filtering_param_widget.erase_selected_roi_button.setEnabled(True)
+                # self.roi_filtering_param_widget.merge_rois_button.setEnabled(True)
+                # self.roi_filtering_param_widget.erase_selected_roi_button.setEnabled(True)
                 self.roi_filtering_param_widget.plot_traces_button.setEnabled(True)
+                if not any(x in self.selected_rois for x in self.controller.removed_rois[self.z]):
+                # if selected_roi not in self.controller.removed_rois[self.z]:
+                    self.roi_filtering_param_widget.erase_selected_roi_button.setEnabled(True)
+                    self.roi_filtering_param_widget.merge_rois_button.setEnabled(True)
+                else:
+                    self.roi_filtering_param_widget.unerase_selected_roi_button.setEnabled(True)
+                    self.roi_filtering_param_widget.merge_rois_button.setEnabled(False)
                 self.param_window.erase_rois_action.setEnabled(True)
                 self.param_window.merge_rois_action.setEnabled(True)
                 self.param_window.trace_rois_action.setEnabled(True)
-                self.preview_window.trace_rois_action.setEnabled(True)
+                # self.preview_window.trace_rois_action.setEnabled(True)
             else:
                 self.roi_filtering_param_widget.merge_rois_button.setEnabled(False)
                 self.roi_filtering_param_widget.erase_selected_roi_button.setEnabled(False)
@@ -1218,7 +1329,7 @@ class GUIController():
                 self.param_window.erase_rois_action.setEnabled(False)
                 self.param_window.merge_rois_action.setEnabled(False)
                 self.param_window.trace_rois_action.setEnabled(False)
-                self.preview_window.trace_rois_action.setEnabled(False)
+                # self.preview_window.trace_rois_action.setEnabled(False)
         else:
             # no ROI is selected
 
@@ -1234,7 +1345,7 @@ class GUIController():
             self.param_window.erase_rois_action.setEnabled(False)
             self.param_window.merge_rois_action.setEnabled(False)
             self.param_window.trace_rois_action.setEnabled(False)
-            self.preview_window.trace_rois_action.setEnabled(False)
+            # self.preview_window.trace_rois_action.setEnabled(False)
 
             # update the param window
             # self.roi_filtering_param_widget.lock_roi_button.setEnabled(False)
@@ -1248,61 +1359,67 @@ class GUIController():
         self.update_trace_plot()
 
     def update_trace_plot(self):
-        temporal_footprints = self.controller.roi_temporal_footprints[self.z]
-
-        if self.selected_video == 0:
-            temporal_footprints = temporal_footprints[:, :self.controller.video_lengths[0]]
-        else:
-            temporal_footprints = temporal_footprints[:, np.sum(self.controller.video_lengths[:self.selected_video]):np.sum(self.controller.video_lengths[:self.selected_video+1])]
-        # kept_rois = list(range(temporal_footprints.shape[0]))
-        # print(len(kept_rois))
-        # # print(self.controller.removed_rois[self.z])
-        # # for roi in reversed(self.controller.removed_rois[self.z]):
-        # #     del kept_rois[roi]
-
-        kept_rois = [ roi for roi in range(temporal_footprints.shape[0]) if roi not in self.controller.removed_rois[self.z] ]
-        # temporal_footprints = temporal_footprints[kept_rois]
-
-        # print(len(kept_rois))
-
         if self.trace_figure is None:
             self.trace_figure = TracePlotWindow()
             self.trace_figure.show()
-        # if len(self.selected_rois) > 0:
-        #     max_value = np.amax(self.controller.roi_temporal_footprints[self.z][self.selected_rois])
-        # else:
-        #     max_value = None
-        roi_spatial_footprints = self.controller.roi_spatial_footprints[self.z].toarray().reshape((self.controller.video.shape[2], self.controller.video.shape[2], self.controller.roi_spatial_footprints[self.z].shape[-1])).transpose((1, 0, 2))
-        mean_traces = np.zeros((temporal_footprints.shape[0], self.controller.roi_temporal_footprints[self.z].shape[-1]))
 
-        if self.controller.use_mc_video and self.controller.mc_video is not None:
-            video = self.controller.mc_video
+        temporal_footprints = self.controller.roi_temporal_footprints[self.z]
+
+        if temporal_footprints is not None:
+            if self.selected_video == 0:
+                temporal_footprints = temporal_footprints[:, :self.controller.video_lengths[0]]
+            else:
+                temporal_footprints = temporal_footprints[:, np.sum(self.controller.video_lengths[:self.selected_video]):np.sum(self.controller.video_lengths[:self.selected_video+1])]
+
+            kept_rois = [ roi for roi in range(temporal_footprints.shape[0]) if roi not in self.controller.removed_rois[self.z] ]
+
+            roi_spatial_footprints = self.controller.roi_spatial_footprints[self.z].toarray().reshape((self.controller.video.shape[2], self.controller.video.shape[2], self.controller.roi_spatial_footprints[self.z].shape[-1])).transpose((1, 0, 2))
+            mean_traces = np.zeros((temporal_footprints.shape[0], self.controller.roi_temporal_footprints[self.z].shape[-1]))
+
+            if self.controller.use_mc_video and self.controller.mc_video is not None:
+                video_paths = self.controller.mc_video_paths
+            else:
+                video_paths = self.controller.video_paths
+
+            for i in range(len(video_paths)):
+                video_path = video_paths[i]
+
+                video = imread(video_path)
+                    
+                if len(video.shape) == 3:
+                    # add a z dimension
+                    video = video[:, np.newaxis, :, :]
+                    
+                if i == 0:
+                    final_video = video
+                else:
+                    final_video = np.concatenate([final_video, video], axis=0)
+
+            for i in range(len(kept_rois)):
+                roi = kept_rois[i]
+                mask = roi_spatial_footprints[:, :, roi] > 0
+
+                coords = np.nonzero(mask)
+                min_y = min(coords[0])
+                max_y = max(coords[0])
+                min_x = min(coords[1])
+                max_x = max(coords[1])
+
+                mask = mask[min_y:max_y+1, min_x:max_x+1]
+
+                mask[mask == 0] = np.nan
+                # trace_sum = np.sum(video*mask[np.newaxis, :, :], axis=(1, 2))
+                # count = np.count_nonzero(mask)
+                # traces[1:, i+1] = trace_sum/count
+
+                mean_traces[roi] = np.nanmean(final_video[:, self.z, min_y:max_y+1, min_x:max_x+1]*mask[np.newaxis, :, :], axis=(1, 2))
+
+            if self.selected_video == 0:
+                mean_traces = mean_traces[:, :self.controller.video_lengths[0]]
+            else:
+                mean_traces = mean_traces[:, np.sum(self.controller.video_lengths[:self.selected_video]):np.sum(self.controller.video_lengths[:self.selected_video+1])]
         else:
-            video = self.controller.video
-
-        for i in range(len(kept_rois)):
-            roi = kept_rois[i]
-            mask = roi_spatial_footprints[:, :, roi] > 0
-
-            coords = np.nonzero(mask)
-            min_y = min(coords[0])
-            max_y = max(coords[0])
-            min_x = min(coords[1])
-            max_x = max(coords[1])
-
-            mask = mask[min_y:max_y+1, min_x:max_x+1]
-
-            mask[mask == 0] = np.nan
-            # trace_sum = np.sum(video*mask[np.newaxis, :, :], axis=(1, 2))
-            # count = np.count_nonzero(mask)
-            # traces[1:, i+1] = trace_sum/count
-
-            mean_traces[roi] = np.nanmean(video[:, self.z, min_y:max_y+1, min_x:max_x+1]*mask[np.newaxis, :, :], axis=(1, 2))
-
-        if self.selected_video == 0:
-            mean_traces = mean_traces[:, :self.controller.video_lengths[0]]
-        else:
-            mean_traces = mean_traces[:, np.sum(self.controller.video_lengths[:self.selected_video]):np.sum(self.controller.video_lengths[:self.selected_video+1])]
+            mean_traces = None
 
         self.trace_figure.plot(temporal_footprints, self.controller.removed_rois[self.z], self.selected_rois, mean_traces=mean_traces)
 
@@ -1357,7 +1474,9 @@ class GUIController():
 
         # create & show the new ROI image
         # self.calculate_roi_image(z=self.z, update_overlay=False)
-        self.show_roi_image(show=self.roi_filtering_param_widget.show_rois_checkbox.isChecked())
+        # self.show_roi_image(show=self.roi_filtering_param_widget.show_rois_checkbox.isChecked())
+        self.preview_window.image_plot.deselect_rois()
+        self.preview_window.image_plot.erase_rois(self.controller.removed_rois[self.z])
 
     def reset_erase(self):
         # unselect any ROIs
@@ -1386,9 +1505,13 @@ class GUIController():
         self.preview_window.image_plot.erase_rois(self.selected_rois)
 
         self.selected_rois = []
+
         self.roi_filtering_param_widget.merge_rois_button.setEnabled(False)
         self.roi_filtering_param_widget.erase_selected_roi_button.setEnabled(False)
         self.roi_filtering_param_widget.plot_traces_button.setEnabled(False)
+        self.param_window.erase_rois_action.setEnabled(False)
+        self.param_window.merge_rois_action.setEnabled(False)
+        self.param_window.trace_rois_action.setEnabled(False)
 
         # self.update_trace_plot()
 
@@ -1406,40 +1529,86 @@ class GUIController():
         self.update_trace_plot()
 
     def unerase_selected_rois(self):
-        pass
+        for label in self.selected_rois:
+            self.controller.unerase_roi(label, self.z)
+
+        rois = [ roi for roi in self.selected_rois if roi not in self.controller.filtered_out_rois[self.z] ]
+
+        self.preview_window.image_plot.unerase_rois(rois)
+
+        self.selected_rois = []
+
+        self.roi_filtering_param_widget.merge_rois_button.setEnabled(False)
+        self.roi_filtering_param_widget.erase_selected_roi_button.setEnabled(False)
+        self.roi_filtering_param_widget.plot_traces_button.setEnabled(False)
+        self.param_window.erase_rois_action.setEnabled(False)
+        self.param_window.merge_rois_action.setEnabled(False)
+        self.param_window.trace_rois_action.setEnabled(False)
+
+        self.add_to_history()
+
+        self.update_trace_plot()
 
     def merge_selected_rois(self):
+        # pdb.set_trace()
         rois = list(range(self.controller.roi_spatial_footprints[self.z].shape[1]))
-        merged_spatial_footprint  = np.sum(self.controller.roi_spatial_footprints[self.z][:, self.selected_rois], axis=1)
+        merged_spatial_footprint  = np.sum(self.controller.roi_spatial_footprints[self.z][:, self.selected_rois].toarray(), axis=1)
         merged_temporal_footprint = np.sum(self.controller.roi_temporal_footprints[self.z][self.selected_rois], axis=0)[np.newaxis, :]
         merged_temporal_residual  = np.sum(self.controller.roi_temporal_residuals[self.z][self.selected_rois], axis=0)[np.newaxis, :]
-        for roi in self.selected_rois:
-            del rois[roi]
+        # for roi in self.selected_rois:
+        #     del rois[roi]
+
+        rois = [ roi for roi in rois if roi not in self.selected_rois]
 
         # pdb.set_trace()
-        roi_spatial_footprints  = np.concatenate((self.controller.roi_spatial_footprints[self.z][:, rois].toarray(), np.asarray(merged_spatial_footprint)), axis=1)
+
+        # pdb.set_trace()
+        roi_spatial_footprints  = np.concatenate((self.controller.roi_spatial_footprints[self.z][:, rois].toarray(), np.asarray(merged_spatial_footprint)[:, np.newaxis]), axis=1)
         roi_temporal_footprints = np.concatenate((self.controller.roi_temporal_footprints[self.z][rois], merged_temporal_footprint), axis=0)
         roi_temporal_residuals  = np.concatenate((self.controller.roi_temporal_residuals[self.z][rois], merged_temporal_residual), axis=0)
         bg_spatial_footprints   = self.controller.bg_spatial_footprints[self.z]
         bg_temporal_footprints  = self.controller.bg_temporal_footprints[self.z]
 
-        roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = utilities.do_cnmf(self.controller.video[:, self.z, :, :], self.controller.params, roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints, use_multiprocessing=self.controller.use_multiprocessing)
+        # pdb.set_trace()
 
-        print("Done!")
+        if self.controller.use_mc_video and self.controller.mc_video is not None:
+            video_paths = self.controller.mc_video_paths
+        else:
+            video_paths = self.controller.video_paths
 
-        self.controller.roi_spatial_footprints[self.z]  = roi_spatial_footprints
+        for i in range(len(video_paths)):
+            video_path = video_paths[i]
+
+            video = imread(video_path)
+                
+            if len(video.shape) == 3:
+                # add a z dimension
+                video = video[:, np.newaxis, :, :]
+                
+            if i == 0:
+                final_video = video
+            else:
+                final_video = np.concatenate([final_video, video], axis=0)
+
+        roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = utilities.do_cnmf(final_video[:, self.z, :, :], self.controller.params, roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints, use_multiprocessing=self.controller.use_multiprocessing)
+
+        # print("Done!")
+
+        self.controller.roi_spatial_footprints[self.z]  = roi_spatial_footprints.tocsc()
         self.controller.roi_temporal_footprints[self.z] = roi_temporal_footprints
         self.controller.roi_temporal_residuals[self.z]  = roi_temporal_residuals
         self.controller.bg_spatial_footprints[self.z]   = bg_spatial_footprints
         self.controller.bg_temporal_footprints[self.z]  = bg_temporal_footprints
 
+        # pdb.set_trace()
+
         self.selected_rois = []
 
-        print("Done!")
+        # print("Done!")
 
-        self.show_roi_image(show=self.roi_filtering_param_widget.show_rois_checkbox.isChecked())
+        self.show_roi_image(show=self.roi_filtering_param_widget.show_rois_checkbox.isChecked(), update_overlay=True, force_update=True)
 
-        print("Done!")
+        # print("Done!")
 
     def lock_roi(self): # TODO: create roi_locked() and roi_unlocked() methods for the param window
         if self.selected_rois[0] not in self.controller.locked_rois[self.z]:
@@ -1667,7 +1836,7 @@ class ProcessVideosThread(QThread):
                     for i in range(centroids.shape[0]):
                         writer.writerow(["ROI #{}".format(roi_nums[i])] + centroids[i].tolist())
 
-                print("Done.")
+                # print("Done.")
 
             if not self.running:
                 self.running = False
@@ -1752,6 +1921,7 @@ class TracePlotWindow(QMainWindow):
             for i in range(len(selected_rois)):
                 print(i)
                 roi = selected_rois[i]
+                print(roi, roi_temporal_footprints.shape)
                 y_offset = 0
 
                 if i < len(colors):

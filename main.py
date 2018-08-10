@@ -17,6 +17,7 @@ if __name__ == "__main__":
 
     if pyqt_version == 5:
         app.setAttribute(Qt.AA_UseHighDpiPixmaps)
+        app.setAttribute(Qt.AA_EnableHighDpiScaling)
     controller = Controller()
     gui_controller = GUIController(controller)
     gui_controller.import_videos()

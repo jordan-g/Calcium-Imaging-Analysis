@@ -96,7 +96,7 @@ class ParamWindow(QMainWindow):
     def tab_selected(self):
         index = self.tab_widget.currentIndex()
         if index == 0:
-            pass
+            self.controller.show_video_loading_params()
         elif index == 1:
             self.motion_correction_widget.videos_list.clear()
             for video_path in self.controller.controller.video_paths:
@@ -107,6 +107,11 @@ class ParamWindow(QMainWindow):
             for video_path in self.controller.controller.video_paths:
                 self.roi_finding_widget.videos_list.addItem(os.path.basename(video_path))
             self.controller.show_roi_finding_params()
+        elif index == 3:
+            self.roi_filtering_widget.videos_list.clear()
+            for video_path in self.controller.controller.video_paths:
+                self.roi_filtering_widget.videos_list.addItem(os.path.basename(video_path))
+            self.controller.show_roi_filtering_params()
 
     def set_initial_state(self):
         # disable buttons, widgets & menu items
@@ -139,17 +144,19 @@ class ParamWindow(QMainWindow):
         self.show_rois_action.setShortcutContext(Qt.ApplicationShortcut)
 
         self.load_rois_action = QAction('Load ROIs...', self)
-        self.load_rois_action.setShortcut('Ctrl+Shift+O')
+        self.load_rois_action.setShortcut('Alt+O')
         self.load_rois_action.setStatusTip('Load ROIs from a file.')
         self.load_rois_action.triggered.connect(self.controller.load_rois)
+        self.load_rois_action.setShortcutContext(Qt.ApplicationShortcut)
         # self.load_rois_action.setEnabled(False)
         # self.load_rois_action.setShortcutContext(Qt.ApplicationShortcut)
 
         self.save_rois_action = QAction('Save ROIs...', self)
-        self.save_rois_action.setShortcut('Ctrl+Shift+S')
+        self.save_rois_action.setShortcut('Alt+S')
         self.save_rois_action.setStatusTip('Save the current ROIs.')
         self.save_rois_action.triggered.connect(self.controller.save_rois)
         self.save_rois_action.setEnabled(False)
+        self.save_rois_action.setShortcutContext(Qt.ApplicationShortcut)
         # self.save_rois_action.setShortcutContext(Qt.ApplicationShortcut)
 
         self.erase_rois_action = QAction('Erase Selected ROIs', self)
@@ -157,18 +164,21 @@ class ParamWindow(QMainWindow):
         self.erase_rois_action.setStatusTip('Erase the selected ROIs.')
         self.erase_rois_action.triggered.connect(self.controller.erase_selected_rois)
         self.erase_rois_action.setEnabled(False)
+        self.erase_rois_action.setShortcutContext(Qt.ApplicationShortcut)
 
         self.merge_rois_action = QAction('Merge Selected ROIs', self)
         self.merge_rois_action.setShortcut('M')
         self.merge_rois_action.setStatusTip('Merge the selected ROIs.')
         self.merge_rois_action.triggered.connect(self.controller.merge_selected_rois)
         self.merge_rois_action.setEnabled(False)
+        self.merge_rois_action.setShortcutContext(Qt.ApplicationShortcut)
 
         self.trace_rois_action = QAction('Plot Traces', self)
         self.trace_rois_action.setShortcut('T')
         self.trace_rois_action.setStatusTip('Plot traces for the selected ROIs.')
         self.trace_rois_action.triggered.connect(self.controller.update_trace_plot)
         self.trace_rois_action.setEnabled(False)
+        self.trace_rois_action.setShortcutContext(Qt.ApplicationShortcut)
 
         # self.save_roi_image_action = QAction('Save ROI Image...', self)
         # self.save_roi_image_action.setShortcut('Ctrl+Alt+S')
@@ -213,6 +223,8 @@ class ParamWindow(QMainWindow):
         self.main_param_widget.setDisabled(False)
         self.tab_widget.setTabEnabled(1, True)
         self.tab_widget.setTabEnabled(2, True)
+        self.tab_widget.setTabEnabled(3, False)
+        self.tab_widget.setCurrentIndex(0)
         # self.stacked_widget.setDisabled(False)
 
     def process_videos_started(self):
@@ -599,30 +611,40 @@ class MotionCorrectionWidget(ParamWidget):
 
     def motion_correction_started(self):
         self.mc_progress_label.setText("Motion correcting... 0%.")
-        self.motion_correct_button.setText('Cancel')
-        self.motion_correct_button.setHoverMessage("Stop motion correction.")
+        # self.motion_correct_button.setText('Cancel')
+        self.motion_correct_button.setEnabled(False)
+        # self.motion_correct_button.setHoverMessage("Stop motion correction.")
         self.parent_widget.tab_widget.setTabEnabled(0, False)
         self.parent_widget.tab_widget.setTabEnabled(2, False)
         self.parent_widget.tab_widget.setTabEnabled(3, False)
         # self.accept_button.setEnabled(False)
 
     def motion_correction_ended(self):
+        self.motion_correct_button.setEnabled(True)
         self.parent_widget.tab_widget.setTabEnabled(0, True)
         self.parent_widget.tab_widget.setTabEnabled(2, True)
         # self.parent_widget.tab_widget.setTabEnabled(3, True)
 
     def update_motion_correction_progress(self, percent):
         if percent == 100:
+            # self.motion_correct_button.setEnabled(True)
             self.mc_progress_label.setText("")
             self.motion_correct_button.setText('Motion Correct')
             self.motion_correct_button.setHoverMessage("Perform motion correction on the videos.")
             # self.accept_button.setEnabled(True)
         elif percent == -1:
+            # self.motion_correct_button.setEnabled(True)
             self.mc_progress_label.setText("")
             self.motion_correct_button.setText('Motion Correct')
             self.motion_correct_button.setHoverMessage("Perform motion correction on the videos.")
         else:
+            # self.motion_correct_button.setEnabled(True)
             self.mc_progress_label.setText("Motion correcting... {}%.".format(int(percent)))
+
+    def cancelling_motion_correction(self):
+        self.motion_correct_button.setEnabled(False)
+        # self.motion_correct_button.setText("")
+        self.mc_progress_label.setText("Cancelling motion correction...")
 
     def item_selected(self):
         selected_items = self.videos_list.selectedItems()
@@ -656,7 +678,7 @@ class ROIFindingWidget(ParamWidget):
         self.add_param_slider(label_name="Autoregressive Model Order", name="autoregressive_order", minimum=0, maximum=2, moved=self.update_param, num=0, multiplier=1, pressed=self.update_param, released=self.update_param, description="Order of the autoregressive model (0, 1 or 2).", int_values=True)
         self.add_param_slider(label_name="Background Components", name="num_bg_components", minimum=1, maximum=100, moved=self.update_param, num=1, multiplier=1, pressed=self.update_param, released=self.update_param, description="Number of background components.", int_values=True)
         self.add_param_slider(label_name="Merge Threshold", name="merge_threshold", minimum=1, maximum=200, moved=self.update_param, num=2, multiplier=200, pressed=self.update_param, released=self.update_param, description="Merging threshold (maximum correlation allowed before merging two components).", int_values=False)
-        self.add_param_slider(label_name="Components", name="num_components", minimum=1, maximum=2000, moved=self.update_param, num=3, multiplier=1, pressed=self.update_param, released=self.update_param, description="Number of components to start with.", int_values=True)
+        self.add_param_slider(label_name="Components", name="num_components", minimum=1, maximum=5000, moved=self.update_param, num=3, multiplier=1, pressed=self.update_param, released=self.update_param, description="Number of components to start with.", int_values=True)
         self.add_param_slider(label_name="Neuron Half-Size", name="half_size", minimum=1, maximum=50, moved=self.update_param, num=4, multiplier=1, pressed=self.update_param, released=self.update_param, description="Expected half-size of neurons (pixels).", int_values=True)
         
         self.main_layout.addStretch()
@@ -757,8 +779,9 @@ class ROIFindingWidget(ParamWidget):
 
     def roi_finding_started(self):
         self.roi_finding_progress_label.setText("Finding ROIs... 0%.")
-        self.process_video_button.setText('Cancel')
-        self.process_video_button.setHoverMessage("Stop finding ROIs.")
+        # self.process_video_button.setText('Cancel')
+        self.process_video_button.setEnabled(False)
+        # self.process_video_button.setHoverMessage("Stop finding ROIs.")
         self.parent_widget.tab_widget.setTabEnabled(0, False)
         self.parent_widget.tab_widget.setTabEnabled(1, False)
         self.parent_widget.tab_widget.setTabEnabled(3, False)
@@ -779,6 +802,7 @@ class ROIFindingWidget(ParamWidget):
             self.roi_finding_progress_label.setText("Finding ROIs... {}%.".format(int(percent)))
 
     def roi_finding_ended(self):
+        self.process_video_button.setEnabled(True)
         self.parent_widget.tab_widget.setTabEnabled(0, True)
         self.parent_widget.tab_widget.setTabEnabled(1, True)
         self.parent_widget.tab_widget.setTabEnabled(3, True)
@@ -814,6 +838,16 @@ class ROIFilteringWidget(ParamWidget):
         ParamWidget.__init__(self, parent_widget, controller, "ROI Filtering Parameters")
 
         self.controller = controller
+
+        self.videos_list_widget = QWidget(self)
+        self.videos_list_layout = QHBoxLayout(self.videos_list_widget)
+        self.videos_list_layout.setContentsMargins(5, 0, 5, 0)
+        self.main_layout.addWidget(self.videos_list_widget)
+        
+        self.videos_list = QListWidget(self)
+        self.videos_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.videos_list.itemSelectionChanged.connect(self.item_selected)
+        self.videos_list_layout.addWidget(self.videos_list)
 
         self.add_param_slider(label_name="Imaging FPS", name="imaging_fps", minimum=1, maximum=60, moved=self.update_param, num=0, multiplier=1, pressed=self.update_param, released=self.update_param, description="Imaging frame rate (frames per second).", int_values=True)
         self.add_param_slider(label_name="Decay Time", name="decay_time", minimum=1, maximum=100, moved=self.update_param, num=1, multiplier=100, pressed=self.update_param, released=self.update_param, description="Length of a typical calcium transient (seconds).", int_values=False)
@@ -883,17 +917,17 @@ class ROIFilteringWidget(ParamWidget):
 
         self.roi_button_layout_2.addStretch()
 
-        self.erase_selected_roi_button = HoverButton('Erase', None, self.parent_widget.statusBar())
-        self.erase_selected_roi_button.setHoverMessage("Erase the selected ROI.")
-        self.erase_selected_roi_button.setIcon(QIcon("icons/trash_icon.png"))
+        self.erase_selected_roi_button = HoverButton('Hide', None, self.parent_widget.statusBar())
+        self.erase_selected_roi_button.setHoverMessage("Hide the selected ROI.")
+        self.erase_selected_roi_button.setIcon(QIcon("icons/hide_icon.png"))
         self.erase_selected_roi_button.setIconSize(QSize(16, 16))
         self.erase_selected_roi_button.clicked.connect(self.controller.erase_selected_rois)
         self.erase_selected_roi_button.setEnabled(False)
         self.roi_button_layout_2.addWidget(self.erase_selected_roi_button)
 
-        self.unerase_selected_roi_button = HoverButton('Restore', None, self.parent_widget.statusBar())
-        self.unerase_selected_roi_button.setHoverMessage("Un-erase the selected ROI.")
-        # self.unerase_selected_roi_button.setIcon(QIcon("icons/trash_icon.png"))
+        self.unerase_selected_roi_button = HoverButton('Show', None, self.parent_widget.statusBar())
+        self.unerase_selected_roi_button.setHoverMessage("Show the selected ROI.")
+        self.unerase_selected_roi_button.setIcon(QIcon("icons/show_icon.png"))
         self.unerase_selected_roi_button.setIconSize(QSize(16, 16))
         self.unerase_selected_roi_button.clicked.connect(self.controller.unerase_selected_rois)
         self.unerase_selected_roi_button.setEnabled(False)
@@ -910,7 +944,7 @@ class ROIFilteringWidget(ParamWidget):
 
         self.merge_rois_button = HoverButton('Merge', None, self.parent_widget.statusBar())
         self.merge_rois_button.setHoverMessage("Merge the selected ROIs.")
-        # self.merge_rois_button.setIcon(QIcon("icons/draw_icon.png"))
+        self.merge_rois_button.setIcon(QIcon("icons/merge_icon.png"))
         self.merge_rois_button.setIconSize(QSize(16, 16))
         self.merge_rois_button.clicked.connect(self.controller.merge_selected_rois)
         self.roi_button_layout_2.addWidget(self.merge_rois_button)
@@ -918,7 +952,7 @@ class ROIFilteringWidget(ParamWidget):
 
         self.plot_traces_button = HoverButton('Plot Traces', None, self.parent_widget.statusBar())
         self.plot_traces_button.setHoverMessage("Plot traces of the selected ROIs.")
-        # self.plot_traces_button.setIcon(QIcon("icons/draw_icon.png"))
+        self.plot_traces_button.setIcon(QIcon("icons/plot_icon.png"))
         self.plot_traces_button.setIconSize(QSize(16, 16))
         self.plot_traces_button.clicked.connect(self.controller.plot_traces)
         self.roi_button_layout_2.addWidget(self.plot_traces_button)
@@ -959,7 +993,7 @@ class ROIFilteringWidget(ParamWidget):
         self.filter_rois_button.setIcon(QIcon("icons/accept_icon.png"))
         self.filter_rois_button.setIconSize(QSize(16,16))
         self.filter_rois_button.setStyleSheet('font-weight: bold;')
-        self.filter_rois_button.clicked.connect(lambda:self.controller.filter_rois(self.controller.z))
+        self.filter_rois_button.clicked.connect(self.controller.filter_rois)
         self.button_layout.addWidget(self.filter_rois_button)
 
         self.process_videos_button = HoverButton('Save Traces...', None, self.parent_widget.statusBar())
@@ -1034,6 +1068,15 @@ class ROIFilteringWidget(ParamWidget):
         self.param_widget.setEnabled(True)
         # self.erase_rois_button.setEnabled(True)
         self.draw_rois_button.setText("Draw")
+
+    def item_selected(self):
+        selected_items = self.videos_list.selectedItems()
+
+        if len(selected_items) > 0:
+            index = self.videos_list.selectedIndexes()[0].row()
+            self.controller.video_selected(index)
+        else:
+            index = None
 
     def toggle_use_cnn(self, boolean):
         self.controller.controller.params['use_cnn'] = boolean

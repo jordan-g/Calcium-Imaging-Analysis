@@ -182,13 +182,15 @@ class PreviewQLabel(QLabel):
         self.update_pixmap(self.image, update_stored_image=False)
 
     def erase_rois(self, rois_to_erase):
+        print(len(self.all_contours))
         for roi_to_erase in rois_to_erase:
             cv2.drawContours(self.image, self.all_contours[roi_to_erase], -1, (128, 128, 128), 1)
 
         self.update_pixmap(self.image, update_stored_image=False)
 
-    def unerase_rois(self):
-        cv2.drawContours(self.image, self.flat_contours, -1, (255, 0, 0), 1)
+    def unerase_rois(self, rois_to_unerase):
+        for roi in rois_to_unerase:
+            cv2.drawContours(self.image, self.all_contours[roi], -1, (255, 0, 0), 1)
 
         self.update_pixmap(self.image, update_stored_image=False)
 
@@ -263,8 +265,8 @@ class PreviewQLabel(QLabel):
 
             if video_dimensions is not None:
                     # overlay = np.zeros(image.shape).astype(np.uint8)
-
-                if self.roi_overlay is None and roi_spatial_footprints is not None:
+                if (not use_existing_roi_overlay or self.roi_overlay is None) and roi_spatial_footprints is not None:
+                    print("Computing new contours.....")
                     self.all_contours = []
                     self.flat_contours = []
 
@@ -275,24 +277,24 @@ class PreviewQLabel(QLabel):
                     kept_footprints = []
 
                     for i in range(roi_spatial_footprints.shape[-1]):
-                        if removed_rois is not None and i not in removed_rois:
-                            maximum = np.amax(roi_spatial_footprints[:, :, i])
-                            mask = (roi_spatial_footprints[:, :, i] > 0.1*maximum).copy()
+                        # if removed_rois is not None and i not in removed_rois:
+                        maximum = np.amax(roi_spatial_footprints[:, :, i])
+                        mask = (roi_spatial_footprints[:, :, i] > 0.1*maximum).copy()
 
-                            maximum_mask[mask] = maximum
+                        # maximum_mask[mask] = maximum
 
-                            total_mask += mask
-                            
-                            contours = cv2.findContours(mask.astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[-2]
+                        # total_mask += mask
+                        
+                        contours = cv2.findContours(mask.astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[-2]
 
-                            self.all_contours.append(contours)
-                            self.flat_contours += contours
+                        self.all_contours.append(contours)
+                        self.flat_contours += contours
 
-                            kept_footprints.append(i)
+                            # kept_footprints.append(i)
 
-                    roi_sum = np.sum(roi_spatial_footprints[:, :, kept_footprints], axis=-1)
+                    # roi_sum = np.sum(roi_spatial_footprints[:, :, kept_footprints], axis=-1)
 
-                    total_mask = roi_sum > 0
+                    # total_mask = roi_sum > 0
 
                     # overlay[total_mask, 0] = (255.0*roi_sum/maximum_mask).astype(np.uint8)[total_mask]
 
@@ -415,11 +417,11 @@ class PreviewWindow(QMainWindow):
         # create a shortcut for ending mask creation
         self.done_creating_mask_shortcut = QShortcut(QKeySequence('Return'), self)
 
-        self.trace_rois_action = QAction('Plot Traces', self)
-        self.trace_rois_action.setShortcut('T')
-        self.trace_rois_action.setStatusTip('Plot traces for the selected ROIs.')
-        self.trace_rois_action.triggered.connect(self.controller.update_trace_plot)
-        self.trace_rois_action.setEnabled(False)
+        # self.trace_rois_action = QAction('Plot Traces', self)
+        # self.trace_rois_action.setShortcut('T')
+        # self.trace_rois_action.setStatusTip('Plot traces for the selected ROIs.')
+        # self.trace_rois_action.triggered.connect(self.controller.update_trace_plot)
+        # self.trace_rois_action.setEnabled(False)
 
         # set main widget
         self.setCentralWidget(self.main_widget)
@@ -682,7 +684,7 @@ class PreviewWindow(QMainWindow):
     def mouse_moved(self, start_point, end_point, clicked=False):
         if self.drawing_mask:
             self.add_tentative_mask_point(end_point)
-        elif clicked:
+        elif self.controller.mode == "roi_filtering" and clicked:
             if self.erasing_rois: 
                 self.select_roi_at_point(end_point)
             else:
@@ -696,10 +698,10 @@ class PreviewWindow(QMainWindow):
             # self.click_end_point = end_point
 
     def mouse_released(self, start_point, end_point, mouse_moved=False, shift_held=False):
-        if self.controller.mode == "roi_finding":
-            if not self.drawing_mask and not mouse_moved:
-                self.select_mask(end_point)
-        elif self.controller.mode == "roi_filtering":
+        # if self.controller.mode == "roi_finding":
+        #     if not self.drawing_mask and not mouse_moved:
+        #         self.select_mask(end_point)
+        if self.controller.mode == "roi_filtering":
             if self.erasing_rois:
                 self.end_erase_rois()
             elif self.drawing_rois:

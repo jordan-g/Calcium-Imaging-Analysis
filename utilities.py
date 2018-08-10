@@ -221,13 +221,17 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
         return np.zeros(1), [ None for z in z_range ]
 
     def check_if_cancelled():
-        if thread is not None and thread.running == False:
+        if (thread is not None and thread.running == False) or thread is None:
             if use_multiprocessing:
                 cm.stop_server()
 
             log_files = glob.glob('Yr*_LOG_*')
             for log_file in log_files:
                 os.remove(log_file)
+
+            # mmap_files = glob.glob('*.mmap')
+            # for mmap_file in mmap_files:
+            #     os.remove(mmap_file)
 
             return np.zeros(1), [ None for z in z_range ]
 
@@ -355,7 +359,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
 
         fnames = mc.fname_tot_els   # name of the pw-rigidly corrected file.
         border_to_0 = bord_px_els     # number of pixels to exclude
-        fname_new = cm.save_memmap(fnames, base_name='memmap_', order = 'C',
+        fname_new = cm.save_memmap(fnames, base_name='memmap_z_{}'.format(z), order = 'C',
                                    border_to_0 = bord_px_els) # exclude borders
 
         # now load the file
@@ -400,6 +404,10 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
     log_files = glob.glob('Yr*_LOG_*')
     for log_file in log_files:
         os.remove(log_file)
+
+    # mmap_files = glob.glob('*.mmap')
+    # for mmap_file in mmap_files:
+    #     os.remove(mmap_file)
 
     return mc_video, mc_borders
 
@@ -632,7 +640,7 @@ def calculate_temporal_components(video_paths, roi_spatial_footprints, roi_tempo
         final_video_path = "video_concatenated_z_{}.tif".format(z)
         imsave(final_video_path, final_video[:, z, :, :])
 
-        fname_new = cm.save_memmap([final_video_path], base_name='memmap_', order='C') # exclude borders
+        fname_new = cm.save_memmap([final_video_path], base_name='memmap_z_{}'.format(z), order='C') # exclude borders
 
         # # now load the file
         Yr, dims, T = cm.load_memmap(fname_new)
@@ -674,8 +682,8 @@ def do_cnmf(video, params, roi_spatial_footprints, roi_temporal_footprints, roi_
     else:
         dview = None
 
-    print("~")
-    print(roi_spatial_footprints.shape)
+    # print("~")
+    # print(roi_spatial_footprints.shape)
 
     video_path = "video_temp.tif"
     imsave(video_path, video)
@@ -811,7 +819,7 @@ def find_rois(video, video_path, params, masks=None, background_mask=None, mc_bo
         else:
             border_pix = 0
 
-        fname_new = cm.save_memmap(fnames, base_name='memmap_', order='C') # exclude borders
+        fname_new = cm.save_memmap(fnames, base_name='memmap_z_{}'.format(z), order='C') # exclude borders
 
         # now load the file
         Yr, dims, T = cm.load_memmap(fname_new)
@@ -856,6 +864,8 @@ def find_rois(video, video_path, params, masks=None, background_mask=None, mc_bo
         bg_spatial_footprints[z]   = cnm.b
         bg_temporal_footprints[z]  = cnm.f
 
+        os.remove(fname)
+
     if use_multiprocessing:
         if backend == 'multiprocessing':
             dview.close()
@@ -871,25 +881,40 @@ def find_rois(video, video_path, params, masks=None, background_mask=None, mc_bo
 
     return roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints
 
-def filter_rois(video, roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints, params):
+def filter_rois(video_paths, roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints, params):
     # filtered_out_rois = [ None for i in range(video.shape[1]) ]
 
     # pdb.set_trace()
 
-    # for z in range(video.shape[1]):
-    idx_components, idx_components_bad, SNR_comp, r_values, cnn_preds = \
-            estimate_components_quality_auto(video.transpose([1, 2, 0]), roi_spatial_footprints, roi_temporal_footprints, bg_spatial_footprints, bg_temporal_footprints, 
-                                             roi_temporal_residuals, params['imaging_fps'], params['decay_time'], params['half_size'], (video.shape[-2], video.shape[-1]), 
-                                             dview = None, min_SNR=params['min_snr'], 
-                                             r_values_min = params['min_spatial_corr'], use_cnn = params['use_cnn'], 
-                                             thresh_cnn_lowest = params['cnn_threshold'], gSig_range=[ (i, i) for i in range(max(1, params['half_size']-5), params['half_size']+5) ])
+    for i in range(len(video_paths)):
+        video_path = video_paths[i]
 
-    filtered_out_rois = list(idx_components_bad)
+        video = imread(video_path)
+            
+        if len(video.shape) == 3:
+            # add a z dimension
+            video = video[:, np.newaxis, :, :]
+            
+        if i == 0:
+            final_video = video
+        else:
+            final_video = np.concatenate([final_video, video], axis=0)
 
-    for i in range(roi_spatial_footprints.shape[-1]):
-        area = np.sum(roi_spatial_footprints[:, i] > 0)
-        if (area < params['min_area'] or area > params['max_area']) and i not in filtered_out_rois:
-            filtered_out_rois.append(i)
+    filtered_out_rois = []
+    for z in range(final_video.shape[1]):
+        idx_components, idx_components_bad, SNR_comp, r_values, cnn_preds = \
+                estimate_components_quality_auto(final_video[:, z, :, :].transpose([1, 2, 0]), roi_spatial_footprints[z], roi_temporal_footprints[z], bg_spatial_footprints[z], bg_temporal_footprints[z], 
+                                                 roi_temporal_residuals[z], params['imaging_fps'], params['decay_time'], params['half_size'], (video.shape[-2], video.shape[-1]), 
+                                                 dview = None, min_SNR=params['min_snr'], 
+                                                 r_values_min = params['min_spatial_corr'], use_cnn = params['use_cnn'], 
+                                                 thresh_cnn_lowest = params['cnn_threshold'], gSig_range=[ (i, i) for i in range(max(1, params['half_size']-5), params['half_size']+5) ])
+
+        filtered_out_rois.append(list(idx_components_bad))
+
+        for i in range(roi_spatial_footprints[z].shape[-1]):
+            area = np.sum(roi_spatial_footprints[z][:, i] > 0)
+            if (area < params['min_area'] or area > params['max_area']) and i not in filtered_out_rois[-1]:
+                filtered_out_rois[-1].append(i)
 
     return filtered_out_rois
 
@@ -1056,6 +1081,9 @@ def remove_rois(rois, rois_to_remove):
 
 def get_roi_containing_point(rois, manual_rois, roi_point, video_shape):
     flattened_point = roi_point[0]*video_shape[0] + roi_point[1]
+
+    if flattened_point >= video_shape[0]*video_shape[1]:
+        return False, None
 
     try:
         rois = rois.toarray()
