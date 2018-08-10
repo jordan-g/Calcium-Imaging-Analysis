@@ -437,8 +437,8 @@ class GUIController():
 
                     writer.writerow([''] + [ "ROI #{}".format(roi) for roi in roi_nums ])
 
-                    for i in range(traces.shape[0]):
-                        writer.writerow([i+1] + traces[i].tolist())
+                    for i in range(traces.shape[1]):
+                        writer.writerow([i+1] + traces[:, i].tolist())
 
                 with open(os.path.join(video_dir_path, 'z_{}_centroids.csv'.format(z)), 'w') as file:
                     writer = csv.writer(file)
@@ -1190,10 +1190,7 @@ class GUIController():
                 self.roi_filtering_param_widget.merge_rois_button.setEnabled(False)
                 # self.roi_filtering_param_widget.erase_selected_roi_button.setEnabled(True)
                 self.roi_filtering_param_widget.plot_traces_button.setEnabled(True)
-                if selected_roi not in self.controller.removed_rois[self.z]:
-                    self.roi_filtering_param_widget.erase_selected_roi_button.setEnabled(True)
-                else:
-                    self.roi_filtering_param_widget.unerase_selected_roi_button.setEnabled(True)
+                self.roi_filtering_param_widget.unerase_selected_roi_button.setEnabled(True)
                 self.param_window.merge_rois_action.setEnabled(False)
                 self.param_window.trace_rois_action.setEnabled(True)
                 # self.preview_window.trace_rois_action.setEnabled(True)
