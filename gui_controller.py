@@ -232,6 +232,7 @@ class GUIController():
 
             self.param_window.tab_widget.setTabEnabled(3, True)
             self.param_window.show_rois_action.setEnabled(True)
+            self.param_window.save_rois_action.setEnabled(True)
 
             # stop any motion correction or ROI finding process
             self.cancel_motion_correction()
@@ -1547,65 +1548,107 @@ class GUIController():
         self.update_trace_plot()
 
     def merge_selected_rois(self):
-        # pdb.set_trace()
-        rois = list(range(self.controller.roi_spatial_footprints[self.z].shape[1]))
-        merged_spatial_footprint  = np.sum(self.controller.roi_spatial_footprints[self.z][:, self.selected_rois].toarray(), axis=1)
-        merged_temporal_footprint = np.sum(self.controller.roi_temporal_footprints[self.z][self.selected_rois], axis=0)[np.newaxis, :]
-        merged_temporal_residual  = np.sum(self.controller.roi_temporal_residuals[self.z][self.selected_rois], axis=0)[np.newaxis, :]
-        # for roi in self.selected_rois:
-        #     del rois[roi]
-
-        rois = [ roi for roi in rois if roi not in self.selected_rois]
-
-        # pdb.set_trace()
-
-        # pdb.set_trace()
-        roi_spatial_footprints  = np.concatenate((self.controller.roi_spatial_footprints[self.z][:, rois].toarray(), np.asarray(merged_spatial_footprint)[:, np.newaxis]), axis=1)
-        roi_temporal_footprints = np.concatenate((self.controller.roi_temporal_footprints[self.z][rois], merged_temporal_footprint), axis=0)
-        roi_temporal_residuals  = np.concatenate((self.controller.roi_temporal_residuals[self.z][rois], merged_temporal_residual), axis=0)
-        bg_spatial_footprints   = self.controller.bg_spatial_footprints[self.z]
-        bg_temporal_footprints  = self.controller.bg_temporal_footprints[self.z]
-
-        # pdb.set_trace()
-
-        if self.controller.use_mc_video and self.controller.mc_video is not None:
-            video_paths = self.controller.mc_video_paths
-        else:
-            video_paths = self.controller.video_paths
-
-        for i in range(len(video_paths)):
-            video_path = video_paths[i]
-
-            video = imread(video_path)
-                
-            if len(video.shape) == 3:
-                # add a z dimension
-                video = video[:, np.newaxis, :, :]
-                
-            if i == 0:
-                final_video = video
+        if len(self.selected_rois) > 1:
+            if isinstance(self.controller.roi_spatial_footprints[self.z], scipy.sparse.coo_matrix) or isinstance(self.controller.roi_spatial_footprints[self.z], scipy.sparse.csc_matrix):
+                f = self.controller.roi_spatial_footprints[self.z].toarray()
             else:
-                final_video = np.concatenate([final_video, video], axis=0)
+                f = self.controller.roi_spatial_footprints[self.z]
 
-        roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = utilities.do_cnmf(final_video[:, self.z, :, :], self.controller.params, roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints, use_multiprocessing=self.controller.use_multiprocessing)
+            pdb.set_trace()
+            rois = list(range(self.controller.roi_spatial_footprints[self.z].shape[1]))
+            merged_spatial_footprint  = np.sum(f[:, self.selected_rois], axis=1)
+            merged_temporal_footprint = np.sum(self.controller.roi_temporal_footprints[self.z][self.selected_rois], axis=0)[np.newaxis, :]
+            merged_temporal_residual  = np.sum(self.controller.roi_temporal_residuals[self.z][self.selected_rois], axis=0)[np.newaxis, :]
+            # for roi in self.selected_rois:
+            #     del rois[roi]
 
-        # print("Done!")
+            rois = [ roi for roi in rois if roi not in self.selected_rois]
 
-        self.controller.roi_spatial_footprints[self.z]  = roi_spatial_footprints.tocsc()
-        self.controller.roi_temporal_footprints[self.z] = roi_temporal_footprints
-        self.controller.roi_temporal_residuals[self.z]  = roi_temporal_residuals
-        self.controller.bg_spatial_footprints[self.z]   = bg_spatial_footprints
-        self.controller.bg_temporal_footprints[self.z]  = bg_temporal_footprints
+            print(rois)
+            print(self.selected_rois)
 
-        # pdb.set_trace()
+            # pdb.set_trace()
 
-        self.selected_rois = []
+            # pdb.set_trace()
+            roi_spatial_footprints  = np.concatenate((f[:, rois], np.asarray(merged_spatial_footprint)[:, np.newaxis]), axis=1)
+            roi_temporal_footprints = np.concatenate((self.controller.roi_temporal_footprints[self.z][rois], merged_temporal_footprint), axis=0)
+            roi_temporal_residuals  = np.concatenate((self.controller.roi_temporal_residuals[self.z][rois], merged_temporal_residual), axis=0)
+            bg_spatial_footprints   = self.controller.bg_spatial_footprints[self.z]
+            bg_temporal_footprints  = self.controller.bg_temporal_footprints[self.z]
 
-        # print("Done!")
+            # pdb.set_trace()
 
-        self.show_roi_image(show=self.roi_filtering_param_widget.show_rois_checkbox.isChecked(), update_overlay=True, force_update=True)
+            print(roi_spatial_footprints.shape[1])
 
-        # print("Done!")
+            if self.controller.use_mc_video and self.controller.mc_video is not None:
+                video_paths = self.controller.mc_video_paths
+            else:
+                video_paths = self.controller.video_paths
+
+            for i in range(len(video_paths)):
+                video_path = video_paths[i]
+
+                video = imread(video_path)
+                    
+                if len(video.shape) == 3:
+                    # add a z dimension
+                    video = video[:, np.newaxis, :, :]
+                    
+                if i == 0:
+                    final_video = video
+                else:
+                    final_video = np.concatenate([final_video, video], axis=0)
+
+            roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = utilities.do_cnmf(final_video[:, self.z, :, :], self.controller.params, roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints, use_multiprocessing=self.controller.use_multiprocessing)
+
+            print(roi_spatial_footprints.shape[1])
+            # print("Done!")
+
+            self.controller.roi_spatial_footprints[self.z]  = roi_spatial_footprints.tocsc()
+            self.controller.roi_temporal_footprints[self.z] = roi_temporal_footprints
+            self.controller.roi_temporal_residuals[self.z]  = roi_temporal_residuals
+            self.controller.bg_spatial_footprints[self.z]   = bg_spatial_footprints
+            self.controller.bg_temporal_footprints[self.z]  = bg_temporal_footprints
+
+            removed_rois      = np.array(self.controller.removed_rois[self.z])
+            locked_rois       = np.array(self.controller.locked_rois[self.z])
+            erased_rois       = np.array(self.controller.erased_rois[self.z])
+            filtered_out_rois = np.array(self.controller.filtered_out_rois[self.z])
+
+            # update removed ROIs
+            for i in sorted(self.selected_rois):
+                removed_rois[removed_rois > i]           -= 1
+                locked_rois[locked_rois > i]             -= 1
+                erased_rois[erased_rois > i]             -= 1
+                filtered_out_rois[filtered_out_rois > i] -= 1
+
+                if i in removed_rois:
+                    index = np.where(removed_rois == i)[0][0]
+                    removed_rois = np.delete(removed_rois, index)
+                if i in locked_rois:
+                    index = np.where(locked_rois == i)[0][0]
+                    locked_rois = np.delete(locked_rois, index)
+                if i in erased_rois:
+                    index = np.where(erased_rois == i)[0][0]
+                    erased_rois = np.delete(erased_rois, index)
+                if i in filtered_out_rois:
+                    index = np.where(filtered_out_rois == i)[0][0]
+                    filtered_out_rois = np.delete(filtered_out_rois, index)
+
+            self.controller.removed_rois[self.z]      = list(removed_rois)
+            self.controller.locked_rois[self.z]       = list(locked_rois)
+            self.controller.erased_rois[self.z]       = list(erased_rois)
+            self.controller.filtered_out_rois[self.z] = list(filtered_out_rois)
+
+            # pdb.set_trace()
+
+            self.selected_rois = []
+
+            # print("Done!")
+
+            self.show_roi_image(show=self.roi_filtering_param_widget.show_rois_checkbox.isChecked(), update_overlay=True, force_update=True)
+
+            # print("Done!")
 
     def lock_roi(self): # TODO: create roi_locked() and roi_unlocked() methods for the param window
         if self.selected_rois[0] not in self.controller.locked_rois[self.z]:

@@ -182,6 +182,8 @@ class PreviewQLabel(QLabel):
         self.update_pixmap(self.image, update_stored_image=False)
 
     def erase_rois(self, rois_to_erase):
+        print(rois_to_erase)
+        # pdb.set_trace()
         print(len(self.all_contours))
         for roi_to_erase in rois_to_erase:
             cv2.drawContours(self.image, self.all_contours[roi_to_erase], -1, (128, 128, 128), 1)
@@ -267,7 +269,7 @@ class PreviewQLabel(QLabel):
                     # overlay = np.zeros(image.shape).astype(np.uint8)
                 if (not use_existing_roi_overlay or self.roi_overlay is None) and roi_spatial_footprints is not None:
                     print("Computing new contours.....")
-                    self.all_contours = []
+                    self.all_contours = [ None for i in range(roi_spatial_footprints.shape[-1]) ]
                     self.flat_contours = []
 
                     total_mask = np.zeros((video_dimensions[1], video_dimensions[2])).astype(bool)
@@ -287,7 +289,7 @@ class PreviewQLabel(QLabel):
                         
                         contours = cv2.findContours(mask.astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[-2]
 
-                        self.all_contours.append(contours)
+                        self.all_contours[i] = contours
                         self.flat_contours += contours
 
                             # kept_footprints.append(i)

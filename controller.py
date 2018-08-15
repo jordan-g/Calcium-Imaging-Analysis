@@ -413,6 +413,7 @@ class Controller():
         
         print(self.filtered_out_rois)
         for z in range(self.video.shape[1]):
+            self.filtered_out_rois[z] = [ roi for roi in self.filtered_out_rois[z] if roi not in self.locked_rois[z] ]
             self.removed_rois[z] = self.filtered_out_rois[z] + self.erased_rois[z]
 
     def create_roi(self, start_point, end_point, z): # TODO: Update this
@@ -502,6 +503,12 @@ class Controller():
         if label in self.erased_rois[z]:
             i = self.erased_rois[z].index(label)
             del self.erased_rois[z][i]
+        elif label in self.filtered_out_rois[z]:
+            i = self.filtered_out_rois[z].index(label)
+            del self.filtered_out_rois[z][i]
+
+            if label not in self.locked_rois[z]:
+                self.locked_rois.append(label)
 
         self.removed_rois[z] = self.filtered_out_rois[z] + self.erased_rois[z]
 

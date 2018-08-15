@@ -41,7 +41,7 @@ class ParamWindow(QMainWindow):
 
         # set up the status bar
         self.statusBar().setStyleSheet("background-color: rgba(255, 255, 255, 0.5); border-top: 1px solid rgba(0, 0, 0, 0.1); font-size: 10px; font-style: italic;")
-        self.statusBar().showMessage("To begin, open one or more video files. TIFF and NPY files are supported.")
+        self.statusBar().showMessage("To begin, open one or more video files. Only TIFF files are currently supported.")
 
         self.main_param_widget = MainParamWidget(self, self.controller)
         self.main_layout.addWidget(self.main_param_widget, 0, 0)
@@ -78,6 +78,12 @@ class ParamWindow(QMainWindow):
         self.tab_widget.addTab(self.roi_filtering_widget, "4. Refinement && Saving")
         # self.tab_widget.setTabEnabled(1, False)
         self.tab_widget.currentChanged.connect(self.tab_selected)
+
+        self.use_multiprocessing_checkbox = HoverCheckBox("Use multiprocessing", None, self.statusBar())
+        self.use_multiprocessing_checkbox.setHoverMessage("Use multiple cores (this can speed up motion correction).")
+        self.use_multiprocessing_checkbox.setChecked(True)
+        self.use_multiprocessing_checkbox.clicked.connect(lambda:self.controller.set_use_multiprocessing(self.use_multiprocessing_checkbox.isChecked()))
+        self.main_layout.addWidget(self.use_multiprocessing_checkbox, 4, 0)
 
         # create menus
         self.create_menus()
@@ -559,11 +565,11 @@ class MotionCorrectionWidget(ParamWidget):
         self.button_layout_2.setSpacing(10)
         self.main_layout.addWidget(self.button_widget_2)
 
-        self.use_multiprocessing_checkbox = HoverCheckBox("Use multiprocessing", None, self.parent_widget.statusBar())
-        self.use_multiprocessing_checkbox.setHoverMessage("Use multiple cores (this can speed up motion correction).")
-        self.use_multiprocessing_checkbox.setChecked(True)
-        self.use_multiprocessing_checkbox.clicked.connect(lambda:self.controller.set_use_multiprocessing(self.use_multiprocessing_checkbox.isChecked()))
-        self.button_layout_2.addWidget(self.use_multiprocessing_checkbox)
+        # self.use_multiprocessing_checkbox = HoverCheckBox("Use multiprocessing", None, self.parent_widget.statusBar())
+        # self.use_multiprocessing_checkbox.setHoverMessage("Use multiple cores (this can speed up motion correction).")
+        # self.use_multiprocessing_checkbox.setChecked(True)
+        # self.use_multiprocessing_checkbox.clicked.connect(lambda:self.controller.set_use_multiprocessing(self.use_multiprocessing_checkbox.isChecked()))
+        # self.button_layout_2.addWidget(self.use_multiprocessing_checkbox)
 
         self.use_mc_video_checkbox = HoverCheckBox("Use motion-corrected videos", None, self.parent_widget.statusBar())
         self.use_mc_video_checkbox.setHoverMessage("Use the motion-corrected videos for finding ROIs.")
@@ -723,11 +729,11 @@ class ROIFindingWidget(ParamWidget):
         self.button_layout.setSpacing(5)
         self.main_layout.addWidget(self.button_widget)
 
-        self.use_multiprocessing_checkbox = HoverCheckBox("Use multiprocessing", None, self.parent_widget.statusBar())
-        self.use_multiprocessing_checkbox.setHoverMessage("Use multiple cores (this can speed up ROI finding).")
-        self.use_multiprocessing_checkbox.setChecked(True)
-        self.use_multiprocessing_checkbox.clicked.connect(lambda:self.controller.set_use_multiprocessing(self.use_multiprocessing_checkbox.isChecked()))
-        self.button_layout.addWidget(self.use_multiprocessing_checkbox)
+        # self.use_multiprocessing_checkbox = HoverCheckBox("Use multiprocessing", None, self.parent_widget.statusBar())
+        # self.use_multiprocessing_checkbox.setHoverMessage("Use multiple cores (this can speed up ROI finding).")
+        # self.use_multiprocessing_checkbox.setChecked(True)
+        # self.use_multiprocessing_checkbox.clicked.connect(lambda:self.controller.set_use_multiprocessing(self.use_multiprocessing_checkbox.isChecked()))
+        # self.button_layout.addWidget(self.use_multiprocessing_checkbox)
 
         self.show_rois_checkbox = QCheckBox("Show ROIs")
         self.show_rois_checkbox.setObjectName("Show ROIs")

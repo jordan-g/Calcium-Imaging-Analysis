@@ -725,17 +725,17 @@ def do_cnmf(video, params, roi_spatial_footprints, roi_temporal_footprints, roi_
     cnm = cnmf.CNMF(n_processes=8, k=K, gSig=gSig, merge_thresh= merge_thresh, 
                     p = p,  dview=dview, rf=rf, stride=stride_cnmf, memory_fact=1,
                     method_init=init_method, alpha_snmf=alpha_snmf, rolling_sum=rolling_sum,
-                    only_init_patch = True, skip_refinement=False, gnb = gnb, border_pix = border_pix, ssub=1, ssub_B=1, tsub=1, Ain=roi_spatial_footprints, Cin=roi_temporal_footprints, b_in=bg_spatial_footprints, f_in=bg_temporal_footprints, do_merge=False)
+                    only_init_patch = True, skip_refinement=True, gnb = gnb, border_pix = border_pix, ssub=1, ssub_B=1, tsub=1, Ain=roi_spatial_footprints, Cin=roi_temporal_footprints, b_in=bg_spatial_footprints, f_in=bg_temporal_footprints, do_merge=False)
 
     cnm = cnm.fit(images)
 
-    C, A, b, f, S, bl, c1, sn, g, YrA, lam = update_temporal_components(Yr, cnm.A, cnm.b, cnm.C, cnm.f, bl=None, c1=None, g=None, sn=None, nb=1, ITER=2, block_size=5000, num_blocks_per_run=20, debug=False, dview=dview, p=0)
+    # C, A, b, f, S, bl, c1, sn, g, YrA, lam = update_temporal_components(Yr, cnm.A, cnm.b, cnm.C, cnm.f, bl=None, c1=None, g=None, sn=None, nb=1, ITER=2, block_size=5000, num_blocks_per_run=20, debug=False, dview=dview, p=0)
 
-    roi_spatial_footprints  = A
-    roi_temporal_footprints = C
-    roi_temporal_residuals  = YrA
-    bg_spatial_footprints   = b
-    bg_temporal_footprints  = f
+    roi_spatial_footprints  = cnm.A
+    roi_temporal_footprints = cnm.C
+    roi_temporal_residuals  = cnm.YrA
+    bg_spatial_footprints   = cnm.b
+    bg_temporal_footprints  = cnm.f
 
     # pdb.set_trace()
 
@@ -911,8 +911,13 @@ def filter_rois(video_paths, roi_spatial_footprints, roi_temporal_footprints, ro
 
         filtered_out_rois.append(list(idx_components_bad))
 
-        for i in range(roi_spatial_footprints[z].shape[-1]):
-            area = np.sum(roi_spatial_footprints[z][:, i] > 0)
+        if isinstance(roi_spatial_footprints[z], scipy.sparse.coo_matrix):
+            f = roi_spatial_footprints[z].toarray()
+        else:
+            f = roi_spatial_footprints[z]
+
+        for i in range(f.shape[-1]):
+            area = np.sum(f[:, i] > 0)
             if (area < params['min_area'] or area > params['max_area']) and i not in filtered_out_rois[-1]:
                 filtered_out_rois[-1].append(i)
 
