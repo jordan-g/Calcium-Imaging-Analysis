@@ -384,7 +384,7 @@ class GUIController():
                 print("Calculating ROI activities for z={}...".format(z))
 
                 centroids = np.zeros((self.controller.roi_spatial_footprints[z].shape[-1], 2))
-                kept_rois = [ roi for roi in range(self.controller.roi_spatial_footprints[z].shape[-1]) if roi not in self.controller.removed_rois ]
+                kept_rois = [ roi for roi in range(self.controller.roi_spatial_footprints[z].shape[-1]) if (roi not in self.controller.removed_rois[z]) or (roi in self.controller.locked_rois[z]) ]
 
                 footprints_2d = self.controller.roi_spatial_footprints[z].toarray().reshape((video.shape[2], video.shape[3], self.controller.roi_spatial_footprints[z].shape[-1]))
 
