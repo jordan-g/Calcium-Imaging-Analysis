@@ -923,16 +923,16 @@ class ROIFilteringWidget(ParamWidget):
 
         self.roi_button_layout_2.addStretch()
 
-        self.erase_selected_roi_button = HoverButton('Hide', None, self.parent_widget.statusBar())
-        self.erase_selected_roi_button.setHoverMessage("Hide the selected ROI.")
+        self.erase_selected_roi_button = HoverButton('Discard', None, self.parent_widget.statusBar())
+        self.erase_selected_roi_button.setHoverMessage("Discard the selected ROI.")
         self.erase_selected_roi_button.setIcon(QIcon("icons/hide_icon.png"))
         self.erase_selected_roi_button.setIconSize(QSize(16, 16))
         self.erase_selected_roi_button.clicked.connect(self.controller.erase_selected_rois)
         self.erase_selected_roi_button.setEnabled(False)
         self.roi_button_layout_2.addWidget(self.erase_selected_roi_button)
 
-        self.unerase_selected_roi_button = HoverButton('Show', None, self.parent_widget.statusBar())
-        self.unerase_selected_roi_button.setHoverMessage("Show the selected ROI.")
+        self.unerase_selected_roi_button = HoverButton('Keep', None, self.parent_widget.statusBar())
+        self.unerase_selected_roi_button.setHoverMessage("Keep the selected ROI.")
         self.unerase_selected_roi_button.setIcon(QIcon("icons/show_icon.png"))
         self.unerase_selected_roi_button.setIconSize(QSize(16, 16))
         self.unerase_selected_roi_button.clicked.connect(self.controller.unerase_selected_rois)
