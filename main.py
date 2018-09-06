@@ -16,10 +16,15 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
 
     if pyqt_version == 5:
+        # enable high DPI scaling
         app.setAttribute(Qt.AA_UseHighDpiPixmaps)
         app.setAttribute(Qt.AA_EnableHighDpiScaling)
-    controller = Controller()
+
+    # create controllers
+    controller     = Controller()
     gui_controller = GUIController(controller)
+
+    # import videos
     gui_controller.import_videos()
 
     app.exec_()

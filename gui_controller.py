@@ -1,29 +1,31 @@
 from __future__ import division
 from past.utils import old_div
-from param_window import ParamWindow
-from preview_window import PreviewWindow
-from skimage.morphology import *
 import utilities
 import time
 import json
 import os
 import glob
 import sys
+import numpy as np
+import cv2
+import matplotlib.pyplot as plt
+from matplotlib import gridspec
+import csv
+import pdb
+
 import scipy.ndimage as ndi
 import scipy.signal
-import numpy as np
+from scipy.sparse import issparse, spdiags, coo_matrix, csc_matrix
+
+from skimage.morphology import *
+from skimage.restoration import *
 from skimage.external.tifffile import imread, imsave
 from skimage.measure import find_contours, regionprops
 from skimage.filters import gaussian
-from skimage.restoration import (denoise_tv_chambolle, denoise_bilateral,
-                                 denoise_wavelet, estimate_sigma)
 from skimage import exposure
-import cv2
-import matplotlib.pyplot as plt
-import csv
-import pdb
-from scipy.sparse import issparse, spdiags, coo_matrix, csc_matrix
-from matplotlib import gridspec
+
+from param_window import ParamWindow
+from preview_window import PreviewWindow
 
 # import the Qt library
 try:
@@ -39,21 +41,45 @@ except:
     from matplotlib.figure import Figure
     pyqt_version = 5
 
+# check which Python version is being used
 if sys.version_info[0] < 3:
     python_version = 2
 else:
     python_version = 3
 
+# set default parameters dictionary
+DEFAULT_PARAMS = {'gamma'   : 1.0,
+                  'contrast': 1.0,
+                  'fps'     : 60,
+                  'z'       : 0}
+
+# set filename for saving current parameters
+PARAMS_FILENAME = "gui_params.txt"
+
 colors = [(255, 255, 0), (255, 0, 255), (0, 255, 255), (128, 128, 128)]
 
 class GUIController():
     def __init__(self, controller):
+        # load parameters
+        if os.path.exists(PARAMS_FILENAME):
+            try:
+                self.params = DEFAULT_PARAMS
+                params = json.load(open(PARAMS_FILENAME))
+                for key in params.keys():
+                    self.params[key] = params[key]
+            except:
+                self.params = DEFAULT_PARAMS
+        else:
+            self.params = DEFAULT_PARAMS
+
+        # set controller
         self.controller = controller
         
         # create windows
         self.param_window   = ParamWindow(self)
         self.preview_window = PreviewWindow(self)
 
+        # initialize variables
         self.video               = None
         self.image               = None
         self.background_mask     = None
@@ -187,6 +213,61 @@ class GUIController():
                 # self.preview_window.image_plot.erase_rois(self.controller.removed_rois[self.z])
                 if self.mode == "roi_filtering":
                     self.update_trace_plot()
+
+    def calculate_mean_images(self):
+        if self.use_motion_correction and self.mc_video is not None:
+            video = self.mc_video
+        else:
+            video = self.video
+
+        if self.apply_blur:
+            self.mean_images = [ ndi.median_filter(utilities.sharpen(ndi.gaussian_filter(denoise_wavelet(utilities.mean(video, z)/self.video_max)*self.video_max, 1)), 3) for z in range(video.shape[1]) ]
+        else:
+            self.mean_images = [ denoise_wavelet(utilities.mean(video, z)/self.video_max)*self.video_max for z in range(video.shape[1]) ]
+
+        if self.video.shape[1] > 1:
+            # set size of squares whose mean brightness we will calculate
+            window_size = 50
+
+            # get the coordinates of the top-left corner of the z=0 plane, ignoring any black borders due to motion correction
+            nonzeros = np.nonzero(self.mean_images[0] > 0)
+            crop_y   = nonzeros[0][0] + 20
+            crop_x   = nonzeros[1][0] + 20
+
+            # crop the z=0 mean image to remove the black borders
+            image = self.mean_images[0][crop_y:-crop_y, crop_x:-crop_x]
+
+            # get the mean brightness of squares at each corner of the image
+            mean_vals = [ np.mean(image[:window_size, :window_size]), np.mean(image[:window_size, -window_size:]), np.mean(image[-window_size:, :window_size]), np.mean(image[-window_size:, -window_size:]) ]
+            
+            # find which corner has the lowest brightness -- we will assume that corner contains the background
+            bg_brightness_0 = min(mean_vals)
+            bg_window_index = mean_vals.index(bg_brightness_0)
+
+            for z in range(1, self.video.shape[1]):
+                # get the coordinates of the top-left corner of this z plane, ignoring any black borders due to motion correction
+                nonzeros = np.nonzero(self.mean_images[z] > 0)
+                crop_y   = nonzeros[0][0] + 20
+                crop_x   = nonzeros[1][0] + 20
+
+                # crop this z plane's mean image to remove the black borders
+                image = self.mean_images[z][crop_y:-crop_y, crop_x:-crop_x]
+
+                # get the mean brightness of the corner at this z plane
+                if bg_window_index == 0:
+                    bg_brightness = np.mean(image[:window_size, :window_size])
+                elif bg_window_index == 1:
+                    bg_brightness = np.mean(image[:window_size, -window_size:])
+                elif bg_window_index == 2:
+                    bg_brightness = np.mean(image[-window_size:, :window_size])
+                else:
+                    bg_brightness = np.mean(image[-window_size:, -window_size:])
+
+                # calculate the difference between this brightness and that of the z=0 plane
+                difference = int(round(bg_brightness - bg_brightness_0))
+
+                # subtract this difference from this z plane's mean image
+                self.mean_images[z] = np.maximum(self.mean_images[z] - difference, 0)
 
     def show_video(self, video, video_path):
         # calculate gamma- and contrast-adjusted video
@@ -595,8 +676,7 @@ class GUIController():
             self.motion_correction_thread.finished.connect(self.motion_correction_ended)
 
             # set the parameters of the motion correction thread
-            self.motion_correction_thread.set_parameters(self.controller.video_paths
-            , int(self.controller.params["max_shift"]), int(self.controller.params["patch_stride"]), int(self.controller.params["patch_overlap"]), use_multiprocessing=self.controller.use_multiprocessing)
+            self.motion_correction_thread.set_parameters(self.controller.video_paths, int(self.controller.params["max_shift"]), int(self.controller.params["patch_stride"]), int(self.controller.params["patch_overlap"]), use_multiprocessing=self.controller.use_multiprocessing)
 
             # start the thread
             self.motion_correction_thread.start()
@@ -1232,7 +1312,13 @@ class GUIController():
 
         # print("selecting rois...")
 
-        rois_selected = self.controller.select_rois_near_point(roi_point, self.z, radius=radius)
+        _, selected_roi = utilities.get_roi_containing_point(self.roi_spatial_footprints[self.z], None, roi_point, self.video.shape[2:])
+
+        rois_selected = []
+        if selected_roi is not None:
+            rois_selected.append(selected_roi)
+
+        # rois_selected = self.controller.select_rois_near_point(roi_point, self.z, radius=radius)
 
         # print("rois selected")
 

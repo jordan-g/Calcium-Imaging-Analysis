@@ -1,30 +1,28 @@
 from __future__ import division
-
 import numpy as np
 import cv2
-import scipy.ndimage as ndi
-import scipy.stats
-from skimage.feature import peak_local_max
-import scipy.signal
-from skimage.feature import register_translation
-
-import skimage
-from skimage.morphology import *
-from skimage.restoration import (denoise_tv_chambolle, denoise_bilateral,
-                                 denoise_wavelet, estimate_sigma)
-from skimage.filters import rank
-from skimage.external.tifffile import imread, imsave
-# from skimage.exposure import *
-
 import sys
 import os
-# sys.path.insert(0, os.path.join(os.path.dirname(sys.path[0]),'CaImAn'))
-# print(sys.path)
-
-from imimposemin import imimposemin
 import math
-
 import glob
+import pdb
+from functools import partial
+
+from multiprocessing import Pool
+from imimposemin import imimposemin
+
+import scipy.ndimage as ndi
+import scipy.stats
+import scipy.signal
+from scipy.sparse import hstack
+
+import skimage
+from skimage.feature import peak_local_max
+from skimage.feature import register_translation
+from skimage.morphology import *
+from skimage.restoration import *
+from skimage.filters import rank
+from skimage.external.tifffile import imread, imsave
 
 import caiman as cm
 from caiman.motion_correction import tile_and_correct, motion_correction_piecewise, MotionCorrect
@@ -37,20 +35,12 @@ from caiman.components_evaluation import estimate_components_quality_auto
 from caiman.base.rois import register_ROIs
 from caiman.source_extraction.cnmf.temporal import update_temporal_components
 from caiman.source_extraction.cnmf.pre_processing import preprocess_data
-import pdb
-from functools import partial
-from scipy.sparse import hstack
 
-from multiprocessing import Pool
-
-# from Watershed import Watershed
-
+# check which Python version is being used
 if sys.version_info[0] < 3:
     python_version = 2
 else:
     python_version = 3
-
-colors = [ np.random.randint(50, 255, size=3) for i in range(100000) ]
 
 def play_movie(movie):
     t = movie.shape[-1]
