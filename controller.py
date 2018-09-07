@@ -224,7 +224,12 @@ class Controller():
             self.mc_borders = mc_borders
 
     def find_rois(self):
-        
+        if self.use_motion_correction and self.mc_video_paths is not None:
+            video_paths = self.mc_video_paths
+        else:
+            video_paths = self.video_paths
+
+        roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = roi_finding.find_rois_from_videos(video_paths, self.params, mc_borders=self.mc_borders, use_multiprocessing=self.use_multiprocessing)
 
     def filter_rois(self):
         if self.use_motion_correction and self.mc_video_paths is not None:
