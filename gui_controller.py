@@ -410,10 +410,11 @@ class GUIController():
 
                 temporal_footprints = self.controller.roi_temporal_footprints[z]
 
-                if z == 0:
+                if i == 0:
                     temporal_footprints = temporal_footprints[:, :self.controller.video_lengths[0]]
                 else:
-                    temporal_footprints = temporal_footprints[:, np.sum(self.controller.video_lengths[:z]):np.sum(self.controller.video_lengths[:z+1])]
+                    pdb.set_trace()
+                    temporal_footprints = temporal_footprints[:, np.sum(self.controller.video_lengths[:i]):np.sum(self.controller.video_lengths[:i+1])]
 
                 traces = temporal_footprints[kept_rois]
                 centroids = centroids[kept_rois]
@@ -436,16 +437,16 @@ class GUIController():
 
                     writer.writerow(['ROI #'] + [ "Frame {}".format(frame) for frame in range(traces.shape[1]) ])
 
-                    for i in range(traces.shape[0]):
-                        writer.writerow(['{}'.format(roi_nums[i])] + traces[i].tolist())
+                    for j in range(traces.shape[0]):
+                        writer.writerow(['{}'.format(roi_nums[j])] + traces[j].tolist())
 
                 with open(os.path.join(video_dir_path, 'z_{}_centroids.csv'.format(z)), 'w') as file:
                     writer = csv.writer(file)
 
                     writer.writerow(['Label', 'X', 'Y'])
 
-                    for i in range(centroids.shape[0]):
-                        writer.writerow(["ROI #{}".format(roi_nums[i])] + centroids[i].tolist())
+                    for j in range(centroids.shape[0]):
+                        writer.writerow(["ROI #{}".format(roi_nums[j])] + centroids[j].tolist())
 
                 # save ROIs
                 self.controller.save_rois(os.path.join(video_dir_path, 'roi_data.npy'))
