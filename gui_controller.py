@@ -388,10 +388,8 @@ class GUIController():
 
                 footprints_2d = self.controller.roi_spatial_footprints[z].toarray().reshape((video.shape[2], video.shape[3], self.controller.roi_spatial_footprints[z].shape[-1]))
 
-                for j in range(self.controller.roi_spatial_footprints[z].shape[-1]):
-                    roi = kept_rois[j]
-
-                    footprint_2d = footprints_2d[:, :, j]
+                for roi in kept_rois:
+                    footprint_2d = footprints_2d[:, :, roi]
 
                     mask = footprint_2d > 0
 
@@ -408,14 +406,14 @@ class GUIController():
                             center_x = 0
                             center_y = 0
 
-                        centroids[j] = [center_x, center_y]
+                        centroids[roi] = [center_x, center_y]
 
                 temporal_footprints = self.controller.roi_temporal_footprints[z]
 
-                if i == 0:
+                if z == 0:
                     temporal_footprints = temporal_footprints[:, :self.controller.video_lengths[0]]
                 else:
-                    temporal_footprints = temporal_footprints[:, np.sum(self.controller.video_lengths[:i]):np.sum(self.controller.video_lengths[:i+1])]
+                    temporal_footprints = temporal_footprints[:, np.sum(self.controller.video_lengths[:z]):np.sum(self.controller.video_lengths[:z+1])]
 
                 traces = temporal_footprints[kept_rois]
                 centroids = centroids[kept_rois]
@@ -436,10 +434,10 @@ class GUIController():
                 with open(os.path.join(video_dir_path, 'z_{}_traces.csv'.format(z)), 'w') as file:
                     writer = csv.writer(file)
 
-                    writer.writerow([''] + [ "ROI #{}".format(roi) for roi in roi_nums ])
+                    writer.writerow(['ROI #'] + [ "Frame {}".format(frame) for frame in range(traces.shape[1]) ])
 
-                    for i in range(traces.shape[1]):
-                        writer.writerow([i+1] + traces[:, i].tolist())
+                    for i in range(traces.shape[0]):
+                        writer.writerow(['{}'.format(roi_nums[i])] + traces[i].tolist())
 
                 with open(os.path.join(video_dir_path, 'z_{}_centroids.csv'.format(z)), 'w') as file:
                     writer = csv.writer(file)
@@ -1840,7 +1838,6 @@ class ProcessVideosThread(QThread):
                 vid = video
 
             roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = utilities.find_rois_refine(vid, video_path, self.params, masks=None, background_mask=None, mc_borders=mc_borders, roi_spatial_footprints=self.roi_spatial_footprints, roi_temporal_footprints=self.roi_temporal_footprints, roi_temporal_residuals=self.roi_temporal_residuals, bg_spatial_footprints=self.bg_spatial_footprints, bg_temporal_footprints=self.bg_temporal_footprints)
-
 
             results = [ {} for z in range(video.shape[1]) ]
 
