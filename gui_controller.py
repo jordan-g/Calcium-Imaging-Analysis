@@ -564,7 +564,7 @@ class GUIController():
         # self.show_roi_image(True)
 
         if self.trace_figure is None:
-            self.trace_figure = TracePlotWindow()
+            self.trace_figure = TracePlotWindow(self)
             self.trace_figure.show()
         self.trace_figure.plot(self.controller.roi_temporal_footprints[self.z])
 
@@ -1356,7 +1356,7 @@ class GUIController():
 
     def update_trace_plot(self):
         if self.trace_figure is None:
-            self.trace_figure = TracePlotWindow()
+            self.trace_figure = TracePlotWindow(self)
             self.trace_figure.show()
 
         temporal_footprints = self.controller.roi_temporal_footprints[self.z]
@@ -1892,6 +1892,8 @@ class TracePlotWindow(QMainWindow):
     def __init__(self, parent=None):
         QMainWindow.__init__(self)
 
+        self.parent = parent
+
         self.main_widget = QWidget(self)
         self.main_layout = QVBoxLayout(self.main_widget)
         self.main_layout.setContentsMargins(5, 5, 5, 5)
@@ -1981,3 +1983,7 @@ class TracePlotWindow(QMainWindow):
 
         # refresh canvas
         self.canvas.draw()
+
+    def closeEvent(self, ce):
+        self.parent.trace_figure = None
+        ce.accept()
