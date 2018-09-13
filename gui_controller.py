@@ -1552,7 +1552,7 @@ class GUIController():
             else:
                 f = self.controller.roi_spatial_footprints[self.z]
 
-            pdb.set_trace()
+            # pdb.set_trace()
             rois = list(range(self.controller.roi_spatial_footprints[self.z].shape[1]))
             merged_spatial_footprint  = np.sum(f[:, self.selected_rois], axis=1)
             merged_temporal_footprint = np.sum(self.controller.roi_temporal_footprints[self.z][self.selected_rois], axis=0)[np.newaxis, :]
