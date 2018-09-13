@@ -413,7 +413,7 @@ class GUIController():
                 if i == 0:
                     temporal_footprints = temporal_footprints[:, :self.controller.video_lengths[0]]
                 else:
-                    pdb.set_trace()
+                    # pdb.set_trace()
                     temporal_footprints = temporal_footprints[:, np.sum(self.controller.video_lengths[:i]):np.sum(self.controller.video_lengths[:i+1])]
 
                 traces = temporal_footprints[kept_rois]
