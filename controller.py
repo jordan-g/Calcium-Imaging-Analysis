@@ -1,43 +1,9 @@
-from __future__ import division
-from param_window import ParamWindow
-from preview_window import PreviewWindow
-from skimage.morphology import *
-import utilities
-import time
-import json
 import os
-import sys
-import scipy.ndimage as ndi
-import scipy.signal
+import json
 import numpy as np
-from skimage.external.tifffile import imread, imsave
-from skimage.measure import find_contours, regionprops
-from skimage.filters import gaussian
-from skimage.restoration import (denoise_tv_chambolle, denoise_bilateral,
-                                 denoise_wavelet, estimate_sigma)
-from skimage import exposure
-import cv2
-import matplotlib.pyplot as plt
-import csv
-import caiman as cm
-from caiman.source_extraction.cnmf import cnmf as cnmf
+import skimage.external.tifffile as tifffile
 
-# import the Qt library
-try:
-    from PyQt4.QtCore import *
-    from PyQt4.QtGui import *
-    pyqt_version = 4
-except:
-    from PyQt5.QtCore import *
-    from PyQt5.QtGui import *
-    from PyQt5.QtWidgets import *
-    pyqt_version = 5
-
-if sys.version_info[0] < 3:
-    python_version = 2
-else:
-    python_version = 3
-import pdb
+import utilities
 
 # set default parameters dictionary
 DEFAULT_PARAMS = {'gamma'                : 1.0,
@@ -139,7 +105,7 @@ class Controller():
 
         # store video lengths and group numbers
         for video_path in video_paths:
-            video = imread(video_path)
+            video = tifffile.imread(video_path)
             self.video_lengths.append(video.shape[0])
             self.video_groups.append(group_num)
 
