@@ -16,10 +16,23 @@ import numpy as np
 # set styles of title and subtitle labels
 TITLE_STYLESHEET    = "font-size: 16px; font-weight: bold;"
 SUBTITLE_STYLESHEET = "font-size: 14px; font-weight: bold;"
+ROUNDED_STYLESHEET_DARK   = "background-color: rgba(255, 255, 255, 0.2); border-radius: 2px; border: 1px solid rgba(0, 0, 0, 0.5); padding: 2px;"
+ROUNDED_STYLESHEET_LIGHT  = "background-color: rgba(255, 255, 255, 1); border-radius: 2px; border: 1px solid rgba(0, 0, 0, 0.2); padding: 2px;"
+rounded_stylesheet = ROUNDED_STYLESHEET_LIGHT
+
+categoryFont = QFont()
+categoryFont.setBold(True)
 
 class ParamWindow(QMainWindow):
     def __init__(self, controller):
+        global rounded_stylesheet
         QMainWindow.__init__(self)
+
+        self.bg_color = (self.palette().color(self.backgroundRole()).red(), self.palette().color(self.backgroundRole()).green(), self.palette().color(self.backgroundRole()).blue())
+        if self.bg_color[0] < 100:
+            rounded_stylesheet  = ROUNDED_STYLESHEET_DARK
+        else:
+            rounded_stylesheet  = ROUNDED_STYLESHEET_LIGHT
 
         # set controller
         self.controller = controller
@@ -40,7 +53,7 @@ class ParamWindow(QMainWindow):
         self.setCentralWidget(self.main_widget)
 
         # set up the status bar
-        self.statusBar().setStyleSheet("background-color: rgba(255, 255, 255, 0.5); border-top: 1px solid rgba(0, 0, 0, 0.1); font-size: 10px; font-style: italic;")
+        self.statusBar().setStyleSheet("background-color: rgba(255, 255, 255, 0.3); border-top: 1px solid rgba(0, 0, 0, 0.2); font-size: 10px; font-style: italic;")
         self.statusBar().showMessage("To begin, open one or more video files. Only TIFF files are currently supported.")
 
         self.main_param_widget = MainParamWidget(self, self.controller)
@@ -76,14 +89,46 @@ class ParamWindow(QMainWindow):
         self.tab_widget.addTab(self.motion_correction_widget, "2. Motion Correction")
         self.tab_widget.addTab(self.roi_finding_widget, "3. ROI Finding")
         self.tab_widget.addTab(self.roi_filtering_widget, "4. Refinement && Saving")
+        self.tab_widget.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Fixed)
+
+        for i in range(self.tab_widget.count()):
+            if i == 0:
+                self.tab_widget.widget(i).setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Fixed)
+            else:
+                self.tab_widget.widget(i).setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Ignored)
+
         # self.tab_widget.setTabEnabled(1, False)
         self.tab_widget.currentChanged.connect(self.tab_selected)
 
-        self.use_multiprocessing_checkbox = HoverCheckBox("Use multiprocessing", None, self.statusBar())
-        self.use_multiprocessing_checkbox.setHoverMessage("Use multiple cores (this can speed up motion correction).")
-        self.use_multiprocessing_checkbox.setChecked(True)
-        self.use_multiprocessing_checkbox.clicked.connect(lambda:self.controller.set_use_multiprocessing(self.use_multiprocessing_checkbox.isChecked()))
-        self.main_layout.addWidget(self.use_multiprocessing_checkbox, 4, 0)
+        self.videos_list_widget = QWidget(self)
+        self.videos_list_layout = QHBoxLayout(self.videos_list_widget)
+        self.videos_list_layout.setContentsMargins(5, 0, 5, 0)
+        self.main_layout.addWidget(self.videos_list_widget, 4, 0)
+        self.videos_list_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.MinimumExpanding)
+
+        # checkbox_widget = QWidget()
+        # checkbox_layout = QHBoxLayout(checkbox_widget)
+        # checkbox_widget.setContentsMargins(0, 0, 0, 0)
+        # self.use_multiprocessing_checkbox = HoverCheckBox("Use multiprocessing", None, self.statusBar())
+        # self.use_multiprocessing_checkbox.setHoverMessage("Use multiple cores to speed up computations.")
+        # self.use_multiprocessing_checkbox.setChecked(True)
+        # self.use_multiprocessing_checkbox.clicked.connect(lambda:self.controller.set_use_multiprocessing(self.use_multiprocessing_checkbox.isChecked()))
+        # checkbox_layout.addWidget(self.use_multiprocessing_checkbox)
+
+        # self.main_layout.addWidget(checkbox_widget, 5, 0)
+        
+        self.videos_list = QListWidget(self)
+        self.videos_list.setStyleSheet(rounded_stylesheet)
+        # self.videos_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.videos_list.itemSelectionChanged.connect(self.item_selected)
+        self.videos_list_layout.addWidget(self.videos_list)
+        self.videos_list.setDragDropMode(QAbstractItemView.InternalMove)
+        self.videos_list.installEventFilter(self)
+
+        self.delete_shortcut = QShortcut(QKeySequence('Delete'), self.videos_list)
+        self.delete_shortcut.activated.connect(self.remove_selected_items)
+
+        self.group_nums = []
 
         # create menus
         self.create_menus()
@@ -101,23 +146,157 @@ class ParamWindow(QMainWindow):
 
     def tab_selected(self):
         index = self.tab_widget.currentIndex()
+
+        for i in range(self.tab_widget.count()):
+            if i == index:
+                self.tab_widget.widget(i).setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.MinimumExpanding)
+            else:
+                self.tab_widget.widget(i).setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Ignored)
+
         if index == 0:
             self.controller.show_video_loading_params()
         elif index == 1:
-            self.motion_correction_widget.videos_list.clear()
-            for video_path in self.controller.controller.video_paths:
-                self.motion_correction_widget.videos_list.addItem(os.path.basename(video_path))
+            # self.motion_correction_widget.videos_list.clear()
+            # for video_path in self.controller.controller.video_paths:
+            #     self.motion_correction_widget.videos_list.addItem(os.path.basename(video_path))
             self.controller.show_motion_correction_params()
         elif index == 2:
-            self.roi_finding_widget.videos_list.clear()
-            for video_path in self.controller.controller.video_paths:
-                self.roi_finding_widget.videos_list.addItem(os.path.basename(video_path))
+            # self.roi_finding_widget.videos_list.clear()
+            # for video_path in self.controller.controller.video_paths:
+            #     self.roi_finding_widget.videos_list.addItem(os.path.basename(video_path))
             self.controller.show_roi_finding_params()
         elif index == 3:
-            self.roi_filtering_widget.videos_list.clear()
-            for video_path in self.controller.controller.video_paths:
-                self.roi_filtering_widget.videos_list.addItem(os.path.basename(video_path))
+            # self.roi_filtering_widget.videos_list.clear()
+            # for video_path in self.controller.controller.video_paths:
+            #     self.roi_filtering_widget.videos_list.addItem(os.path.basename(video_path))
             self.controller.show_roi_filtering_params()
+
+    def eventFilter(self, sender, event):
+        if (event.type() == QEvent.ChildRemoved):
+            self.on_order_changed()
+        return False # don't actually interrupt anything
+
+    def on_order_changed(self):
+        # do magic things with our new-found knowledge
+        print("Order changed.")
+
+        item = self.videos_list.item(0)
+        if item.font() != categoryFont:
+            self.videos_list.takeItem(0)
+            self.videos_list.insertItem(1, item)
+
+        groups = []
+        old_indices = []
+
+        group_num = -1
+
+        for i in range(self.videos_list.count()):
+            item = self.videos_list.item(i)
+
+            if item.font() == categoryFont:
+                group_num = int(item.text().split(" ")[-1])-1
+            else:
+                groups.append(group_num)
+
+                old_index = self.controller.controller.video_paths.index(item.text())
+                old_indices.append(old_index)
+
+        self.controller.videos_rearranged(old_indices, groups)
+
+    def add_group(self, group_num):
+        item = QListWidgetItem("Group {}".format(group_num+1))
+        item.setFont(categoryFont)
+        if self.bg_color[0] < 100:
+            color = QColor(20, 30, 40, 120)
+        else:
+            color = QColor(36, 87, 201, 60)
+        item.setBackground(QBrush(color, Qt.SolidPattern))
+        item.setFlags(item.flags() & ~Qt.ItemIsDragEnabled)
+        self.videos_list.addItem(item)
+        self.group_nums.append(group_num)
+
+    def add_new_group(self):
+        if len(self.group_nums) > 0:
+            group_num = np.amax(self.group_nums)+1
+        else:
+            group_num = 0
+
+        self.add_group(group_num)
+
+    def remove_selected_items(self):
+        selected_items = self.videos_list.selectedItems()
+
+        self.controller.remove_videos_at_indices([ self.controller.controller.video_paths.index(item.text()) for item in selected_items ])
+
+        for i in range(len(selected_items)-1, -1, -1):
+            self.videos_list.takeItem(self.videos_list.row(selected_items[i]))
+
+    def remove_items(self, items):
+        self.controller.remove_videos_at_indices([ self.controller.controller.video_paths.index(item.text()) for item in items ])
+
+        for i in range(len(items)-1, -1, -1):
+            self.videos_list.takeItem(self.videos_list.row(items[i]))
+
+    def remove_selected_group(self):
+        selected_items = self.videos_list.selectedItems()
+
+        self.videos_list.takeItem(self.videos_list.row(selected_items[0]))
+
+        group_num = int(selected_items[0].text().split(" ")[-1])-1
+        
+        print("Removing group {}.".format(group_num+1))
+
+        if group_num in self.group_nums:
+            index = self.group_nums.index(group_num)
+            del self.group_nums[index]
+
+        items_to_remove = []
+
+        for i in range(self.videos_list.count()):
+            item = self.videos_list.item(i)
+
+            if item.font() != categoryFont:
+                index = self.controller.controller.video_paths.index(item.text())
+                if self.controller.controller.groups[index] == group_num:
+                    items_to_remove.append(item)
+
+        if len(items_to_remove) > 0:
+            self.remove_items(items_to_remove)
+
+    def item_selected(self):
+        tab_index = self.tab_widget.currentIndex()
+        
+        selected_items = self.videos_list.selectedItems()
+
+        if len(selected_items) > 0:
+            if selected_items[0].font() == categoryFont:
+                group_num = int(selected_items[0].text().split(" ")[-1])-1
+
+                print("Group {} clicked.".format(group_num+1))
+
+                self.loading_widget.remove_videos_button.setDisabled(True)
+                self.loading_widget.remove_group_button.setDisabled(False)
+                if tab_index == 0:
+                    self.remove_videos_action.setEnabled(False)
+                    self.remove_group_action.setEnabled(True)
+            else:
+                self.loading_widget.remove_videos_button.setDisabled(False)
+                self.loading_widget.remove_group_button.setDisabled(True)
+                if tab_index == 0:
+                    self.remove_videos_action.setEnabled(True)
+                    self.remove_group_action.setEnabled(False)
+
+                # index = self.videos_list.selectedIndexes()[0].row()
+                index = self.controller.controller.video_paths.index(selected_items[0].text())
+                self.controller.video_selected(index)
+        else:
+            self.loading_widget.remove_videos_button.setDisabled(True)
+            self.loading_widget.remove_group_button.setDisabled(True)
+            if tab_index == 0:
+                self.remove_videos_action.setEnabled(False)
+                self.remove_group_action.setEnabled(False)
+
+            index = None
 
     def set_initial_state(self):
         # disable buttons, widgets & menu items
@@ -140,7 +319,13 @@ class ParamWindow(QMainWindow):
         self.remove_videos_action.setShortcut('Delete')
         self.remove_videos_action.setStatusTip('Remove the selected video.')
         self.remove_videos_action.setEnabled(False)
-        self.remove_videos_action.triggered.connect(self.loading_widget.remove_selected_items)
+        self.remove_videos_action.triggered.connect(self.remove_selected_items)
+
+        self.remove_group_action = QAction('Remove Group', self)
+        self.remove_group_action.setShortcut('Delete')
+        self.remove_group_action.setStatusTip('Remove the selected group.')
+        self.remove_group_action.setEnabled(False)
+        self.remove_group_action.triggered.connect(self.remove_selected_group)
 
         self.show_rois_action = QAction('Show ROIs', self, checkable=True)
         self.show_rois_action.setShortcut('R')
@@ -186,6 +371,13 @@ class ParamWindow(QMainWindow):
         self.trace_rois_action.setEnabled(False)
         self.trace_rois_action.setShortcutContext(Qt.ApplicationShortcut)
 
+        self.load_tail_angles_action = QAction('Load Tail Angle Trace', self)
+        self.load_tail_angles_action.setShortcut('Ctrl+T')
+        self.load_tail_angles_action.setStatusTip('Load tail angle CSV.')
+        self.load_tail_angles_action.triggered.connect(self.controller.load_tail_angles)
+        self.load_tail_angles_action.setEnabled(True)
+        self.load_tail_angles_action.setShortcutContext(Qt.ApplicationShortcut)
+
         # self.save_roi_image_action = QAction('Save ROI Image...', self)
         # self.save_roi_image_action.setShortcut('Ctrl+Alt+S')
         # self.save_roi_image_action.setStatusTip('Save an image of the current ROIs.')
@@ -199,6 +391,7 @@ class ParamWindow(QMainWindow):
         file_menu = menubar.addMenu('&File')
         file_menu.addAction(self.add_videos_action)
         file_menu.addAction(self.remove_videos_action)
+        file_menu.addAction(self.load_tail_angles_action)
         # file_menu.addAction(self.save_rois_action)
         # file_menu.addAction(self.save_roi_image_action)
         # file_menu.addSeparator()
@@ -224,7 +417,12 @@ class ParamWindow(QMainWindow):
         self.motion_correction_widget.use_mc_video_checkbox.setDisabled(True)
 
     def videos_imported(self, video_paths):
-        self.loading_widget.videos_imported(video_paths)
+        # self.videos_imported(video_paths)
+        self.add_new_group()
+        for video_path in video_paths:
+            self.videos_list.addItem(video_path)
+
+        print(self.controller.controller.groups)
 
         self.main_param_widget.setDisabled(False)
         self.tab_widget.setTabEnabled(1, True)
@@ -314,58 +512,48 @@ class LoadingWidget(QWidget):
         self.remove_videos_button.setIcon(QIcon("icons/trash_icon.png"))
         self.remove_videos_button.setIconSize(QSize(16,16))
         self.remove_videos_button.setDisabled(True)
-        self.remove_videos_button.clicked.connect(self.remove_selected_items)
+        self.remove_videos_button.clicked.connect(self.parent_widget.remove_selected_items)
         self.button_layout.addWidget(self.remove_videos_button)
 
         self.button_layout.addStretch()
 
-        self.videos_list_widget = QWidget(self)
-        self.videos_list_layout = QHBoxLayout(self.videos_list_widget)
-        self.videos_list_layout.setContentsMargins(5, 0, 5, 0)
-        self.main_layout.addWidget(self.videos_list_widget)
-        
-        self.videos_list = QListWidget(self)
-        self.videos_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.videos_list.itemSelectionChanged.connect(self.item_selected)
-        self.videos_list_layout.addWidget(self.videos_list)
+        self.remove_group_button = HoverButton('Remove Group', None, self.parent_widget.statusBar())
+        self.remove_group_button.setHoverMessage("Remove the selected group.")
+        self.remove_group_button.setIcon(QIcon("icons/remove_group_icon.png"))
+        self.remove_group_button.setIconSize(QSize(16,16))
+        self.remove_group_button.setDisabled(True)
+        self.remove_group_button.clicked.connect(self.parent_widget.remove_selected_group)
+        self.button_layout.addWidget(self.remove_group_button)
+
+        self.add_group_button = HoverButton('Add Group', None, self.parent_widget.statusBar())
+        self.add_group_button.setHoverMessage("Add a new group.")
+        self.add_group_button.setIcon(QIcon("icons/add_group_icon.png"))
+        self.add_group_button.setIconSize(QSize(16,16))
+        # self.add_group_button.setDisabled(True)
+        self.add_group_button.clicked.connect(self.parent_widget.add_new_group)
+        self.button_layout.addWidget(self.add_group_button)
 
         # create secondary buttons
         self.button_widget_2 = QWidget(self)
         self.button_layout_2 = QHBoxLayout(self.button_widget_2)
         self.button_layout_2.setContentsMargins(10, 0, 0, 0)
-        self.button_layout_2.setSpacing(5)
+        self.button_layout_2.setSpacing(15)
         self.main_layout.addWidget(self.button_widget_2)
 
         self.button_layout_2.addStretch()
 
-        self.delete_shortcut = QShortcut(QKeySequence('Delete'), self.videos_list)
-        self.delete_shortcut.activated.connect(self.remove_selected_items)
+        self.use_multiprocessing_checkbox = HoverCheckBox("Use multiprocessing", None, self.parent_widget.statusBar())
+        self.use_multiprocessing_checkbox.setHoverMessage("Use multiple cores to speed up computations.")
+        self.use_multiprocessing_checkbox.setChecked(True)
+        self.use_multiprocessing_checkbox.clicked.connect(lambda:self.controller.set_use_multiprocessing(self.use_multiprocessing_checkbox.isChecked()))
+        self.button_layout_2.addWidget(self.use_multiprocessing_checkbox)
 
-    def videos_imported(self, video_paths):
-        for video_path in video_paths:
-            self.videos_list.addItem(os.path.basename(video_path))
-
-    def remove_selected_items(self):
-        selected_items = self.videos_list.selectedItems()
-
-        self.controller.remove_videos_at_indices([ x.row() for x in self.videos_list.selectedIndexes() ])
-
-        for i in range(len(selected_items)-1, -1, -1):
-            self.videos_list.takeItem(self.videos_list.row(selected_items[i]))
-
-    def item_selected(self):
-        selected_items = self.videos_list.selectedItems()
-
-        if len(selected_items) > 0:
-            self.remove_videos_button.setDisabled(False)
-            self.parent_widget.remove_videos_action.setEnabled(True)
-
-            index = self.videos_list.selectedIndexes()[0].row()
-            self.controller.video_selected(index)
-        else:
-            self.remove_videos_button.setDisabled(True)
-            self.parent_widget.remove_videos_action.setEnabled(False)
-            index = None
+        self.process_all_button = HoverButton('Motion Correct && Find ROIs...', None, self.parent_widget.statusBar())
+        self.process_all_button.setHoverMessage("Motion correct and find ROIs for all videos using the current parameters.")
+        self.process_all_button.setStyleSheet('font-weight: bold;')
+        self.process_all_button.setIcon(QIcon("icons/skip_icon.png"))
+        self.process_all_button.setIconSize(QSize(16,16))
+        self.button_layout_2.addWidget(self.process_all_button)
 
 class ParamWidget(QWidget):
     def __init__(self, parent_widget, controller, title, stylesheet=TITLE_STYLESHEET):
@@ -376,15 +564,16 @@ class ParamWidget(QWidget):
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.title_widget = QWidget(self)
-        self.title_layout = QHBoxLayout(self.title_widget)
-        self.title_layout.setContentsMargins(5, 5, 0, 0)
-        self.main_layout.addWidget(self.title_widget)
+        if len(title) > 0:
+            self.title_widget = QWidget(self)
+            self.title_layout = QHBoxLayout(self.title_widget)
+            self.title_layout.setContentsMargins(5, 5, 0, 0)
+            self.main_layout.addWidget(self.title_widget)
 
-        self.title_label = QLabel(title)
-        self.title_label.setStyleSheet(stylesheet)
-        self.title_layout.addWidget(self.title_label)
-        self.main_layout.setAlignment(self.title_widget, Qt.AlignTop)
+            self.title_label = QLabel(title)
+            self.title_label.setStyleSheet(stylesheet)
+            self.title_layout.addWidget(self.title_label)
+            self.main_layout.setAlignment(self.title_widget, Qt.AlignTop)
         
         self.param_widget = QWidget(self)
         self.param_layout = QGridLayout(self.param_widget)
@@ -438,7 +627,7 @@ class ParamWidget(QWidget):
 
         # make textbox & add to layout
         textbox = QLineEdit()
-        textbox.setStyleSheet("border-radius: 3px; border: 1px solid #ccc; padding: 2px;")
+        textbox.setStyleSheet(rounded_stylesheet)
         textbox.setAlignment(Qt.AlignHCenter)
         textbox.setObjectName(name)
         textbox.setFixedWidth(60)
@@ -529,21 +718,23 @@ class MotionCorrectionWidget(ParamWidget):
 
         self.controller = controller
 
-        self.videos_list_widget = QWidget(self)
-        self.videos_list_layout = QHBoxLayout(self.videos_list_widget)
-        self.videos_list_layout.setContentsMargins(5, 0, 5, 0)
-        self.main_layout.addWidget(self.videos_list_widget)
+        self.main_layout.addStretch()
+
+        # self.videos_list_widget = QWidget(self)
+        # self.videos_list_layout = QHBoxLayout(self.videos_list_widget)
+        # self.videos_list_layout.setContentsMargins(5, 0, 5, 0)
+        # self.main_layout.addWidget(self.videos_list_widget)
         
-        self.videos_list = QListWidget(self)
-        self.videos_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.videos_list.itemSelectionChanged.connect(self.item_selected)
-        self.videos_list_layout.addWidget(self.videos_list)
+        # self.videos_list = QListWidget(self)
+        # self.videos_list.setStyleSheet(rounded_stylesheet)
+        # # self.videos_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        # self.videos_list.itemSelectionChanged.connect(self.item_selected)
+        # self.videos_list_layout.addWidget(self.videos_list)
 
         self.add_param_slider(label_name="Maximum Shift", name="max_shift", minimum=1, maximum=100, moved=self.update_param, num=0, released=self.update_param, description="Maximum shift (in pixels) allowed for motion correction.", int_values=True)
         self.add_param_slider(label_name="Patch Stride", name="patch_stride", minimum=1, maximum=100, moved=self.update_param, num=1, released=self.update_param, description="Stride length (in pixels) of each patch used in motion correction.", int_values=True)
         self.add_param_slider(label_name="Patch Overlap", name="patch_overlap", minimum=1, maximum=100, moved=self.update_param, num=2, released=self.update_param, description="Overlap (in pixels) of patches used in motion correction.", int_values=True)
         
-        self.main_layout.addStretch()
 
         # self.main_layout.addWidget(HLine())
 
@@ -561,15 +752,9 @@ class MotionCorrectionWidget(ParamWidget):
 
         self.button_widget_2 = QWidget(self)
         self.button_layout_2 = QHBoxLayout(self.button_widget_2)
-        self.button_layout_2.setContentsMargins(5, 5, 5, 5)
-        self.button_layout_2.setSpacing(10)
+        self.button_layout_2.setContentsMargins(10, 10, 10, 10)
+        self.button_layout_2.setSpacing(15)
         self.main_layout.addWidget(self.button_widget_2)
-
-        # self.use_multiprocessing_checkbox = HoverCheckBox("Use multiprocessing", None, self.parent_widget.statusBar())
-        # self.use_multiprocessing_checkbox.setHoverMessage("Use multiple cores (this can speed up motion correction).")
-        # self.use_multiprocessing_checkbox.setChecked(True)
-        # self.use_multiprocessing_checkbox.clicked.connect(lambda:self.controller.set_use_multiprocessing(self.use_multiprocessing_checkbox.isChecked()))
-        # self.button_layout_2.addWidget(self.use_multiprocessing_checkbox)
 
         self.use_mc_video_checkbox = HoverCheckBox("Use motion-corrected videos", None, self.parent_widget.statusBar())
         self.use_mc_video_checkbox.setHoverMessage("Use the motion-corrected videos for finding ROIs.")
@@ -580,11 +765,17 @@ class MotionCorrectionWidget(ParamWidget):
 
         self.button_layout_2.addStretch()
 
-        self.mc_progress_label = QLabel("")
-        self.mc_progress_label.setStyleSheet("font-size: 10px; font-style: italic;")
-        self.mc_progress_label.setMinimumWidth(200)
-        self.mc_progress_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.button_layout_2.addWidget(self.mc_progress_label)
+        self.use_multiprocessing_checkbox = HoverCheckBox("Use multiprocessing", None, self.parent_widget.statusBar())
+        self.use_multiprocessing_checkbox.setHoverMessage("Use multiple cores to speed up computations.")
+        self.use_multiprocessing_checkbox.setChecked(True)
+        self.use_multiprocessing_checkbox.clicked.connect(lambda:self.controller.set_use_multiprocessing(self.use_multiprocessing_checkbox.isChecked()))
+        self.button_layout_2.addWidget(self.use_multiprocessing_checkbox)
+
+        # self.mc_progress_label = QLabel("")
+        # self.mc_progress_label.setStyleSheet("font-size: 10px; font-style: italic;")
+        # self.mc_progress_label.setMinimumWidth(200)
+        # self.mc_progress_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        # self.button_layout_2.addWidget(self.mc_progress_label)
 
         self.motion_correct_button = HoverButton('Motion Correct', None, self.parent_widget.statusBar())
         self.motion_correct_button.setHoverMessage("Perform motion correction on the videos.")
@@ -616,7 +807,7 @@ class MotionCorrectionWidget(ParamWidget):
         self.controller.preview_gamma(gamma)
 
     def motion_correction_started(self):
-        self.mc_progress_label.setText("Motion correcting... 0%.")
+        self.motion_correct_button.setText("Motion correcting... 0%")
         # self.motion_correct_button.setText('Cancel')
         self.motion_correct_button.setEnabled(False)
         # self.motion_correct_button.setHoverMessage("Stop motion correction.")
@@ -634,23 +825,23 @@ class MotionCorrectionWidget(ParamWidget):
     def update_motion_correction_progress(self, percent):
         if percent == 100:
             # self.motion_correct_button.setEnabled(True)
-            self.mc_progress_label.setText("")
+            # self.mc_progress_label.setText("")
             self.motion_correct_button.setText('Motion Correct')
             self.motion_correct_button.setHoverMessage("Perform motion correction on the videos.")
             # self.accept_button.setEnabled(True)
         elif percent == -1:
             # self.motion_correct_button.setEnabled(True)
-            self.mc_progress_label.setText("")
+            # self.mc_progress_label.setText("")
             self.motion_correct_button.setText('Motion Correct')
             self.motion_correct_button.setHoverMessage("Perform motion correction on the videos.")
         else:
             # self.motion_correct_button.setEnabled(True)
-            self.mc_progress_label.setText("Motion correcting... {}%.".format(int(percent)))
+            self.motion_correct_button.setText("Motion correcting... {}%".format(int(percent)))
 
     def cancelling_motion_correction(self):
         self.motion_correct_button.setEnabled(False)
         # self.motion_correct_button.setText("")
-        self.mc_progress_label.setText("Cancelling motion correction...")
+        # self.mc_progress_label.setText("Cancelling motion correction...")
 
     def item_selected(self):
         selected_items = self.videos_list.selectedItems()
@@ -663,7 +854,7 @@ class MotionCorrectionWidget(ParamWidget):
 
 class ROIFindingWidget(ParamWidget):
     def __init__(self, parent_widget, controller):
-        ParamWidget.__init__(self, parent_widget, controller, "CNMF Parameters")
+        ParamWidget.__init__(self, parent_widget, controller, "")
 
         # self.parent_widget = parent_widget
         self.controller = controller
@@ -671,69 +862,34 @@ class ROIFindingWidget(ParamWidget):
         # self.main_layout = QVBoxLayout(self)
         # self.main_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.videos_list_widget = QWidget(self)
-        self.videos_list_layout = QHBoxLayout(self.videos_list_widget)
-        self.videos_list_layout.setContentsMargins(5, 0, 5, 0)
-        self.main_layout.addWidget(self.videos_list_widget)
-        
-        self.videos_list = QListWidget(self)
-        self.videos_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.videos_list.itemSelectionChanged.connect(self.item_selected)
-        self.videos_list_layout.addWidget(self.videos_list)
+        self.cnmf_roi_finding_widget = CNMFROIFindingWidget(self.parent_widget, self.controller)
+        self.suite2p_roi_finding_widget = Suite2pROIFindingWidget(self.parent_widget, self.controller)
 
-        self.add_param_slider(label_name="Autoregressive Model Order", name="autoregressive_order", minimum=0, maximum=2, moved=self.update_param, num=0, multiplier=1, pressed=self.update_param, released=self.update_param, description="Order of the autoregressive model (0, 1 or 2).", int_values=True)
-        self.add_param_slider(label_name="Background Components", name="num_bg_components", minimum=1, maximum=100, moved=self.update_param, num=1, multiplier=1, pressed=self.update_param, released=self.update_param, description="Number of background components.", int_values=True)
-        self.add_param_slider(label_name="Merge Threshold", name="merge_threshold", minimum=1, maximum=200, moved=self.update_param, num=2, multiplier=200, pressed=self.update_param, released=self.update_param, description="Merging threshold (maximum correlation allowed before merging two components).", int_values=False)
-        self.add_param_slider(label_name="Components", name="num_components", minimum=1, maximum=5000, moved=self.update_param, num=3, multiplier=1, pressed=self.update_param, released=self.update_param, description="Number of components to start with.", int_values=True)
-        self.add_param_slider(label_name="Neuron Half-Size", name="half_size", minimum=1, maximum=50, moved=self.update_param, num=4, multiplier=1, pressed=self.update_param, released=self.update_param, description="Expected half-size of neurons (pixels).", int_values=True)
+        self.tab_widget = QTabWidget(self)
+        self.tab_widget.setContentsMargins(5, 5, 5, 5)
+        self.main_layout.addWidget(self.tab_widget)
+        self.tab_widget.addTab(self.cnmf_roi_finding_widget, "CNMF")
+        self.tab_widget.addTab(self.suite2p_roi_finding_widget, "Suite2p")
+        self.tab_widget.currentChanged.connect(self.tab_selected)
+
+        # self.videos_list_widget = QWidget(self)
+        # self.videos_list_layout = QHBoxLayout(self.videos_list_widget)
+        # self.videos_list_layout.setContentsMargins(5, 0, 5, 0)
+        # self.main_layout.addWidget(self.videos_list_widget)
         
+        # self.videos_list = QListWidget(self)
+        # self.videos_list.setStyleSheet(rounded_stylesheet)
+        # # self.videos_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        # self.videos_list.itemSelectionChanged.connect(self.item_selected)
+        # self.videos_list_layout.addWidget(self.videos_list)
+
         self.main_layout.addStretch()
-
-        # self.main_layout.addWidget(HLine())
-
-        # self.mask_button_widget = QWidget(self)
-        # self.mask_button_layout = QHBoxLayout(self.mask_button_widget)
-        # self.mask_button_layout.setContentsMargins(5, 0, 0, 0)
-        # self.mask_button_layout.setSpacing(5)
-        # self.main_layout.addWidget(self.mask_button_widget)
-
-        # self.invert_masks_checkbox = QCheckBox("Invert masks")
-        # self.invert_masks_checkbox.setObjectName("Invert masks")
-        # self.invert_masks_checkbox.setChecked(self.controller.controller.params['invert_masks'])
-        # self.invert_masks_checkbox.clicked.connect(lambda:self.controller.set_invert_masks(self.invert_masks_checkbox.isChecked()))
-        # self.mask_button_layout.addWidget(self.invert_masks_checkbox)
-
-        # self.mask_button_layout.addStretch()
-
-        # self.draw_mask_button = HoverButton('Draw Mask', None, self.parent_widget.statusBar())
-        # self.draw_mask_button.setHoverMessage("Draw a mask.")
-        # self.draw_mask_button.setIcon(QIcon("icons/draw_icon.png"))
-        # self.draw_mask_button.setIconSize(QSize(16,16))
-        # # self.draw_mask_button.setMinimumWidth(150)
-        # self.draw_mask_button.clicked.connect(self.controller.draw_mask)
-        # self.mask_button_layout.addWidget(self.draw_mask_button)
-
-        # self.erase_selected_mask_button = HoverButton('Remove Mask', None, self.parent_widget.statusBar())
-        # self.erase_selected_mask_button.setHoverMessage("Erase the selected mask.")
-        # self.erase_selected_mask_button.setIcon(QIcon("icons/trash_icon.png"))
-        # self.erase_selected_mask_button.setIconSize(QSize(16,16))
-        # self.erase_selected_mask_button.clicked.connect(self.controller.erase_selected_mask)
-        # self.erase_selected_mask_button.setEnabled(False)
-        # self.mask_button_layout.addWidget(self.erase_selected_mask_button)
-
-        # self.main_layout.addWidget(HLine())
 
         self.button_widget = QWidget(self)
         self.button_layout = QHBoxLayout(self.button_widget)
-        self.button_layout.setContentsMargins(5, 5, 5, 5)
-        self.button_layout.setSpacing(5)
+        self.button_layout.setContentsMargins(10, 10, 10, 10)
+        self.button_layout.setSpacing(15)
         self.main_layout.addWidget(self.button_widget)
-
-        # self.use_multiprocessing_checkbox = HoverCheckBox("Use multiprocessing", None, self.parent_widget.statusBar())
-        # self.use_multiprocessing_checkbox.setHoverMessage("Use multiple cores (this can speed up ROI finding).")
-        # self.use_multiprocessing_checkbox.setChecked(True)
-        # self.use_multiprocessing_checkbox.clicked.connect(lambda:self.controller.set_use_multiprocessing(self.use_multiprocessing_checkbox.isChecked()))
-        # self.button_layout.addWidget(self.use_multiprocessing_checkbox)
 
         self.show_rois_checkbox = QCheckBox("Show ROIs")
         self.show_rois_checkbox.setObjectName("Show ROIs")
@@ -745,18 +901,17 @@ class ROIFindingWidget(ParamWidget):
 
         self.button_layout.addStretch()
 
-        self.roi_finding_progress_label = QLabel("")
-        self.roi_finding_progress_label.setStyleSheet("font-size: 10px; font-style: italic;")
-        self.roi_finding_progress_label.setMinimumWidth(200)
-        self.roi_finding_progress_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.button_layout.addWidget(self.roi_finding_progress_label)
+        self.use_multiprocessing_checkbox = HoverCheckBox("Use multiprocessing", None, self.parent_widget.statusBar())
+        self.use_multiprocessing_checkbox.setHoverMessage("Use multiple cores to speed up computations.")
+        self.use_multiprocessing_checkbox.setChecked(True)
+        self.use_multiprocessing_checkbox.clicked.connect(lambda:self.controller.set_use_multiprocessing(self.use_multiprocessing_checkbox.isChecked()))
+        self.button_layout.addWidget(self.use_multiprocessing_checkbox)
 
-        # self.motion_correct_button = HoverButton('Motion Correction', None, self.parent_widget.statusBar())
-        # self.motion_correct_button.setHoverMessage("Go back to motion correction.")
-        # self.motion_correct_button.setIcon(QIcon("icons/skip_back_icon.png"))
-        # self.motion_correct_button.setIconSize(QSize(16,16))
-        # self.motion_correct_button.clicked.connect(lambda:self.controller.show_motion_correction_params())
-        # self.button_layout.addWidget(self.motion_correct_button)
+        # self.roi_finding_progress_label = QLabel("")
+        # self.roi_finding_progress_label.setStyleSheet("font-size: 10px; font-style: italic;")
+        # self.roi_finding_progress_label.setMinimumWidth(200)
+        # self.roi_finding_progress_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        # self.button_layout.addWidget(self.roi_finding_progress_label)
 
         self.process_video_button = HoverButton('Find ROIs', None, self.parent_widget.statusBar())
         self.process_video_button.setHoverMessage("Find ROIs using the watershed algorithm.")
@@ -765,14 +920,6 @@ class ROIFindingWidget(ParamWidget):
         self.process_video_button.setStyleSheet('font-weight: bold;')
         self.process_video_button.clicked.connect(self.controller.find_rois)
         self.button_layout.addWidget(self.process_video_button)
-
-        # self.filter_rois_button = HoverButton('ROI Filtering', None, self.parent_widget.statusBar())
-        # self.filter_rois_button.setHoverMessage("Automatically and manually filter the found ROIs.")
-        # self.filter_rois_button.setIcon(QIcon("icons/skip_icon.png"))
-        # self.filter_rois_button.setIconSize(QSize(16,16))
-        # self.filter_rois_button.clicked.connect(self.controller.show_roi_filtering_params)
-        # # self.filter_rois_button.setDisabled(True)
-        # self.button_layout.addWidget(self.filter_rois_button)
 
     def item_selected(self):
         selected_items = self.videos_list.selectedItems()
@@ -784,7 +931,7 @@ class ROIFindingWidget(ParamWidget):
             index = None
 
     def roi_finding_started(self):
-        self.roi_finding_progress_label.setText("Finding ROIs... 0%.")
+        self.process_video_button.setText("Finding ROIs... 0%")
         # self.process_video_button.setText('Cancel')
         self.process_video_button.setEnabled(False)
         # self.process_video_button.setHoverMessage("Stop finding ROIs.")
@@ -796,22 +943,65 @@ class ROIFindingWidget(ParamWidget):
 
     def update_roi_finding_progress(self, percent):
         if percent == 100:
-            self.roi_finding_progress_label.setText("")
+            # self.roi_finding_progress_label.setText("")
             self.process_video_button.setText('Find ROIs')
             self.process_video_button.setHoverMessage("Find ROIs using the watershed algorithm.")
             # self.filter_rois_button.setEnabled(True)
         elif percent == -1:
-            self.roi_finding_progress_label.setText("")
+            # self.roi_finding_progress_label.setText("")
             self.process_video_button.setText('Find ROIs')
             self.process_video_button.setHoverMessage("Find ROIs using the watershed algorithm.")
         else:
-            self.roi_finding_progress_label.setText("Finding ROIs... {}%.".format(int(percent)))
+            self.process_video_button.setText("Finding ROIs... {}%".format(int(percent)))
 
     def roi_finding_ended(self):
         self.process_video_button.setEnabled(True)
         self.parent_widget.tab_widget.setTabEnabled(0, True)
         self.parent_widget.tab_widget.setTabEnabled(1, True)
         self.parent_widget.tab_widget.setTabEnabled(3, True)
+
+    def tab_selected(self):
+        index = self.tab_widget.currentIndex()
+        if index == 0:
+            self.controller.roi_finding_mode = "cnmf"
+        elif index == 1:
+            self.controller.roi_finding_mode = "suite2p"
+
+class CNMFROIFindingWidget(ParamWidget):
+    def __init__(self, parent_widget, controller):
+        ParamWidget.__init__(self, parent_widget, controller, "CNMF Parameters")
+
+        # self.parent_widget = parent_widget
+        self.controller = controller
+
+        self.add_param_slider(label_name="Autoregressive Model Order", name="autoregressive_order", minimum=0, maximum=2, moved=self.update_param, num=0, multiplier=1, pressed=self.update_param, released=self.update_param, description="Order of the autoregressive model (0, 1 or 2).", int_values=True)
+        self.add_param_slider(label_name="Background Components", name="num_bg_components", minimum=1, maximum=100, moved=self.update_param, num=1, multiplier=1, pressed=self.update_param, released=self.update_param, description="Number of background components.", int_values=True)
+        self.add_param_slider(label_name="Merge Threshold", name="merge_threshold", minimum=1, maximum=200, moved=self.update_param, num=2, multiplier=200, pressed=self.update_param, released=self.update_param, description="Merging threshold (maximum correlation allowed before merging two components).", int_values=False)
+        self.add_param_slider(label_name="Components", name="num_components", minimum=1, maximum=5000, moved=self.update_param, num=3, multiplier=1, pressed=self.update_param, released=self.update_param, description="Number of components to start with.", int_values=True)
+        self.add_param_slider(label_name="Neuron Half-Size", name="half_size", minimum=1, maximum=50, moved=self.update_param, num=4, multiplier=1, pressed=self.update_param, released=self.update_param, description="Expected half-size of neurons (pixels).", int_values=True)
+        
+        self.main_layout.addStretch()
+
+class Suite2pROIFindingWidget(ParamWidget):
+    def __init__(self, parent_widget, controller):
+        ParamWidget.__init__(self, parent_widget, controller, "Suite2p Parameters")
+
+        # self.parent_widget = parent_widget
+        self.controller = controller
+
+        self.add_param_slider(label_name="Diameter", name="diameter", minimum=1, maximum=100, moved=self.update_param, num=0, multiplier=1, pressed=self.update_param, released=self.update_param, description="Order of the autoregressive model (0, 1 or 2).", int_values=True)
+        self.add_param_slider(label_name="Sampling Rate", name="sampling_rate", minimum=1, maximum=60, moved=self.update_param, num=1, multiplier=1, pressed=self.update_param, released=self.update_param, description="Order of the autoregressive model (0, 1 or 2).", int_values=True)
+        self.add_param_checkbox(label_name="Connected", name="connected", clicked=self.toggle_connected, description="Whether to use a convolutional neural network for determining which ROIs are neurons.", num=2)
+        self.add_param_slider(label_name="Neuropil Basis Ratio", name="neuropil_basis_ratio", minimum=1, maximum=20, moved=self.update_param, num=3, multiplier=1, pressed=self.update_param, released=self.update_param, description="Order of the autoregressive model (0, 1 or 2).", int_values=True)
+        self.add_param_slider(label_name="Neuropil Radius Ratio", name="neuropil_radius_ratio", minimum=1, maximum=50, moved=self.update_param, num=4, multiplier=1, pressed=self.update_param, released=self.update_param, description="Order of the autoregressive model (0, 1 or 2).", int_values=True)
+        self.add_param_slider(label_name="Inner Neropil Radius", name="inner_neuropil_radius", minimum=1, maximum=50, moved=self.update_param, num=5, multiplier=1, pressed=self.update_param, released=self.update_param, description="Order of the autoregressive model (0, 1 or 2).", int_values=True)
+        self.add_param_slider(label_name="Min. Neuropil Pixels", name="min_neuropil_pixels", minimum=1, maximum=500, moved=self.update_param, num=6, multiplier=1, pressed=self.update_param, released=self.update_param, description="Order of the autoregressive model (0, 1 or 2).", int_values=True)
+        # self.add_param_slider(label_name="Diameter", name="diameter", minimum=1, maximum=50, moved=self.update_param, num=0, multiplier=1, pressed=self.update_param, released=self.update_param, description="Order of the autoregressive model (0, 1 or 2).", int_values=True)
+ 
+        self.main_layout.addStretch()
+
+    def toggle_connected(self, boolean):
+        self.controller.controller.params['connected'] = boolean
 
 class CNMFWidget(ParamWidget):
     def __init__(self, parent_widget, controller):
@@ -845,15 +1035,16 @@ class ROIFilteringWidget(ParamWidget):
 
         self.controller = controller
 
-        self.videos_list_widget = QWidget(self)
-        self.videos_list_layout = QHBoxLayout(self.videos_list_widget)
-        self.videos_list_layout.setContentsMargins(5, 0, 5, 0)
-        self.main_layout.addWidget(self.videos_list_widget)
+        # self.videos_list_widget = QWidget(self)
+        # self.videos_list_layout = QHBoxLayout(self.videos_list_widget)
+        # self.videos_list_layout.setContentsMargins(5, 0, 5, 0)
+        # self.main_layout.addWidget(self.videos_list_widget)
         
-        self.videos_list = QListWidget(self)
-        self.videos_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.videos_list.itemSelectionChanged.connect(self.item_selected)
-        self.videos_list_layout.addWidget(self.videos_list)
+        # self.videos_list = QListWidget(self)
+        # self.videos_list.setStyleSheet(rounded_stylesheet)
+        # # self.videos_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        # self.videos_list.itemSelectionChanged.connect(self.item_selected)
+        # self.videos_list_layout.addWidget(self.videos_list)
 
         self.add_param_slider(label_name="Imaging FPS", name="imaging_fps", minimum=1, maximum=60, moved=self.update_param, num=0, multiplier=1, pressed=self.update_param, released=self.update_param, description="Imaging frame rate (frames per second).", int_values=True)
         self.add_param_slider(label_name="Decay Time", name="decay_time", minimum=1, maximum=100, moved=self.update_param, num=1, multiplier=100, pressed=self.update_param, released=self.update_param, description="Length of a typical calcium transient (seconds).", int_values=False)
@@ -931,6 +1122,13 @@ class ROIFilteringWidget(ParamWidget):
         self.erase_selected_roi_button.setEnabled(False)
         self.roi_button_layout_2.addWidget(self.erase_selected_roi_button)
 
+        self.erase_all_rois_button = HoverButton('Discard All', None, self.parent_widget.statusBar())
+        self.erase_all_rois_button.setHoverMessage("Discard all ROIs.")
+        self.erase_all_rois_button.setIcon(QIcon("icons/hide_icon.png"))
+        self.erase_all_rois_button.setIconSize(QSize(16, 16))
+        self.erase_all_rois_button.clicked.connect(self.controller.erase_all_rois)
+        self.roi_button_layout_2.addWidget(self.erase_all_rois_button)
+
         self.unerase_selected_roi_button = HoverButton('Keep', None, self.parent_widget.statusBar())
         self.unerase_selected_roi_button.setHoverMessage("Keep the selected ROIs.")
         self.unerase_selected_roi_button.setIcon(QIcon("icons/show_icon.png"))
@@ -956,13 +1154,13 @@ class ROIFilteringWidget(ParamWidget):
         self.roi_button_layout_2.addWidget(self.merge_rois_button)
         self.merge_rois_button.setEnabled(False)
 
-        self.plot_traces_button = HoverButton('Plot Traces', None, self.parent_widget.statusBar())
-        self.plot_traces_button.setHoverMessage("Plot traces of the selected ROIs.")
-        self.plot_traces_button.setIcon(QIcon("icons/plot_icon.png"))
-        self.plot_traces_button.setIconSize(QSize(16, 16))
-        self.plot_traces_button.clicked.connect(self.controller.plot_traces)
-        self.roi_button_layout_2.addWidget(self.plot_traces_button)
-        self.plot_traces_button.setEnabled(False)
+        # self.plot_traces_button = HoverButton('Plot Traces', None, self.parent_widget.statusBar())
+        # self.plot_traces_button.setHoverMessage("Plot traces of the selected ROIs.")
+        # self.plot_traces_button.setIcon(QIcon("icons/plot_icon.png"))
+        # self.plot_traces_button.setIconSize(QSize(16, 16))
+        # self.plot_traces_button.clicked.connect(self.controller.plot_traces)
+        # self.roi_button_layout_2.addWidget(self.plot_traces_button)
+        # self.plot_traces_button.setEnabled(False)
 
         # self.main_layout.addWidget(HLine())
 
@@ -1149,6 +1347,6 @@ def HLine():
     frame.setFrameShape(QFrame.HLine)
     frame.setFrameShadow(QFrame.Plain)
 
-    frame.setStyleSheet("color: #ccc;")
+    frame.setStyleSheet("color: rgba(0, 0, 0, 0.2);")
 
     return frame

@@ -40,33 +40,41 @@ else:
 import pdb
 
 # set default parameters dictionary
-DEFAULT_PARAMS = {'gamma'               : 1.0,
-                  'contrast'            : 1.0,
-                  'fps'                 : 60,
-                  'z'                   : 0,
-                  'max_shift'           : 6,
-                  'patch_stride'        : 48,
-                  'patch_overlap'       : 24,
-                  'window_size'         : 7,
-                  'background_threshold': 10,
-                  'invert_masks'        : False,
-                  'soma_threshold'      : 0.8,
-                  'min_area'            : 10,
-                  'max_area'            : 100,
-                  'min_circ'            : 0,
-                  'max_circ'            : 2,
-                  'imaging_fps'         : 30,
-                  'decay_time'          : 0.4,
-                  'autoregressive_order': 0,
-                  'num_bg_components'   : 2,
-                  'merge_threshold'     : 0.8,
-                  'num_components'      : 400,
-                  'half_size'           : 4,
-                  'use_cnn'             : False,
-                  'min_snr'             : 1.3,
-                  'min_spatial_corr'    : 0.8,
-                  'use_cnn'             : False,
-                  'cnn_threshold'       : 0.5}
+DEFAULT_PARAMS = {'gamma'                : 1.0,
+                  'contrast'             : 1.0,
+                  'fps'                  : 60,
+                  'z'                    : 0,
+                  'max_shift'            : 6,
+                  'patch_stride'         : 48,
+                  'patch_overlap'        : 24,
+                  'window_size'          : 7,
+                  'background_threshold' : 10,
+                  'invert_masks'         : False,
+                  'soma_threshold'       : 0.8,
+                  'min_area'             : 10,
+                  'max_area'             : 100,
+                  'min_circ'             : 0,
+                  'max_circ'             : 2,
+                  'imaging_fps'          : 30,
+                  'decay_time'           : 0.4,
+                  'autoregressive_order' : 0,
+                  'num_bg_components'    : 2,
+                  'merge_threshold'      : 0.8,
+                  'num_components'       : 400,
+                  'half_size'            : 4,
+                  'use_cnn'              : False,
+                  'min_snr'              : 1.3,
+                  'min_spatial_corr'     : 0.8,
+                  'use_cnn'              : False,
+                  'cnn_threshold'        : 0.5,
+                  'diameter'             : 10,
+                  'sampling_rate'        : 3,
+                  'connected'            : True,
+                  'neuropil_basis_ratio' : 6,
+                  'neuropil_radius_ratio': 3,
+                  'inner_neuropil_radius': 2,
+                  'min_neuropil_pixels'  : 350
+                  }
 
 # set filename for saving current parameters
 PARAMS_FILENAME = "params.txt"
@@ -86,258 +94,107 @@ class Controller():
             self.params = DEFAULT_PARAMS
 
         # initialize other variables
-        self.video          = None  # video that is being previewed
-        self.video_path     = None  # path of the video that is being previewed
-        self.video_paths    = []    # paths of all videos to process
-        self.mean_images    = None  # mean images for all z planes
-        self.video_lengths  = []
+        self.video_paths   = [] # paths of all videos to process
+        self.video_lengths = [] # lengths (# of frames) of all videos
+        self.video_groups  = [] # groups that videos belong to
 
-        # initialize settings variables
-        self.motion_correct_all_videos = False # whether to use motion correction when processing videos
-        self.use_mc_video              = False # whether to use the motion-corrected video for finding ROIs
-        self.mc_current_z              = False # whether to motion-correct only the current z plane
-        self.use_multiprocessing       = True # whether to motion-correct only the current z plane
-        self.find_new_rois             = True  # whether we need to find new ROIs
-        self.mc_rois                   = False # whether found ROIs are based on the motion-corrected video
-        self.apply_blur                = False
-
-        # initialize motion correction, ROI finding & ROI filtering variables
+        # initialize all variables
+        self.reset_variables()
         self.reset_motion_correction_variables()
-        self.reset_roi_finding_variables(reset_rois=True)
-        self.reset_roi_filtering_variables(reset_rois=True)
+        self.reset_roi_finding_variables()
+        self.reset_roi_filtering_variables()
+
+    def reset_variables(self):
+        self.use_mc_video        = False # whether to use the motion-corrected video for finding ROIs
+        self.use_multiprocessing = True  # whether to use multi-processing
+        self.find_new_rois       = True  # whether we need to find new ROIs
+        self.mc_rois             = False # whether found ROIs are based on the motion-corrected video
 
     def reset_motion_correction_variables(self):
-        self.mc_video       = None
-        self.mc_video_paths = []
-        if self.video is not None:
-            self.mc_borders = [ None for i in range(self.video.shape[1]) ]
-        else:
-            self.mc_borders = None
+        self.mc_video_paths = [] # paths of all motion-corrected videos
+        self.mc_borders     = [] # borders of all motion-corrected videos
 
-    def reset_roi_finding_variables(self, reset_rois=False):
-        if reset_rois:
-            self.n_masks = 0
+    def reset_roi_finding_variables(self):
+        self.roi_spatial_footprints  = {}
+        self.roi_temporal_footprints = {}
+        self.roi_temporal_residuals  = {}
+        self.bg_spatial_footprints   = {}
+        self.bg_temporal_footprints  = {}
+        self.filtered_out_rois       = {}
 
-            if self.video is not None:
-                self.masks                   = [ [] for i in range(self.video.shape[1]) ]
-                self.mask_points             = [ [] for i in range(self.video.shape[1]) ]
-                self.roi_spatial_footprints  = [ None for i in range(self.video.shape[1]) ]
-                self.roi_temporal_footprints = [ None for i in range(self.video.shape[1]) ]
-                self.roi_temporal_residuals  = [ None for i in range(self.video.shape[1]) ]
-                self.bg_spatial_footprints   = [ None for i in range(self.video.shape[1]) ]
-                self.bg_temporal_footprints  = [ None for i in range(self.video.shape[1]) ]
-                self.filtered_out_rois       = [ [] for i in range(self.video.shape[1]) ]
-            else:
-                self.masks                   = None
-                self.mask_points             = None
-                self.roi_spatial_footprints  = None
-                self.roi_temporal_footprints = None
-                self.roi_temporal_residuals  = None
-                self.bg_spatial_footprints   = None
-                self.bg_temporal_footprints  = None
-                self.filtered_out_rois       = None
-
-    def reset_roi_filtering_variables(self, reset_rois=False):
-        if reset_rois:
-            if self.video is not None:
-                self.erased_rois                    = [ [] for i in range(self.video.shape[1]) ]
-                self.removed_rois                   = [ [] for i in range(self.video.shape[1]) ]
-                self.locked_rois                    = [ [] for i in range(self.video.shape[1]) ]
-                self.manual_roi_spatial_footprints  = [ None for i in range(self.video.shape[1]) ]
-                self.manual_roi_temporal_footprints = [ None for i in range(self.video.shape[1]) ]
-            else:
-                self.erased_rois                    = None
-                self.removed_rois                   = None
-                self.locked_rois                    = None
-                self.manual_roi_spatial_footprints  = None
-                self.manual_roi_temporal_footprints = None
-                self.last_erased_rois               = None
+    def reset_roi_filtering_variables(self):
+        self.discarded_rois = {}
+        self.removed_rois   = {}
+        self.locked_rois    = {}
 
     def import_videos(self, video_paths):
-        if self.video_path is None:
-            # open the first video for previewing
-            success = self.open_video(video_paths[0])
-        else:
-            success = True
-
-        # if there was an error opening the video, try opening the next one until there is no error
-        while not success:
-            del video_paths[0]
-
-            if len(video_paths) == 0:
-                return
-
-            success = self.open_video(video_paths[0])
-
         # add the new video paths to the currently loaded video paths
         self.video_paths += video_paths
 
+        # assign a group number to the new videos
+        if len(self.video_groups) > 0:
+            group_num = np.amax(np.unique(self.video_groups)) + 1
+        else:
+            group_num = 0
+
+        # store video lengths and group numbers
         for video_path in video_paths:
             video = imread(video_path)
             self.video_lengths.append(video.shape[0])
-
-    def open_video(self, video_path):
-        # get the shape of the previously-previewed video, if any
-        if self.video is None:
-            previous_video_shape = None
-        else:
-            previous_video_shape = self.video.shape
-
-        # open the video
-        base_name = os.path.basename(video_path)
-        if base_name.endswith('.tif') or base_name.endswith('.tiff'):
-            video = imread(video_path)
-        else:
-            return False
-
-        if len(video.shape) < 3:
-            print("Error: Opened file is not a video -- not enough dimensions.")
-            return False
-
-        # there is a bug with z-stack OIR files where the first frame of the first z plane is wrong,
-        # so we have to throw out the first frame of the video here
-        self.video = video
-
-        # figure out the dynamic range of the video
-        max_value = np.amax(self.video)
-        if max_value > 2047:
-            self.video_max = 4095
-        elif max_value > 1023:
-            self.video_max = 2047
-        elif max_value > 511:
-            self.video_max = 1023
-        elif max_value > 255:
-            self.video_max = 511
-        elif max_value > 1:
-            self.video_max = 255
-        else:
-            self.video_max = 1
-
-        print("Video max: {}.".format(self.video_max))
-
-        # set the path to the previewed video
-        self.video_path = video_path
-
-        if len(self.video.shape) == 3:
-            # add a z dimension
-            self.video = self.video[:, np.newaxis, :, :]
-            # self.video = self.video[np.newaxis, :, :, :]
-
-        # remove nans
-        self.video = np.nan_to_num(self.video).astype(np.float32)
-
-        print("Opened video with shape {}.".format(self.video.shape))
-
-        # # if the video is a different shape than the previous one, get rid of any exising ROI information
-        # if previous_video_shape is None or self.video.shape[2] != previous_video_shape[2] or self.video.shape[3] != previous_video_shape[3]:
-        #     reset_rois = True
-        # else:
-        #     reset_rois = False
-
-        # reset the ROI finding & filtering variables
-        # self.reset_motion_correction_variables()
-        # self.reset_roi_finding_variables(reset_rois=reset_rois)
-        # self.reset_roi_filtering_variables(reset_rois=reset_rois)
-        if self.mc_borders is None:
-            self.mc_borders = [ None for i in range(self.video.shape[1]) ]
-
-        return True
-
-    def open_mc_video(self, video_path):
-        self.mc_video = imread(video_path)
-
-        if len(self.mc_video.shape) == 3:
-            # add a z dimension
-            self.mc_video = self.mc_video[:, np.newaxis, :, :]
-
-        # remove nans
-        self.mc_video = np.nan_to_num(self.mc_video).astype(np.float32)
-
-    def save_mc_video(self, save_path):
-        if self.mc_video is not None:
-            # save the video
-            imsave(save_path, self.mc_video)
+            self.video_groups.append(group_num)
 
     def save_rois(self, save_path):
-        if self.roi_spatial_footprints[0] is not None:
-            # create a dictionary to hold the ROI data
-            roi_data = {'roi_spatial_footprints'         : self.roi_spatial_footprints,
-                        'roi_temporal_footprints'        : self.roi_temporal_footprints,
-                        'roi_temporal_residuals'         : self.roi_temporal_residuals,
-                        'bg_spatial_footprints'          : self.bg_spatial_footprints,
-                        'bg_temporal_footprints'         : self.bg_temporal_footprints,
-                        'manual_roi_spatial_footprints'  : self.manual_roi_spatial_footprints,
-                        'manual_roi_temporal_footprints' : self.manual_roi_temporal_footprints,
-                        'filtered_out_rois'              : self.filtered_out_rois,
-                        'erased_rois'                    : self.erased_rois,
-                        'removed_rois'                   : self.removed_rois,
-                        'locked_rois'                    : self.locked_rois}
+        # create a dictionary to hold the ROI data
+        roi_data = {'roi_spatial_footprints' : self.roi_spatial_footprints,
+                    'roi_temporal_footprints': self.roi_temporal_footprints,
+                    'roi_temporal_residuals' : self.roi_temporal_residuals,
+                    'bg_spatial_footprints'  : self.bg_spatial_footprints,
+                    'bg_temporal_footprints' : self.bg_temporal_footprints,
+                    'filtered_out_rois'      : self.filtered_out_rois,
+                    'erased_rois'            : self.discarded_rois,
+                    'removed_rois'           : self.removed_rois,
+                    'locked_rois'            : self.locked_rois}
 
-            # save the ROI data
-            np.save(save_path, roi_data)
+        # save the ROI data
+        np.save(save_path, roi_data)
 
     def load_rois(self, load_path):
         # load the saved ROIs
         roi_data = np.load(load_path)
 
-        # we are loading a dictionary containing an ROI array and other ROI variables
-
         # extract the dictionary
         roi_data = roi_data[()]
 
-        # make sure the ROI array shape matches the video
-        # if np.array(roi_data['roi_spatial_footprints']).shape != self.video.shape[1:]:
-        #     print("Error: ROI array shape does not match the video shape.")
-        #     return
-
         # set ROI variables
-        self.roi_spatial_footprints         = roi_data['roi_spatial_footprints']
-        self.roi_temporal_footprints        = roi_data['roi_temporal_footprints']
-        self.roi_temporal_residuals         = roi_data['roi_temporal_residuals']
-        self.bg_spatial_footprints          = roi_data['bg_spatial_footprints']
-        self.bg_temporal_footprints         = roi_data['bg_temporal_footprints']
-        self.manual_roi_spatial_footprints  = roi_data['manual_roi_spatial_footprints']
-        self.manual_roi_temporal_footprints = roi_data['manual_roi_temporal_footprints']
-        self.filtered_out_rois              = roi_data['filtered_out_rois']
-        self.erased_rois                    = roi_data['erased_rois']
-        self.removed_rois                   = roi_data['removed_rois']
-        self.locked_rois                    = roi_data['locked_rois']
-
-        # A = np.dot(self.roi_spatial_footprints[0].toarray(), self.roi_temporal_footprints[0]).reshape((self.video.shape[2], self.video.shape[3], self.video.shape[0])).transpose((2, 0, 1)).astype(np.uint16)
-        # imsave("A.tif", A)
+        self.roi_spatial_footprints  = roi_data['roi_spatial_footprints']
+        self.roi_temporal_footprints = roi_data['roi_temporal_footprints']
+        self.roi_temporal_residuals  = roi_data['roi_temporal_residuals']
+        self.bg_spatial_footprints   = roi_data['bg_spatial_footprints']
+        self.bg_temporal_footprints  = roi_data['bg_temporal_footprints']
+        self.filtered_out_rois       = roi_data['filtered_out_rois']
+        self.discarded_rois          = roi_data['erased_rois']
+        self.removed_rois            = roi_data['removed_rois']
+        self.locked_rois             = roi_data['locked_rois']
 
         self.find_new_rois = False
-        self.use_mc_video  = False
-        self.mc_rois       = False
 
     def remove_videos_at_indices(self, indices):
         # sort the indices in increasing order
         indices = sorted(indices)
 
         for i in range(len(indices)-1, -1, -1):
-            # remove the video paths at the indices, in reverse order
+            # remove the video paths, lengths and groups at the indices, in reverse order
             index = indices[i]
             del self.video_paths[index]
             del self.video_lengths[index]
+            del self.video_groups[index]
+
+            if len(self.mc_video_paths) > 0:
+                del self.mc_video_paths[index]
 
         if len(self.video_paths) == 0:
             # reset variables
-            self.video_path    = None
-            self.use_mc_video  = False
-            self.video         = None
-            self.mean_images   = None
-            self.find_new_rois = True
-            self.masks                   = None
-            self.mask_points             = None
-            self.roi_spatial_footprints  = None
-            self.roi_temporal_footprints = None
-            self.roi_temporal_residuals  = None
-            self.bg_spatial_footprints   = None
-            self.bg_temporal_footprints  = None
-            self.filtered_out_rois       = None
-        elif 0 in indices:
-            # the first video was removed; open the next one for previewing
-            self.open_video(self.video_paths[0])
+            self.reset_variables()
 
     def calculate_mean_images(self):
         if self.use_mc_video and self.mc_video is not None:
@@ -348,51 +205,7 @@ class Controller():
         if self.apply_blur:
             self.mean_images = [ ndi.median_filter(utilities.sharpen(ndi.gaussian_filter(denoise_wavelet(utilities.mean(video, z)/self.video_max)*self.video_max, 1)), 3) for z in range(video.shape[1]) ]
         else:
-            self.mean_images = [ denoise_wavelet(utilities.mean(video, z)/self.video_max)*self.video_max for z in range(video.shape[1]) ]
-
-        if self.video.shape[1] > 1:
-            # set size of squares whose mean brightness we will calculate
-            window_size = 50
-
-            # get the coordinates of the top-left corner of the z=0 plane, ignoring any black borders due to motion correction
-            nonzeros = np.nonzero(self.mean_images[0] > 0)
-            crop_y   = nonzeros[0][0] + 20
-            crop_x   = nonzeros[1][0] + 20
-
-            # crop the z=0 mean image to remove the black borders
-            image = self.mean_images[0][crop_y:-crop_y, crop_x:-crop_x]
-
-            # get the mean brightness of squares at each corner of the image
-            mean_vals = [ np.mean(image[:window_size, :window_size]), np.mean(image[:window_size, -window_size:]), np.mean(image[-window_size:, :window_size]), np.mean(image[-window_size:, -window_size:]) ]
-            
-            # find which corner has the lowest brightness -- we will assume that corner contains the background
-            bg_brightness_0 = min(mean_vals)
-            bg_window_index = mean_vals.index(bg_brightness_0)
-
-            for z in range(1, self.video.shape[1]):
-                # get the coordinates of the top-left corner of this z plane, ignoring any black borders due to motion correction
-                nonzeros = np.nonzero(self.mean_images[z] > 0)
-                crop_y   = nonzeros[0][0] + 20
-                crop_x   = nonzeros[1][0] + 20
-
-                # crop this z plane's mean image to remove the black borders
-                image = self.mean_images[z][crop_y:-crop_y, crop_x:-crop_x]
-
-                # get the mean brightness of the corner at this z plane
-                if bg_window_index == 0:
-                    bg_brightness = np.mean(image[:window_size, :window_size])
-                elif bg_window_index == 1:
-                    bg_brightness = np.mean(image[:window_size, -window_size:])
-                elif bg_window_index == 2:
-                    bg_brightness = np.mean(image[-window_size:, :window_size])
-                else:
-                    bg_brightness = np.mean(image[-window_size:, -window_size:])
-
-                # calculate the difference between this brightness and that of the z=0 plane
-                difference = int(round(bg_brightness - bg_brightness_0))
-
-                # subtract this difference from this z plane's mean image
-                self.mean_images[z] = np.maximum(self.mean_images[z] - difference, 0)
+            self.mean_images = [ (utilities.mean(video, z)/self.video_max)*self.video_max for z in range(video.shape[1]) ]
 
     def set_invert_masks(self, boolean):
         self.params['invert_masks'] = boolean
@@ -414,7 +227,7 @@ class Controller():
         print(self.filtered_out_rois)
         for z in range(self.video.shape[1]):
             self.filtered_out_rois[z] = [ roi for roi in self.filtered_out_rois[z] if roi not in self.locked_rois[z] ]
-            self.removed_rois[z] = self.filtered_out_rois[z] + self.erased_rois[z]
+            self.removed_rois[z] = self.filtered_out_rois[z] + self.discarded_rois[z]
 
     def create_roi(self, start_point, end_point, z): # TODO: Update this
         # find the center of the ROI
@@ -490,9 +303,9 @@ class Controller():
 
     def erase_roi(self, label, z): # TODO: call roi_unselected() method of the param window
         # update ROI filtering variables
-        self.erased_rois[z].append(label)
+        self.discarded_rois[z].append(label)
         # self.last_erased_rois[z].append([label])
-        self.removed_rois[z] = self.filtered_out_rois[z] + self.erased_rois[z]
+        self.removed_rois[z] = self.filtered_out_rois[z] + self.discarded_rois[z]
 
         if label in self.locked_rois[z]:
             index = self.locked_rois[z].index(label)
@@ -500,9 +313,9 @@ class Controller():
 
     def unerase_roi(self, label, z): # TODO: call roi_unselected() method of the param window
         # update ROI filtering variables
-        if label in self.erased_rois[z]:
-            i = self.erased_rois[z].index(label)
-            del self.erased_rois[z][i]
+        if label in self.discarded_rois[z]:
+            i = self.discarded_rois[z].index(label)
+            del self.discarded_rois[z][i]
         elif label in self.filtered_out_rois[z]:
             i = self.filtered_out_rois[z].index(label)
             del self.filtered_out_rois[z][i]
@@ -510,7 +323,7 @@ class Controller():
             if label not in self.locked_rois[z]:
                 self.locked_rois.append(label)
 
-        self.removed_rois[z] = self.filtered_out_rois[z] + self.erased_rois[z]
+        self.removed_rois[z] = self.filtered_out_rois[z] + self.discarded_rois[z]
 
     def save_params(self):
         json.dump(self.params, open(PARAMS_FILENAME, "w"))

@@ -43,6 +43,12 @@ from scipy.sparse import hstack
 
 from multiprocessing import Pool
 
+import h5py
+import suite2p
+from suite2p.run_s2p import run_s2p
+import time
+import shutil
+
 # from Watershed import Watershed
 
 if sys.version_info[0] < 3:
@@ -117,6 +123,27 @@ def mean(movie, z=0):
     return np.mean(movie[:, z, :, :], axis=0)
     # return np.sum(movie[:, z, :, :], axis=0)
 
+def enhanced_mean(movie, z=0):
+    mean_image = mean(movie, z=z)
+
+    diameter = 10
+
+    I = mean_image
+    Imed = scipy.signal.medfilt2d(I, 4*diameter+1)
+    I = I - Imed
+    Idiv = scipy.signal.medfilt2d(np.absolute(I), 4*diameter+1)
+    I = I / (1e-10 + Idiv)
+    mimg1 = -6
+    mimg99 = 6
+    mimg0 = I
+    # mimg0 = mimg0[ops['yrange'][0]:ops['yrange'][1], ops['xrange'][0]:ops['xrange'][1]]
+    mimg0 = (mimg0 - mimg1) / (mimg99 - mimg1)
+    mimg0 = np.maximum(0,np.minimum(1,mimg0))
+    mimg = mimg0.min() * np.ones((mean_image.shape[0],mean_image.shape[1]),np.float32)
+    # mimg[ops['yrange'][0]:ops['yrange'][1],
+    #     ops['xrange'][0]:ops['xrange'][1]] = mimg0
+    return mimg0
+
 def correlation(movie, z=0):
     return np.abs(cm.local_correlations_fft(movie[:, z, :, :], swap_dim=False))
 
@@ -165,49 +192,51 @@ def adjust_contrast(image, contrast):
 def adjust_gamma(image, gamma):
     return skimage.exposure.adjust_gamma(image, gamma)
     
-def motion_correct_multiple_videos(video_paths, max_shift, patch_stride, patch_overlap, progress_signal=None, thread=None, use_multiprocessing=True):
-    video_lengths = []
-    
-    for i in range(len(video_paths)):
-        video_path = video_paths[i]
+def motion_correct_multiple_videos(video_paths, groups, max_shift, patch_stride, patch_overlap, progress_signal=None, thread=None, use_multiprocessing=True):
+    start_time = time.time()
 
-        video = imread(video_path)
-            
-        if len(video.shape) == 3:
-            # add a z dimension
-            video = video[:, np.newaxis, :, :]
-        
-        video_lengths.append(video.shape[0])
-            
-        if i == 0:
-            final_video = video
-        else:
-            final_video = np.concatenate([final_video, video], axis=0)
-    
-    final_video_path = "video_temp.tif"
-
-    # imsave(final_video_path, final_video)
-
-    # print(video_lengths)
-
-    mc_video, mc_borders = motion_correct(final_video, final_video_path, max_shift, patch_stride, patch_overlap, progress_signal=progress_signal, thread=thread, use_multiprocessing=use_multiprocessing)
-    
-    # print(mc_video.shape)
-
-    if mc_video.shape[0] == 1:
-        return [], []
-    
     mc_videos = []
     
-    for i in range(len(video_paths)):
-        if i == 0:
-            mc_videos.append(mc_video[:video_lengths[0]])
-        else:
-            mc_videos.append(mc_video[np.sum(video_lengths[:i]):np.sum(video_lengths[:i]) + video_lengths[i]])
+    group_nums = np.unique(groups)
 
-    # os.remove(final_video_path)
+    for n in range(len(group_nums)):
+        group_num = group_nums[n]
+        paths = [ video_paths[i] for i in range(len(video_paths)) if groups[i] == group_num ]
 
-    # print([ video.shape for video in mc_videos ])
+        video_lengths = []
+
+        for i in range(len(paths)):
+            video_path = paths[i]
+
+            video = imread(video_path)
+                
+            if len(video.shape) == 3:
+                # add a z dimension
+                video = video[:, np.newaxis, :, :]
+
+            # flip video 90 degrees to match what is shown in Fiji
+            video = video.transpose((0, 1, 3, 2))
+            
+            video_lengths.append(video.shape[0])
+                
+            if i == 0:
+                final_video = video
+            else:
+                final_video = np.concatenate([final_video, video], axis=0)
+        
+        final_video_path = "video_temp.tif"
+
+        mc_video, mc_borders = motion_correct(final_video, final_video_path, max_shift, patch_stride, patch_overlap, progress_signal=progress_signal, thread=thread, use_multiprocessing=use_multiprocessing)
+        
+        for i in range(len(paths)):
+            if i == 0:
+                mc_videos.append(mc_video[:video_lengths[0]])
+            else:
+                mc_videos.append(mc_video[np.sum(video_lengths[:i]):np.sum(video_lengths[:i]) + video_lengths[i]])
+
+    end_time = time.time()
+
+    print("---- Motion correction finished. Elapsed time: {} s.".format(end_time - start_time))
             
     return mc_videos, mc_borders
 
@@ -274,7 +303,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, pr
 
         params_movie = {'fname': video_path,
                         'max_shifts': (max_shift, max_shift),  # maximum allow rigid shift (2,2)
-                        'niter_rig': 1,
+                        'niter_rig': 3,
                         'splits_rig': 1,  # for parallelization split the movies in  num_splits chuncks across time
                         'num_splits_to_process_rig': None,  # if none all the splits are processed and the movie is saved
                         'strides': (patch_stride, patch_stride),  # intervals at which patches are laid out for motion correction
@@ -591,7 +620,9 @@ def calculate_centroids_and_traces(rois, video):
 
 #     return rois, roi_areas, roi_circs
 
-def find_rois_multiple_videos(video_paths, params, use_mc_video=True, masks=None, background_mask=None, mc_borders=None, progress_signal=None, thread=None, use_multiprocessing=True):
+def find_rois_multiple_videos(video_paths, params, use_mc_video=True, masks=None, background_mask=None, mc_borders=None, progress_signal=None, thread=None, use_multiprocessing=True, method="cnmf"):
+    start_time = time.time()
+
     for i in range(len(video_paths)):
         video_path = video_paths[i]
 
@@ -599,6 +630,8 @@ def find_rois_multiple_videos(video_paths, params, use_mc_video=True, masks=None
         if len(video.shape) == 3:
             # add a z dimension
             video = video[:, np.newaxis, :, :]
+
+        video = video.transpose((0, 1, 3, 2))
 
         if i == 0:
             final_video = video.copy()
@@ -608,12 +641,19 @@ def find_rois_multiple_videos(video_paths, params, use_mc_video=True, masks=None
     final_video_path = "video_concatenated.tif"
     imsave(final_video_path, final_video)
 
-    roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = find_rois(final_video, final_video_path, params, masks=masks, background_mask=background_mask, mc_borders=mc_borders, progress_signal=progress_signal, thread=thread, use_multiprocessing=use_multiprocessing)
+    if method == "cnmf":
+        roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = find_rois(final_video, final_video_path, params, masks=masks, background_mask=background_mask, mc_borders=mc_borders, progress_signal=progress_signal, thread=thread, use_multiprocessing=use_multiprocessing)
+    else:
+        roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = find_rois_suite2p(final_video, final_video_path, params, masks=masks, background_mask=background_mask, mc_borders=mc_borders, progress_signal=progress_signal, thread=thread, use_multiprocessing=use_multiprocessing)
 
     # A = np.dot(roi_spatial_footprints[0].toarray(), roi_temporal_footprints[0]).reshape((final_video.shape[2], final_video.shape[3], final_video.shape[0])).transpose((2, 0, 1)).astype(np.uint16)
     # imsave("A.tif", A)
 
     os.remove(final_video_path)
+
+    end_time = time.time()
+
+    print("---- ROI finding finished. Elapsed time: {} s.".format(end_time - start_time))
 
     return roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints
 
@@ -827,12 +867,20 @@ def find_rois(video, video_path, params, masks=None, background_mask=None, mc_bo
         images = np.reshape(Yr.T, [T] + list(dims), order='F')
 
 
-        cnm = cnmf.CNMF(n_processes=8, k=K, gSig=gSig, merge_thresh= merge_thresh, 
+        cnm = cnmf.CNMF(n_processes=1, k=K, gSig=gSig, merge_thresh= merge_thresh, 
                         p = p,  dview=dview, rf=rf, stride=stride_cnmf, memory_fact=1,
                         method_init=init_method, alpha_snmf=alpha_snmf, rolling_sum=rolling_sum,
                         only_init_patch = False, gnb = gnb, border_pix = border_pix, ssub=1, ssub_B=1, tsub=1)
 
         cnm = cnm.fit(images)
+
+        A_in, C_in, b_in, f_in = cnm.A, cnm.C, cnm.b, cnm.f
+        cnm2 = cnmf.CNMF(n_processes=1, k=A_in.shape[-1], gSig=gSig, p=p, dview=dview,
+                        merge_thresh=merge_thresh,  Ain=A_in, Cin=C_in, b_in = b_in,
+                        f_in=f_in, rf = None, stride = None, gnb = gnb, 
+                        method_deconvolution='oasis', check_nan = True)
+
+        cnm2 = cnm2.fit(images)
 
         if progress_signal:
             # send an update signal to the GUI
@@ -858,11 +906,11 @@ def find_rois(video, video_path, params, masks=None, background_mask=None, mc_bo
             percent_complete = int(100.0*float(z+1)/video.shape[1])
             progress_signal.emit(percent_complete)
 
-        roi_spatial_footprints[z]  = cnm.A
-        roi_temporal_footprints[z] = cnm.C
-        roi_temporal_residuals[z]  = cnm.YrA
-        bg_spatial_footprints[z]   = cnm.b
-        bg_temporal_footprints[z]  = cnm.f
+        roi_spatial_footprints[z]  = cnm2.A
+        roi_temporal_footprints[z] = cnm2.C
+        roi_temporal_residuals[z]  = cnm2.YrA
+        bg_spatial_footprints[z]   = cnm2.b
+        bg_temporal_footprints[z]  = cnm2.f
 
         os.remove(fname)
 
@@ -878,6 +926,130 @@ def find_rois(video, video_path, params, masks=None, background_mask=None, mc_bo
     log_files = glob.glob('Yr*_LOG_*')
     for log_file in log_files:
         os.remove(log_file)
+
+    return roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints
+
+def find_rois_suite2p(video, video_path, params, masks=None, background_mask=None, mc_borders=None, progress_signal=None, thread=None, use_multiprocessing=True):
+    full_video_path = video_path
+
+    directory = os.path.dirname(full_video_path)
+    filename  = os.path.basename(full_video_path)
+
+    roi_spatial_footprints  = [ None for i in range(video.shape[1]) ]
+    roi_temporal_footprints = [ None for i in range(video.shape[1]) ]
+    roi_temporal_residuals  = [ None for i in range(video.shape[1]) ]
+    bg_spatial_footprints   = [ None for i in range(video.shape[1]) ]
+    bg_temporal_footprints  = [ None for i in range(video.shape[1]) ]
+
+    if os.path.exists("suite2p"):
+        shutil.rmtree("suite2p")
+
+    if thread is not None and thread.running == False:
+        return roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints
+
+    for z in range(video.shape[1]):
+        fname = os.path.splitext(filename)[0] + "_masked_z_{}.h5".format(z)
+
+        video_path = os.path.join(directory, fname)
+
+        h5f = h5py.File(video_path, 'w')
+        h5f.create_dataset('data', data=video[:, z, :, :])
+        h5f.close()
+
+        ops = {
+            'fast_disk': [], # used to store temporary binary file, defaults to save_path0
+            'save_path0': '', # stores results, defaults to first item in data_path
+            'delete_bin': False, # whether to delete binary file after processing
+            # main settings
+            'nplanes' : 1, # each tiff has these many planes in sequence
+            'nchannels' : 1, # each tiff has these many channels per plane
+            'functional_chan' : 1, # this channel is used to extract functional ROIs (1-based)
+            'diameter':params['diameter'], # this is the main parameter for cell detection, 2-dimensional if Y and X are different (e.g. [6 12])
+            'tau':  1., # this is the main parameter for deconvolution
+            'fs': params['sampling_rate'],  # sampling rate (total across planes)
+            # output settings
+            'save_mat': False, # whether to save output as matlab files
+            'combined': True, # combine multiple planes into a single result /single canvas for GUI
+            # parallel settings
+            'num_workers': 0, # 0 to select num_cores, -1 to disable parallelism, N to enforce value
+            'num_workers_roi': 0, # 0 to select number of planes, -1 to disable parallelism, N to enforce value
+            # registration settings
+            'do_registration': False, # whether to register data
+            'nimg_init': 200, # subsampled frames for finding reference image
+            'batch_size': 200, # number of frames per batch
+            'maxregshift': 0.1, # max allowed registration shift, as a fraction of frame max(width and height)
+            'align_by_chan' : 1, # when multi-channel, you can align by non-functional channel (1-based)
+            'reg_tif': False, # whether to save registered tiffs
+            'subpixel' : 10, # precision of subpixel registration (1/subpixel steps)
+            # cell detection settings
+            'connected': params['connected'], # whether or not to keep ROIs fully connected (set to 0 for dendrites)
+            'navg_frames_svd': 5000, # max number of binned frames for the SVD
+            'nsvd_for_roi': 1000, # max number of SVD components to keep for ROI detection
+            'max_iterations': 20, # maximum number of iterations to do cell detection
+            'ratio_neuropil': params['neuropil_basis_ratio'], # ratio between neuropil basis size and cell radius
+            'ratio_neuropil_to_cell': params['neuropil_radius_ratio'], # minimum ratio between neuropil radius and cell radius
+            'tile_factor': 1., # use finer (>1) or coarser (<1) tiles for neuropil estimation during cell detection
+            'threshold_scaling': 1., # adjust the automatically determined threshold by this scalar multiplier
+            'max_overlap': 0.75, # cells with more overlap than this get removed during triage, before refinement
+            'inner_neuropil_radius': params['inner_neuropil_radius'], # number of pixels to keep between ROI and neuropil donut
+            'outer_neuropil_radius': np.inf, # maximum neuropil radius
+            'min_neuropil_pixels': params['min_neuropil_pixels'], # minimum number of pixels in the neuropil
+            # deconvolution settings
+            'baseline': 'maximin', # baselining mode
+            'win_baseline': 60., # window for maximin
+            'sig_baseline': 10., # smoothing constant for gaussian filter
+            'prctile_baseline': 8.,# optional (whether to use a percentile baseline)
+            'neucoeff': .7,  # neuropil coefficient
+        }
+
+        db = {
+            'h5py': video_path, # a single h5 file path
+            'h5py_key': 'data',
+            'look_one_level_down': False, # whether to look in ALL subfolders when searching for tiffs
+            'data_path': [], # a list of folders with tiffs 
+                                                 # (or folder of folders with tiffs if look_one_level_down is True, or subfolders is not empty)
+            'subfolders': [] # choose subfolders of 'data_path' to look in (optional)
+        }
+
+        opsEnd=run_s2p(ops=ops,db=db)
+
+        if progress_signal:
+            # send an update signal to the GUI
+            percent_complete = int(100.0*float(z+0.5)/video.shape[1])
+            progress_signal.emit(percent_complete)
+
+        if thread is not None and thread.running == False:
+            roi_spatial_footprints  = [ None for i in range(video.shape[1]) ]
+            roi_temporal_footprints = [ None for i in range(video.shape[1]) ]
+            roi_temporal_residuals  = [ None for i in range(video.shape[1]) ]
+            bg_spatial_footprints   = [ None for i in range(video.shape[1]) ]
+            bg_temporal_footprints  = [ None for i in range(video.shape[1]) ]
+            return roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints
+
+        if progress_signal:
+            # send an update signal to the GUI
+            percent_complete = int(100.0*float(z+1)/video.shape[1])
+            progress_signal.emit(percent_complete)
+
+        stat = np.load("suite2p/plane0/stat.npy")
+        F    = np.load("suite2p/plane0/F.npy")
+        Fneu = np.load("suite2p/plane0/Fneu.npy")
+
+        print("helloooo")
+        print(F.shape)
+
+        spatial_components = np.zeros((video.shape[2], video.shape[3], len(stat)))
+        for i in range(len(stat)):
+            spatial_components[stat[i]['xpix'], stat[i]['ypix'], i] = stat[i]['lam']
+
+        roi_spatial_footprints[z]  = scipy.sparse.coo_matrix(spatial_components.reshape((video.shape[2]*video.shape[3], len(stat))))
+        roi_temporal_footprints[z] = F - ops["neucoeff"]*Fneu
+        roi_temporal_residuals[z]  = np.zeros(F.shape)
+        bg_spatial_footprints[z]   = None
+        bg_temporal_footprints[z]  = None
+
+        os.remove(fname)
+        shutil.rmtree("suite2p")
 
     return roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints
 
@@ -1237,3 +1409,23 @@ def draw_rois(rgb_image, rois, selected_roi, erased_rois, filtered_out_rois, loc
             image[mask] = np.array([255, 255, 0]).astype(np.uint8)
 
     return image, roi_overlay
+
+def blend_transparent(face_img, overlay_t_img):
+    # Split out the transparency mask from the colour info
+    overlay_img = overlay_t_img[:,:,:3] # Grab the BRG planes
+    overlay_mask = overlay_t_img[:,:,3:]  # And the alpha plane
+
+    # Again calculate the inverse mask
+    background_mask = 255 - overlay_mask
+
+    # Turn the masks into three channel, so we can use them as weights
+    overlay_mask = cv2.cvtColor(overlay_mask, cv2.COLOR_GRAY2BGR)
+    background_mask = cv2.cvtColor(background_mask, cv2.COLOR_GRAY2BGR)
+
+    # Create a masked out face image, and masked out overlay
+    # We convert the images to floating point in range 0.0 - 1.0
+    face_part = (face_img * (1 / 255.0)) * (background_mask * (1 / 255.0))
+    overlay_part = (overlay_img * (1 / 255.0)) * (overlay_mask * (1 / 255.0))
+
+    # And finally just add them together, and rescale it back to an 8bit integer image    
+    return np.uint8(cv2.addWeighted(face_part, 255.0, overlay_part, 255.0, 0.0))

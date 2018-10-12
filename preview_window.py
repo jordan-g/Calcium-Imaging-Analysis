@@ -30,11 +30,15 @@ from matplotlib.collections import LineCollection
 
 import random
 import pdb
+import pyqtgraph as pg
+from matplotlib import cm
 
 # color table to use for showing images
 gray_color_table = [qRgb(i, i, i) for i in range(256)]
 
 colors = [(255, 255, 0), (255, 0, 255), (0, 255, 255), (128, 128, 128), ]
+
+all_colors = [ (np.random.uniform(50, 200), np.random.uniform(50, 200), np.random.uniform(50, 200)) for i in range(10000) ]
 
 class PreviewQLabel(QLabel):
     """
@@ -146,230 +150,6 @@ class PreviewQLabel(QLabel):
         if update_stored_image:
             self.image = image
 
-    def select_roi(self, roi_to_select):
-        print("Selecting ROI {}.".format(roi_to_select))
-        cv2.drawContours(self.image, self.all_contours[roi_to_select], -1, (255, 255, 0), 1)
-
-        self.update_pixmap(self.image, update_stored_image=False)
-
-    def select_rois(self, rois_to_select):
-        for roi in rois_to_select:
-            cv2.drawContours(self.image, self.all_contours[roi], -1, (255, 255, 0), 1)
-
-        self.update_pixmap(self.image, update_stored_image=False)
-
-    def show_eraser(self, point):
-        image   = self.image.copy()
-        overlay = image.copy()
-        cv2.circle(overlay, point, 10, (255, 0, 0), -1)
-        cv2.addWeighted(overlay, 0.5, image, 0.5, 0, image)
-
-        self.update_pixmap(image, update_stored_image=False)
-
-    def deselect_rois(self):
-        cv2.drawContours(self.image, self.flat_contours, -1, (255, 0, 0), 1)
-
-        self.update_pixmap(self.image, update_stored_image=False)
-
-    def erase_roi(self, roi_to_erase):
-        cv2.drawContours(self.image, self.all_contours[roi_to_erase], -1, (128, 128, 128), 1)
-
-        self.update_pixmap(self.image, update_stored_image=False)
-
-    def unerase_roi(self, roi):
-        cv2.drawContours(self.image, self.all_contours[roi], -1, (255, 0, 0), 1)
-
-        self.update_pixmap(self.image, update_stored_image=False)
-
-    def erase_rois(self, rois_to_erase):
-        print(rois_to_erase)
-        # pdb.set_trace()
-        print(len(self.all_contours))
-        for roi_to_erase in rois_to_erase:
-            cv2.drawContours(self.image, self.all_contours[roi_to_erase], -1, (128, 128, 128), 1)
-
-        self.update_pixmap(self.image, update_stored_image=False)
-
-    def unerase_rois(self, rois_to_unerase):
-        for roi in rois_to_unerase:
-            cv2.drawContours(self.image, self.all_contours[roi], -1, (255, 0, 0), 1)
-
-        self.update_pixmap(self.image, update_stored_image=False)
-
-    def show_roi_nums(self, roi_nums):
-        image = self.image.copy()
-
-        for roi in roi_nums:
-            contour = self.all_contours[roi][0]
-            M = cv2.moments(contour)
-            if M["m00"] > 0:
-                center_x = int(M["m10"] / M["m00"])
-                center_y = int(M["m01"] / M["m00"])
-
-                centroid = (center_x + 10, center_y + 10)
-
-                font = cv2.FONT_HERSHEY_PLAIN
-                cv2.putText(image, "{}".format(roi), centroid, font, 1, (255, 255, 0), 1, cv2.LINE_AA)
-
-        self.update_pixmap(image, update_stored_image=False)
-
-    def show_image(self, image, vmax, background_mask=None, mask_points=None, tentative_mask_point=None, mask=None, selected_mask_num=-1, roi_spatial_footprints=None, manual_roi_spatial_footprints=None, video_dimensions=None, removed_rois=None, selected_rois=None, manual_roi_selected=False, show_rois=False, update_stored_image=True, use_existing_roi_overlay=False):
-        image = 255.0*image/vmax
-        image[image > 255] = 255
-
-        if len(image.shape) < 3:
-            image = cv2.cvtColor(image.astype(np.uint8), cv2.COLOR_GRAY2RGB)
-        else:
-            image = image.astype(np.uint8)
-
-        # if background_mask is not None:
-        #     background_mask_image = image.copy()
-        #     background_mask_image[background_mask, :] = 0
-        #     # background_mask_image[background_mask, 0]  = 255
-
-        #     cv2.addWeighted(background_mask_image, 0.5, image, 0.5, 0, image)
-
-        #     contours = cv2.findContours(background_mask.astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[-2]
-
-        #     cv2.drawContours(image, contours, -1, (128, 128, 128), 1)
-
-        # if mask is not None:
-        #     mask_image = image.copy()
-        #     mask_image[mask == 0, :] = 0
-
-        #     cv2.addWeighted(mask_image, 0.6, image, 0.4, 0, image)
-
-        # if mask_points is not None:
-        #     # draw the points along the individual masks
-        #     for i in range(len(mask_points)):
-        #         points = mask_points[i]
-
-        #         if i == selected_mask_num:
-        #             color = (0, 255, 0)
-        #         else:
-        #             color = (255, 255, 0)
-
-        #         if len(points) > 1:
-        #             for j in range(len(points)):
-        #                 if j < len(points) - 1:
-        #                     cv2.line(image, points[j], points[j+1], color, 1)
-        #                 cv2.circle(image, points[j], 2, color, -1)
-
-        #         if i == len(mask_points)-1 and tentative_mask_point is not None:
-        #             color = (128, 128, 128)
-        #             if len(points) > 1:
-        #                 cv2.line(image, points[-2], tentative_mask_point, color, 1)
-        #             cv2.circle(image, tentative_mask_point, 2, color, -1)
-
-        if show_rois:
-            if roi_spatial_footprints is not None:
-                roi_spatial_footprints = roi_spatial_footprints.toarray().reshape((video_dimensions[1], video_dimensions[2], roi_spatial_footprints.shape[-1])).transpose((1, 0, 2))
-
-            if video_dimensions is not None:
-                    # overlay = np.zeros(image.shape).astype(np.uint8)
-                if (not use_existing_roi_overlay or self.roi_overlay is None) and roi_spatial_footprints is not None:
-                    print("Computing new contours.....")
-                    self.all_contours = [ None for i in range(roi_spatial_footprints.shape[-1]) ]
-                    self.flat_contours = []
-
-                    total_mask = np.zeros((video_dimensions[1], video_dimensions[2])).astype(bool)
-
-                    maximum_mask = np.ones((image.shape[0], image.shape[1]))
-
-                    kept_footprints = []
-
-                    for i in range(roi_spatial_footprints.shape[-1]):
-                        # if removed_rois is not None and i not in removed_rois:
-                        maximum = np.amax(roi_spatial_footprints[:, :, i])
-                        mask = (roi_spatial_footprints[:, :, i] > 0.1*maximum).copy()
-
-                        # maximum_mask[mask] = maximum
-
-                        # total_mask += mask
-                        
-                        contours = cv2.findContours(mask.astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[-2]
-
-                        self.all_contours[i] = contours
-                        self.flat_contours += contours
-
-                            # kept_footprints.append(i)
-
-                    # roi_sum = np.sum(roi_spatial_footprints[:, :, kept_footprints], axis=-1)
-
-                    # total_mask = roi_sum > 0
-
-                    # overlay[total_mask, 0] = (255.0*roi_sum/maximum_mask).astype(np.uint8)[total_mask]
-
-                    cv2.drawContours(image, self.flat_contours, -1, (255, 0, 0), 1)
-
-                    self.image = image
-
-                # image = self.roi_overlay.copy()
-
-                # all_selected_contours = []
-
-                # for i in selected_rois:
-                #     all_selected_contours += self.all_contours[i]
-
-                # # # plot selected ROIs
-                # if selected_rois is not None and len(selected_rois) > 0:
-                #     cv2.drawContours(image, all_selected_contours, -1, (255, 255, 0), 1)
-
-                # if update_overlay:
-                #     self.roi_overlay = image
-                #     if roi_spatial_footprints is not None:
-                #         # maximum_mask = np.ones((image.shape[0], image.shape[1]))
-
-                #         a = roi_spatial_footprints[:, :, selected_rois]
-
-                #         maximum = np.amax(roi_spatial_footprints[:, :, selected_rois])
-
-                #         # for i in selected_rois:
-                #         #     # print(roi_spatial_footprints.shape)
-                #         #     maximum = np.amax(roi_spatial_footprints[:, :, i])
-                #         #     mask = (roi_spatial_footprints[:, :, i] > 0.1*maximum).copy()
-                #         #     maximum_mask[mask] = maximum
-
-                #         roi_sum = np.sum(roi_spatial_footprints[:, :, selected_rois], axis=-1)
-                #         total_mask = roi_sum > 0
-
-                #         # total_mask = 
-
-                #         overlay[total_mask, :-1] = (255.0*roi_sum/maximum).astype(np.uint8)[total_mask][:, np.newaxis]
-
-                # cv2.addWeighted(overlay, 0.5, image, 0.5, 0, image)
-
-                # # plot selected ROIs
-                # if selected_rois is not None and len(selected_rois) > 0:
-                #     if roi_spatial_footprints is not None:
-                #         all_contours = []
-
-                #         for i in range(len(selected_rois)):
-                #             roi = selected_rois[i]
-
-                #             if i < len(colors):
-                #                 color = colors[i]
-                #             else:
-                #                 color = colors[-1]
-
-                #             maximum = np.amax(roi_spatial_footprints[:, :, roi])
-                #             mask = (roi_spatial_footprints[:, :, roi] > 0.1*maximum).copy()
-                #             contours = cv2.findContours(mask.astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[-2]
-                #             all_contours += contours
-
-                #             font = cv2.FONT_HERSHEY_PLAIN
-                #             coord = np.unravel_index(mask.argmax(), mask.shape)
-                #             coord = (coord[1], coord[0])
-                #             cv2.putText(image, "{}".format(roi), coord, font, 1, color, 1, cv2.LINE_AA)
-
-                #         cv2.drawContours(image, all_contours, -1, (255, 255, 0), 1)
-
-                    # self.roi_selected_
-
-        self.update_pixmap(image, update_stored_image=update_stored_image)
-
-        return image
-
 class PreviewWindow(QMainWindow):
     """
     QMainWindow subclass used to show frames & tracking.
@@ -391,8 +171,8 @@ class PreviewWindow(QMainWindow):
 
         # create main widget
         self.main_widget = QWidget(self)
-        self.main_widget.setStyleSheet("background-color: #000;")
-        self.main_widget.setMinimumSize(QSize(500, 500))
+        # self.main_widget.setStyleSheet("background-color: #000;")
+        self.main_widget.setMinimumSize(QSize(800, 900))
 
         # create main layout
         self.main_layout = QGridLayout(self.main_widget)
@@ -403,18 +183,82 @@ class PreviewWindow(QMainWindow):
         self.image_widget = QWidget(self)
         self.image_layout = QHBoxLayout(self.image_widget)
         self.image_layout.setContentsMargins(0, 0, 0, 0)
-        self.image_plot = PreviewQLabel(self)
+        bg_color = (self.palette().color(self.backgroundRole()).red(), self.palette().color(self.backgroundRole()).green(), self.palette().color(self.backgroundRole()).blue())
+        pg.setConfigOption('background', bg_color)
+        if bg_color[0] < 100:
+            pg.setConfigOption('foreground', (200, 200, 200))
+        else:
+            pg.setConfigOption('foreground', (50, 50, 50))
+        self.image_plot = pg.GraphicsLayoutWidget()
+        # self.image_plot.setBackground((10, 10, 10))
+        self.viewbox1 = self.image_plot.addViewBox(lockAspect=True,name='left_plot',border=None, row=0,col=0, invertY=True)
+        self.viewbox2 = self.image_plot.addViewBox(lockAspect=True,name='right_plot',border=None, row=0,col=1, invertY=True)
+        self.viewbox1.setLimits(minXRange=10, minYRange=10, maxXRange=2000, maxYRange=2000)
+        self.viewbox3 = self.image_plot.addPlot(name='trace_plot', row=1,col=0,colspan=2)
+        self.viewbox3.setLabel('left', "Fluorescence")
+        self.viewbox3.setLabel('bottom', "Frame #")
+        self.viewbox3.showButtons()
+        self.viewbox3.setMouseEnabled(x=True,y=False)
+        self.viewbox3.setYRange(0, 1)
+        self.viewbox4 = self.image_plot.addPlot(name='heatmap_plot', row=2,col=0, colspan=2)
+        self.viewbox4.setLabel('left', "ROI #")
+        self.viewbox4.setMouseEnabled(x=True,y=False)
+        self.viewbox4.setLabel('bottom', "Frame #")
+        self.viewbox5 = self.image_plot.addPlot(name='heatmap2_plot', row=3,col=0, colspan=2)
+        self.viewbox5.setLabel('left', "ROI #")
+        self.viewbox5.setMouseEnabled(x=True,y=False)
+        self.viewbox5.setLabel('bottom', "Frame #")
+        self.viewbox6 = self.image_plot.addPlot(name='tail_angle_plot', row=4,col=0,colspan=2)
+        self.viewbox6.setLabel('left', "Tail Angle (º)")
+        self.viewbox6.setLabel('bottom', "Frame #")
+        self.viewbox6.setMouseEnabled(x=True,y=False)
+        self.heatmap_plot = pg.ImageItem()
+        self.heatmap_plot_2 = pg.ImageItem()
+        self.viewbox4.addItem(self.heatmap_plot)
+        self.viewbox5.addItem(self.heatmap_plot_2)
+        self.image_plot.ci.layout.setRowStretchFactor(0,2)
+        self.left_plot = pg.ImageItem()
+        self.right_plot = pg.ImageItem()
+        self.viewbox1.addItem(self.left_plot)
+        self.viewbox2.addItem(self.right_plot)
+        self.viewbox1.setBackgroundColor(bg_color)
+        self.viewbox2.setBackgroundColor(bg_color)
+        self.viewbox2.setXLink('left_plot')
+        self.viewbox2.setYLink('left_plot')
+        self.viewbox4.setXLink('trace_plot')
+        self.viewbox5.setXLink('trace_plot')
+        self.viewbox6.setXLink('trace_plot')
+        colormap = cm.get_cmap("inferno")  # cm.get_cmap("CMRmap")
+        colormap._init()
+        lut = (colormap._lut * 255).view(np.ndarray)  # Convert matplotlib colormap from 0-1 to 0 -255 for Qt
+        self.heatmap_plot.setLookupTable(lut)
+        self.heatmap_plot_2.setLookupTable(lut)
+        # self.image_plot = PreviewQLabel(self)
         self.image_plot.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.MinimumExpanding)
         self.image_plot.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         self.image_layout.addWidget(self.image_plot)
         self.main_layout.addWidget(self.image_widget, 0, 0)
+        self.image_plot.scene().sigMouseClicked.connect(self.plot_clicked)
+        self.viewbox1.setMenuEnabled(False)
+        self.viewbox2.setMenuEnabled(False)
+        self.image_plot.ci.layout.setRowStretchFactor(0, 8)
+        self.image_plot.ci.layout.setRowStretchFactor(1, 2)
+        self.image_plot.ci.layout.setRowStretchFactor(2, 2)
+        self.image_plot.ci.layout.setRowStretchFactor(3, 2)
+        self.image_plot.ci.layout.setRowStretchFactor(4, 2)
 
-        self.drawing_mask    = False # whether the user is drawing a mask
-        self.erasing_rois    = False # whether the user is erasing ROIs
-        self.drawing_rois    = False # whether the user is drawing ROIs
-        self.mask_points     = []    # list holding the points of the mask being drawn
-        self.mask            = None
-        self.background_mask = None
+        self.drawing_mask      = False # whether the user is drawing a mask
+        self.erasing_rois      = False # whether the user is erasing ROIs
+        self.drawing_rois      = False # whether the user is drawing ROIs
+        self.mask_points       = []    # list holding the points of the mask being drawn
+        self.mask              = None
+        self.background_mask   = None
+        self.roi_overlay       = None
+        self.roi_overlay_right = None
+        self.overlays          = []
+        self.all_contours      = None
+        self.text_items        = []
+        self.outline_items     = []
 
         # create a shortcut for ending mask creation
         self.done_creating_mask_shortcut = QShortcut(QKeySequence('Return'), self)
@@ -445,17 +289,173 @@ class PreviewWindow(QMainWindow):
 
         self.show()
 
+    def plot_tail_angles(self, tail_angles):
+        self.viewbox6.clear()
+
+        # print(tail_angles.shape)
+
+        fps = 349
+        fps_calcium = 3
+        one_frame = int(np.floor((1.0/fps_calcium)*fps))
+        total_frames = int(np.floor(one_frame*self.controller.video.shape[0]))
+
+        x = np.linspace(0, self.controller.video.shape[0], total_frames)
+        # for i in range(tail_angles.shape[1]):
+        # self.viewbox6.plot(x, tail_angles[one_frame:total_frames+one_frame, -1], pen=pg.mkPen((255, 255, 0), width=2))
+        self.viewbox6.plot(x, tail_angles[:total_frames, -1], pen=pg.mkPen((255, 255, 0), width=2))
+
+    def plot_traces(self, roi_temporal_footprints, removed_rois=[], selected_rois=[], mean_traces=None):
+        self.viewbox3.clear()
+        if len(selected_rois) > 0:
+            max_value = np.amax(roi_temporal_footprints)
+
+            for i in range(len(selected_rois)):
+                roi = selected_rois[i]
+                # print(roi, roi_temporal_footprints.shape)
+                y_offset = 0
+
+                self.viewbox3.plot(roi_temporal_footprints[roi]/max_value + y_offset, pen=pg.mkPen((all_colors[roi][0], all_colors[roi][1], all_colors[roi][2]), width=2))
+
+    def plot_clicked(self, event):
+        if self.controller.mode not in ("loading", "motion_correcting"):
+            items = self.image_plot.scene().items(event.scenePos())
+
+            if self.left_plot in items:
+                pos = self.viewbox1.mapSceneToView(event.scenePos())
+            elif self.right_plot in items:
+                pos = self.viewbox2.mapSceneToView(event.scenePos())
+            else:
+                return
+            x = pos.x()
+            y = pos.y()
+
+            shift_held = event.modifiers() == Qt.ControlModifier
+
+            for text_item in self.text_items:
+                self.viewbox1.removeItem(text_item)
+                self.viewbox2.removeItem(text_item)
+                self.text_items = []
+
+            for outline_item in self.outline_items:
+                self.viewbox1.removeItem(outline_item)
+                self.viewbox2.removeItem(outline_item)
+                self.outline_items = []
+
+            if event.button() == 1:
+                self.controller.select_roi((int(y), int(x)), shift_held=shift_held)
+
+                # don't allow selecting removed & kept ROIs at the same time
+                removed_count = 0
+                for i in self.controller.selected_rois:
+                    if i in self.controller.controller.removed_rois[self.controller.z]:
+                        removed_count += 1
+                if removed_count !=0 and removed_count != len(self.controller.selected_rois):
+                    self.controller.selected_rois = [self.controller.selected_rois[-1]]
+
+                if len(self.controller.selected_rois) > 0:
+                    if self.controller.selected_rois[-1] in self.controller.controller.removed_rois[self.controller.z] and self.left_plot in items:
+                        self.controller.selected_rois = []
+                    elif self.controller.selected_rois[-1] not in self.controller.controller.removed_rois[self.controller.z] and self.right_plot in items:
+                        self.controller.selected_rois = []
+
+                if len(self.controller.selected_rois) > 0:
+                    roi_to_select = self.controller.selected_rois[0]
+
+                    if self.left_plot in items:
+                        image = self.final_image.copy()
+                        contours = []
+                        for i in self.controller.selected_rois:
+                            contours += self.all_contours[i]
+                            # print([ self.all_contours[i][j].shape for j in range(len(self.all_contours[i])) ])
+                            x = np.amax([ np.amax(self.all_contours[i][j][:, 0, 0]) for j in range(len(self.all_contours[i])) ])
+                            y = np.amax([ np.amax(self.all_contours[i][j][:, 0, 1]) for j in range(len(self.all_contours[i])) ])
+                            text_item = pg.TextItem("{}".format(i), color=all_colors[i])
+                            text_item.setPos(QPoint(int(y), int(x)))
+                            self.text_items.append(text_item)
+                            self.viewbox1.addItem(text_item)
+                            for j in range(len(self.all_contours[i])):
+                                outline_item = pg.PlotDataItem(np.concatenate([self.all_contours[i][j][:, 0, 1], np.array([self.all_contours[i][j][0, 0, 1]])]), np.concatenate([self.all_contours[i][j][:, 0, 0], np.array([self.all_contours[i][j][0, 0, 0]])]), pen=pg.mkPen((all_colors[i][0], all_colors[i][1], all_colors[i][2]), width=3))
+                                self.outline_items.append(outline_item)
+                                self.viewbox1.addItem(outline_item)
+                        # cv2.drawContours(image, contours, -1, (255, 255, 0), 1)
+
+                        self.left_plot.setImage(image)
+                        self.right_plot.setImage(self.final_right_image)
+                    else:
+                        image = self.final_right_image.copy()
+                        contours = []
+                        for i in self.controller.selected_rois:
+                            contours += self.all_contours[i]
+                            # print([ self.all_contours[i][j].shape for j in range(len(self.all_contours[i])) ])
+                            x = np.amax([ np.amax(self.all_contours[i][j][:, 0, 0]) for j in range(len(self.all_contours[i])) ])
+                            y = np.amax([ np.amax(self.all_contours[i][j][:, 0, 1]) for j in range(len(self.all_contours[i])) ])
+                            text_item = pg.TextItem("{}".format(i), color=all_colors[i])
+                            text_item.setPos(QPoint(int(y), int(x)))
+                            self.text_items.append(text_item)
+                            self.viewbox2.addItem(text_item)
+                            for j in range(len(self.all_contours[i])):
+                                outline_item = pg.PlotDataItem(np.concatenate([self.all_contours[i][j][:, 0, 1], np.array([self.all_contours[i][j][0, 0, 1]])]), np.concatenate([self.all_contours[i][j][:, 0, 0], np.array([self.all_contours[i][j][0, 0, 0]])]), pen=pg.mkPen((all_colors[i][0], all_colors[i][1], all_colors[i][2]), width=3))
+                                self.outline_items.append(outline_item)
+                                self.viewbox2.addItem(outline_item)
+                        # cv2.drawContours(image, contours, -1, (255, 255, 0), 1)
+
+                        self.right_plot.setImage(image)
+                        self.left_plot.setImage(self.final_image)
+                else:
+                    self.left_plot.setImage(self.final_image)
+                    self.right_plot.setImage(self.final_right_image)
+            elif event.button() == 2:
+                if self.left_plot in items:
+                    manual_roi_selected, selected_roi = utilities.get_roi_containing_point(self.controller.controller.roi_spatial_footprints[self.controller.z], self.controller.controller.manual_roi_spatial_footprints[self.controller.z], (int(y), int(x)), self.controller.image.shape)
+
+                    if selected_roi is not None:
+                        if selected_roi not in self.controller.selected_rois:
+                            self.controller.selected_rois.append(selected_roi)
+
+                        print("ROIs selected: {}".format(self.controller.selected_rois))
+
+                        self.controller.erase_selected_rois()
+
+                        self.controller.selected_rois = []
+
+                        self.controller.show_roi_image(show=self.controller.roi_filtering_param_widget.show_rois_checkbox.isChecked(), update_overlay=True)
+                else:
+                    manual_roi_selected, selected_roi = utilities.get_roi_containing_point(self.controller.controller.roi_spatial_footprints[self.controller.z], self.controller.controller.manual_roi_spatial_footprints[self.controller.z], (int(y), int(x)), self.controller.image.shape)
+
+                    if selected_roi is not None:
+                        if selected_roi not in self.controller.selected_rois:
+                            self.controller.selected_rois.append(selected_roi)
+
+                        print("ROIs selected: {}".format(self.controller.selected_rois))
+
+                        self.controller.unerase_selected_rois()
+
+                        self.controller.selected_rois = []
+
+                        self.controller.show_roi_image(show=self.controller.roi_filtering_param_widget.show_rois_checkbox.isChecked(), update_overlay=True)
+
+            # print(x, y)
+
+            self.controller.update_trace_plot()
+
     def set_initial_state(self):
         # reset variables
-        self.image           = None  # image to show
-        self.final_image     = None
-        self.frames          = None  # frames to play
-        self.frame_num       = 0     # current frame #
-        self.n_frames        = 1     # total number of frames
-        self.video_name      = ""    # name of the currently showing video
-        self.mask_points     = []    # list holding the points of the mask being drawn
-        self.mask            = None
-        self.background_mask = None
+        self.image             = None  # image to show
+        self.final_image       = None
+        self.final_right_image = None
+        self.frames            = None  # frames to play
+        self.frame_num         = 0     # current frame #
+        self.n_frames          = 1     # total number of frames
+        self.video_name        = ""    # name of the currently showing video
+        self.mask_points       = []    # list holding the points of the mask being drawn
+        self.mask              = None
+        self.background_mask   = None
+        self.roi_overlay       = None
+        self.roi_overlay_right = None
+        self.overlays          = []
+        self.all_contours      = None
+        self.text_items        = []
+        self.outline_items     = []
 
         self.image_plot.hide()
         self.timer.stop()
@@ -487,6 +487,7 @@ class PreviewWindow(QMainWindow):
         
         # update image plot
         self.update_image_plot(self.image, background_mask=self.background_mask, mask_points=mask_points, mask=self.mask, selected_mask_num=self.controller.selected_mask_num, roi_spatial_footprints=self.controller.controller.roi_spatial_footprints[self.controller.z], manual_roi_spatial_footprints=self.controller.controller.manual_roi_spatial_footprints[self.controller.z], video_dimensions=self.controller.video.shape, removed_rois=self.controller.controller.removed_rois[self.controller.z], selected_rois=self.controller.selected_rois, manual_roi_selected=self.controller.manual_roi_selected, use_existing_roi_overlay=(not update_overlay))
+        self.update_right_image_plot(self.image, background_mask=self.background_mask, mask_points=mask_points, mask=self.mask, selected_mask_num=self.controller.selected_mask_num, roi_spatial_footprints=self.controller.controller.roi_spatial_footprints[self.controller.z], manual_roi_spatial_footprints=self.controller.controller.manual_roi_spatial_footprints[self.controller.z], video_dimensions=self.controller.video.shape, removed_rois=self.controller.controller.removed_rois[self.controller.z], selected_rois=self.controller.selected_rois, manual_roi_selected=self.controller.manual_roi_selected, use_existing_roi_overlay=(not update_overlay))
 
     def play_movie(self, frames, fps=60):
         if frames is None:
@@ -548,7 +549,19 @@ class PreviewWindow(QMainWindow):
             frame = cv2.cvtColor(self.frames[self.frame_num], cv2.COLOR_GRAY2RGB)
 
             # update image plot
-            self.update_image_plot(frame)
+            # self.update_image_plot(frame)
+
+            mask_points = []
+            self.mask = None
+
+            if self.controller.controller.roi_spatial_footprints is not None:
+                spatial_footprints = self.controller.controller.roi_spatial_footprints[self.controller.z]
+                removed_rois = self.controller.controller.removed_rois[self.controller.z]
+            else:
+                spatial_footprints = None
+                removed_rois = None
+            self.update_image_plot(frame, background_mask=self.background_mask, mask_points=mask_points, mask=self.mask, selected_mask_num=self.controller.selected_mask_num, roi_spatial_footprints=spatial_footprints, manual_roi_spatial_footprints=None, video_dimensions=self.controller.video.shape, removed_rois=removed_rois, selected_rois=self.controller.selected_rois, manual_roi_selected=self.controller.manual_roi_selected, use_existing_roi_overlay=True)
+            # self.update_right_image_plot(self.image, background_mask=self.background_mask, mask_points=mask_points, mask=self.mask, selected_mask_num=self.controller.selected_mask_num, roi_spatial_footprints=self.controller.controller.roi_spatial_footprints[self.controller.z], manual_roi_spatial_footprints=self.controller.controller.manual_roi_spatial_footprints[self.controller.z], video_dimensions=self.controller.video.shape, removed_rois=self.controller.controller.removed_rois[self.controller.z], selected_rois=self.controller.selected_rois, manual_roi_selected=self.controller.manual_roi_selected, use_existing_roi_overlay=(not update_overlay))
 
             # increment frame number (keeping it between 0 and n_frames)
             self.frame_num += 1
@@ -558,10 +571,144 @@ class PreviewWindow(QMainWindow):
             self.setWindowTitle("{}. Z={}. Frame {}/{}.".format(self.video_name, self.controller.z, self.frame_num + 1, self.n_frames))
 
     def update_image_plot(self, image, background_mask=None, mask_points=None, tentative_mask_point=None, mask=None, selected_mask_num=-1, roi_spatial_footprints=None, manual_roi_spatial_footprints=None, video_dimensions=None, removed_rois=None, selected_rois=None, manual_roi_selected=False, use_existing_roi_overlay=False):
-        final_image = self.image_plot.show_image(image, self.controller.controller.video_max, background_mask=background_mask, mask_points=mask_points, tentative_mask_point=tentative_mask_point, mask=mask, selected_mask_num=selected_mask_num, roi_spatial_footprints=roi_spatial_footprints, manual_roi_spatial_footprints=manual_roi_spatial_footprints, video_dimensions=video_dimensions, removed_rois=removed_rois, selected_rois=selected_rois, manual_roi_selected=manual_roi_selected, show_rois=self.controller.show_rois, use_existing_roi_overlay=use_existing_roi_overlay)
+        # print(use_existing_roi_overlay)
+        final_image = self.create_final_image(image, self.controller.controller.video_max, background_mask=background_mask, mask_points=mask_points, tentative_mask_point=tentative_mask_point, mask=mask, selected_mask_num=selected_mask_num, roi_spatial_footprints=roi_spatial_footprints, manual_roi_spatial_footprints=manual_roi_spatial_footprints, video_dimensions=video_dimensions, removed_rois=removed_rois, selected_rois=selected_rois, manual_roi_selected=manual_roi_selected, show_rois=self.controller.show_rois, use_existing_roi_overlay=use_existing_roi_overlay)
+
+        self.left_plot.setImage(final_image)
 
         # if update_final_image:
         self.final_image = final_image.copy()
+
+    def create_final_image(self, image, vmax, background_mask=None, mask_points=None, tentative_mask_point=None, mask=None, selected_mask_num=-1, roi_spatial_footprints=None, manual_roi_spatial_footprints=None, video_dimensions=None, removed_rois=None, selected_rois=None, manual_roi_selected=False, show_rois=False, update_stored_image=True, use_existing_roi_overlay=False):
+        image = 255.0*image/vmax
+        image[image > 255] = 255
+
+        if len(image.shape) < 3:
+            image = cv2.cvtColor(image.astype(np.uint8), cv2.COLOR_GRAY2RGB)
+        else:
+            image = image.astype(np.uint8)
+
+        if show_rois:
+            if roi_spatial_footprints is not None:
+                roi_spatial_footprints = roi_spatial_footprints.toarray().reshape((video_dimensions[1], video_dimensions[2], roi_spatial_footprints.shape[-1])).transpose((1, 0, 2))
+
+            if video_dimensions is not None:
+                if self.all_contours is None and roi_spatial_footprints is not None:
+                    print("Computing new contours.....")
+                    self.all_contours = [ None for i in range(roi_spatial_footprints.shape[-1]) ]
+                    self.flat_contours = []
+                    
+                    self.roi_overlay = np.zeros((image.shape[0], image.shape[1], 4)).astype(np.uint8)
+                    self.overlays    = np.zeros((roi_spatial_footprints.shape[-1], image.shape[0], image.shape[1], 4)).astype(np.uint8)
+
+                    for i in range(roi_spatial_footprints.shape[-1]):
+                        maximum = np.amax(roi_spatial_footprints[:, :, i])
+                        mask = (roi_spatial_footprints[:, :, i] > 0.1*maximum).copy()
+                        
+                        contours = cv2.findContours(mask.astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[-2]
+
+                        color = all_colors[i]
+
+                        overlay = np.zeros((image.shape[0], image.shape[1], 4)).astype(np.uint8)
+                        overlay[mask, :-1] = color
+                        overlay[mask, -1] = 255.0*roi_spatial_footprints[mask, i]/maximum
+                        self.overlays[i] = overlay
+
+                        self.all_contours[i] = contours
+                        self.flat_contours += contours
+
+                    # overlay = np.zeros(image.shape).astype(np.uint8)
+                if (not use_existing_roi_overlay or self.roi_overlay is None) and roi_spatial_footprints is not None:
+
+                    kept_rois = [ roi for roi in range(roi_spatial_footprints.shape[-1]) if roi not in removed_rois ]
+
+                    denominator = np.count_nonzero(self.overlays[kept_rois], axis=0)
+                    denominator[denominator == 0] = 1
+
+                    self.roi_overlay = (np.sum(self.overlays[kept_rois], axis=0)/denominator).astype(np.uint8)
+
+                    # self.roi_overlay = self.roi_overlay.transpose((1, 0, 2))
+
+                if len(self.roi_overlay.shape) > 0 and roi_spatial_footprints is not None:
+                    image = utilities.blend_transparent(image, self.roi_overlay)
+
+                    kept_rois = [ roi for roi in range(roi_spatial_footprints.shape[-1]) if roi not in removed_rois ]
+
+                    heatmap = self.controller.controller.roi_temporal_footprints[self.controller.z][kept_rois].T
+                    # print(heatmap.shape, self.controller.controller.video_lengths)
+                    if self.controller.selected_video == 0:
+                        heatmap = heatmap[:self.controller.controller.video_lengths[0]]
+                    else:
+                        heatmap = heatmap[np.sum(self.controller.controller.video_lengths[:i]):np.sum(self.controller.controller.video_lengths[:i+1])]
+
+                    # print(heatmap.shape)
+                    if heatmap.shape[1] > 0:
+                        heatmap = (heatmap - np.mean(heatmap, axis=0)[np.newaxis, :])/np.std(heatmap, axis=0)[np.newaxis, :]
+
+                        # heatmap[heatmap > 2] = 2
+                        # heatmap[heatmap < -2] = -2
+
+                        heatmap2 = np.sort(heatmap, axis=1)
+
+                        self.heatmap_plot.setImage(heatmap)
+                        self.heatmap_plot_2.setImage(heatmap2)
+                    else:
+                        self.heatmap_plot.setImage(None)
+                        self.heatmap_plot_2.setImage(None)
+                else:
+                    self.heatmap_plot.setImage(None)
+                    self.heatmap_plot_2.setImage(None)
+
+        return image
+
+    def create_final_right_image(self, image, vmax, background_mask=None, mask_points=None, tentative_mask_point=None, mask=None, selected_mask_num=-1, roi_spatial_footprints=None, manual_roi_spatial_footprints=None, video_dimensions=None, removed_rois=None, selected_rois=None, manual_roi_selected=False, show_rois=False, update_stored_image=True, use_existing_roi_overlay=False):
+        image = 255.0*image/vmax
+        image[image > 255] = 255
+
+        if len(image.shape) < 3:
+            image = cv2.cvtColor(image.astype(np.uint8), cv2.COLOR_GRAY2RGB)
+        else:
+            image = image.astype(np.uint8)
+
+        if show_rois:
+            if roi_spatial_footprints is not None:
+                roi_spatial_footprints = roi_spatial_footprints.toarray().reshape((video_dimensions[1], video_dimensions[2], roi_spatial_footprints.shape[-1])).transpose((1, 0, 2))
+
+            if video_dimensions is not None:
+                    # overlay = np.zeros(image.shape).astype(np.uint8)
+                if (not use_existing_roi_overlay or self.roi_overlay_right is None) and roi_spatial_footprints is not None:
+
+                    # self.roi_overlay_right = np.zeros((image.shape[0], image.shape[1], 4)).astype(np.uint8)
+
+                    denominator = np.count_nonzero(self.overlays[removed_rois], axis=0)
+                    denominator[denominator == 0] = 1
+
+                    self.roi_overlay_right = (np.sum(self.overlays[removed_rois], axis=0)/denominator).astype(np.uint8)
+
+                if len(self.roi_overlay_right.shape) > 0 and roi_spatial_footprints is not None:
+                    image = utilities.blend_transparent(image, self.roi_overlay_right)
+
+        return image
+
+    def plot_mean_image(self, image, vmax):
+        image = 255.0*image/vmax
+        image[image > 255] = 255
+        if len(image.shape) < 3:
+            image = cv2.cvtColor(image.astype(np.uint8), cv2.COLOR_GRAY2RGB)
+        else:
+            image = image.astype(np.uint8)
+
+        self.right_plot.setImage(image)
+
+    def update_right_image_plot(self, image, background_mask=None, mask_points=None, tentative_mask_point=None, mask=None, selected_mask_num=-1, roi_spatial_footprints=None, manual_roi_spatial_footprints=None, video_dimensions=None, removed_rois=None, selected_rois=None, manual_roi_selected=False, use_existing_roi_overlay=False):
+        # print(use_existing_roi_overlay)
+        self.final_right_image = self.create_final_right_image(image, self.controller.controller.video_max, background_mask=background_mask, mask_points=mask_points, tentative_mask_point=tentative_mask_point, mask=mask, selected_mask_num=selected_mask_num, roi_spatial_footprints=roi_spatial_footprints, manual_roi_spatial_footprints=manual_roi_spatial_footprints, video_dimensions=video_dimensions, removed_rois=removed_rois, selected_rois=selected_rois, manual_roi_selected=manual_roi_selected, show_rois=self.controller.show_rois, use_existing_roi_overlay=use_existing_roi_overlay)
+
+        self.right_plot.setImage(self.final_right_image)
+
+    def reset_zoom(self):
+        self.viewbox1.autoRange()
+        self.viewbox2.autoRange()
 
     def update_image_plot_simple(self, image):
         self.image_plot.show_image(image, 255, update_stored_image=False)
@@ -642,7 +789,7 @@ class PreviewWindow(QMainWindow):
             # make a copy of the current image
             image = self.image_plot.image.copy()
 
-            print(np.amax(image), image.shape)
+            # print(np.amax(image), image.shape)
 
             # create a mask that shows the boundary of an elliptical ROI fitting between the start & end points
             mask  = np.zeros((self.image.shape[0], self.image.shape[1])).astype(np.uint8)
@@ -665,9 +812,6 @@ class PreviewWindow(QMainWindow):
 
     def draw_roi_magic_wand(self, point):
         self.controller.create_roi_magic_wand(point)
-
-    def show_roi_nums(self):
-        self.image_plot.show_roi_nums(self.controller.selected_rois)
 
     # def shift_rois(self, previous_point, current_point):
     #     self.controller.shift_rois(previous_point, current_point)
@@ -713,6 +857,82 @@ class PreviewWindow(QMainWindow):
                     self.draw_roi_magic_wand(start_point)
             elif (not mouse_moved):
                 self.select_roi(end_point, shift_held=shift_held)
+
+    def select_roi(self, roi_to_select):
+        print("Selecting ROI {}.".format(roi_to_select))
+        # pass
+        image = self.final_image.copy()
+        cv2.drawContours(image, self.all_contours[roi_to_select], -1, (255, 255, 0), 1)
+
+        self.left_plot.setImage(image)
+
+    def select_rois(self, rois_to_select):
+        pass
+        # for roi in rois_to_select:
+        #     cv2.drawContours(self.final_image, self.all_contours[roi], -1, (255, 255, 0), 1)
+
+        # self.left_plot.setImage(self.final_image)
+
+    def show_eraser(self, point):
+        image   = self.final_image.copy()
+        overlay = image.copy()
+        cv2.circle(overlay, point, 10, (255, 0, 0), -1)
+        cv2.addWeighted(overlay, 0.5, image, 0.5, 0, image)
+
+        self.left_plot.setImage(image)
+
+    def deselect_rois(self):
+        # pass
+        # cv2.drawContours(self.final_image, self.flat_contours, -1, (255, 0, 0), 1)
+
+        self.left_plot.setImage(self.final_image)
+
+    def erase_roi(self, roi_to_erase):
+        pass
+        # cv2.drawContours(self.final_image, self.all_contours[roi_to_erase], -1, (128, 128, 128), 1)
+
+        # self.left_plot.setImage(self.final_image)
+
+    def unerase_roi(self, roi):
+        pass
+        # cv2.drawContours(self.final_image, self.all_contours[roi], -1, (255, 0, 0), 1)
+
+        # self.left_plot.setImage(self.final_image)
+
+    def erase_rois(self, rois_to_erase):
+        pass
+        # print(rois_to_erase)
+        # # pdb.set_trace()
+        # print(len(self.all_contours))
+        # for roi_to_erase in rois_to_erase:
+        #     cv2.drawContours(self.final_image, self.all_contours[roi_to_erase], -1, (128, 128, 128), 1)
+
+        # self.left_plot.setImage(self.final_image)
+
+    def unerase_rois(self, rois_to_unerase):
+        pass
+        # for roi in rois_to_unerase:
+        #     cv2.drawContours(self.image, self.all_contours[roi], -1, (255, 0, 0), 1)
+
+        # self.left_plot.setImage(self.final_final_image)
+
+    def show_roi_nums(self, roi_nums):
+        pass
+        # image = self.final_image.copy()
+
+        # for roi in roi_nums:
+        #     contour = self.all_contours[roi][0]
+        #     M = cv2.moments(contour)
+        #     if M["m00"] > 0:
+        #         center_x = int(M["m10"] / M["m00"])
+        #         center_y = int(M["m01"] / M["m00"])
+
+        #         centroid = (center_x + 10, center_y + 10)
+
+        #         font = cv2.FONT_HERSHEY_PLAIN
+        #         cv2.putText(image, "{}".format(roi), centroid, font, 1, (255, 255, 0), 1, cv2.LINE_AA)
+
+        # self.left_plot.setImage(image)
 
     def closeEvent(self, ce):
         if not self.controller.closing:
