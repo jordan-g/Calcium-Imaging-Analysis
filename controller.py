@@ -196,134 +196,51 @@ class Controller():
             # reset variables
             self.reset_variables()
 
-    def calculate_mean_images(self):
-        if self.use_mc_video and self.mc_video is not None:
-            video = self.mc_video
-        else:
-            video = self.video
+    def video_paths_in_group(self, video_paths, group_num):
+        return [ video_paths[i] for i in range(len(video_paths)) if self.video_groups[i] == group_num ]
 
-        if self.apply_blur:
-            self.mean_images = [ ndi.median_filter(utilities.sharpen(ndi.gaussian_filter(denoise_wavelet(utilities.mean(video, z)/self.video_max)*self.video_max, 1)), 3) for z in range(video.shape[1]) ]
-        else:
-            self.mean_images = [ (utilities.mean(video, z)/self.video_max)*self.video_max for z in range(video.shape[1]) ]
-
-    def set_invert_masks(self, boolean):
-        self.params['invert_masks'] = boolean
-
-        # invert the masks
-        for i in range(len(self.masks)):
-            for j in range(len(self.masks[i])):
-                self.masks[i][j] = self.masks[i][j] == False
-
-    def filter_rois(self): # TODO: Update this
-        if self.use_mc_video and self.mc_video is not None:
+    def filter_rois(self, group_num):
+        # set video paths
+        if self.use_mc_video and len(self.mc_video_paths) > 0:
             video_paths = self.mc_video_paths
         else:
             video_paths = self.video_paths
 
+        # only use videos in the given group
+        video_paths = self.video_paths_in_group(video_paths, group_num)
+
         # filter out ROIs and update the removed ROIs
-        self.filtered_out_rois = utilities.filter_rois(video_paths, self.roi_spatial_footprints, self.roi_temporal_footprints, self.roi_temporal_residuals, self.bg_spatial_footprints, self.bg_temporal_footprints, self.params)
+        self.filtered_out_rois[group_num] = utilities.filter_rois(video_paths, self.roi_spatial_footprints[group_num], self.roi_temporal_footprints[group_num], self.roi_temporal_residuals[group_num], self.bg_spatial_footprints[group_num], self.bg_temporal_footprints[group_num], self.params)
         
-        print(self.filtered_out_rois)
-        for z in range(self.video.shape[1]):
-            self.filtered_out_rois[z] = [ roi for roi in self.filtered_out_rois[z] if roi not in self.locked_rois[z] ]
-            self.removed_rois[z] = self.filtered_out_rois[z] + self.discarded_rois[z]
+        # keep locked ROIs
+        for z in range(len(self.filtered_out_rois[group_num])):
+            self.filtered_out_rois[group_num][z] = [ roi for roi in self.filtered_out_rois[group_num][z] if roi not in self.locked_rois[group_num][z] ]
+            self.removed_rois[group_num][z]      = self.filtered_out_rois[group_num][z] + self.discarded_rois[group_num][z]
 
-    def create_roi(self, start_point, end_point, z): # TODO: Update this
-        # find the center of the ROI
-        center_point = (int(round((start_point[0] + end_point[0])/2)), int(round((start_point[1] + end_point[1])/2)))
-        axis_1 = np.abs(center_point[0] - end_point[0])
-        axis_2 = np.abs(center_point[1] - end_point[1])
+    def discard_roi(self, roi, z, group_num):
+        # add to discarded ROIs list
+        self.discarded_rois[group_num][z].append(roi)
+        self.removed_rois[group_num][z] = self.filtered_out_rois[group_num][z] + self.discarded_rois[group_num][z]
 
-        # create a mask
-        mask = np.zeros((self.video.shape[2], self.video.shape[3])).astype(np.uint8)
+        # remove from locked ROIs if it's there
+        if roi in self.locked_rois[group_num][z]:
+            i = self.locked_rois[group_num][z].index(roi)
+            del self.locked_rois[group_num][z][i]
 
-        # draw an ellipse on the mask
-        cv2.ellipse(mask, center_point, (axis_1, axis_2), 0, 0, 360, 1, -1)
+    def keep_roi(self, roi, z, group_num):
+        # remove from discared ROIs or filtered out ROIs list if it's there
+        if roi in self.discarded_rois[group_num][z]:
+            i = self.discarded_rois[group_num][z].index(roi)
+            del self.discarded_rois[group_num][z][i]
+        elif roi in self.filtered_out_rois[group_num][z]:
+            i = self.filtered_out_rois[group_num][z].index(roi)
+            del self.filtered_out_rois[group_num][z][i]
 
-        if self.use_mc_video and self.mc_video is not None:
-            video = self.mc_video
-        else:
-            video = self.video
+            # add to locked ROIs list
+            if roi not in self.locked_rois[group_num][z]:
+                self.locked_rois[group_num][z].append(roi)
 
-        # pdb.set_trace()
-
-        trace = utilities.calc_activity_of_roi(mask, video, z)
-
-        mask = mask.T.reshape((self.video.shape[2]*self.video.shape[3], 1))
-
-        if self.manual_roi_spatial_footprints[z] is None:
-            self.manual_roi_spatial_footprints[z] = mask
-            self.manual_roi_temporal_footprints[z] = trace[np.newaxis, :]
-        else:
-            self.manual_roi_spatial_footprints[z]  = np.concatenate((self.manual_roi_spatial_footprints[z], mask), axis=1)
-            self.manual_roi_temporal_footprints[z] = np.concatenate((self.manual_roi_temporal_footprints[z], trace[np.newaxis, :]), axis=0)
-
-    def create_roi_magic_wand(self, image, point, z):
-        if self.use_mc_video and self.mc_video is not None:
-            video = self.mc_video
-        else:
-            video = self.video
-
-        mask = cm.external.cell_magic_wand.cell_magic_wand(image, point, min_radius=2, max_radius=10, roughness=1)
-
-        trace = utilities.calc_activity_of_roi(mask, video, z)
-
-        mask = mask.reshape((self.video.shape[2]*self.video.shape[3], 1))
-
-        if self.manual_roi_spatial_footprints[z] is None:
-            self.manual_roi_spatial_footprints[z] = mask
-            self.manual_roi_temporal_footprints[z] = trace[np.newaxis, :]
-        else:
-            self.manual_roi_spatial_footprints[z]  = np.concatenate((self.manual_roi_spatial_footprints[z], mask), axis=1)
-            self.manual_roi_temporal_footprints[z] = np.concatenate((self.manual_roi_temporal_footprints[z], trace[np.newaxis, :]), axis=0)
-
-    def shift_rois(self, start_point, end_point, z): # TODO: Update this
-        # get the x and y shift
-        y_shift = end_point[1] - start_point[1]
-        x_shift = end_point[0] - start_point[0]
-
-        # shift the ROI & ROI overlay arrays
-        self.rois[z] = np.roll(self.rois[z], y_shift, axis=0)
-        self.rois[z] = np.roll(self.rois[z], x_shift, axis=1)
-
-    def select_rois_near_point(self, roi_point, z, radius=10): # TODO: Update this
-        # find out which ROIs to select
-        # rois_to_select = utilities.get_rois_near_point(self.roi_spatial_footprints[z], roi_point, radius, self.video.shape[2:])
-
-        _, selected_roi = utilities.get_roi_containing_point(self.roi_spatial_footprints[z], None, roi_point, self.video.shape[2:])
-
-        rois_to_select = []
-        if selected_roi is not None:
-            rois_to_select.append(selected_roi)
-
-        # print(rois_to_select)
-
-        return rois_to_select
-
-    def erase_roi(self, label, z): # TODO: call roi_unselected() method of the param window
-        # update ROI filtering variables
-        self.discarded_rois[z].append(label)
-        # self.last_erased_rois[z].append([label])
-        self.removed_rois[z] = self.filtered_out_rois[z] + self.discarded_rois[z]
-
-        if label in self.locked_rois[z]:
-            index = self.locked_rois[z].index(label)
-            del self.locked_rois[z][index]
-
-    def unerase_roi(self, label, z): # TODO: call roi_unselected() method of the param window
-        # update ROI filtering variables
-        if label in self.discarded_rois[z]:
-            i = self.discarded_rois[z].index(label)
-            del self.discarded_rois[z][i]
-        elif label in self.filtered_out_rois[z]:
-            i = self.filtered_out_rois[z].index(label)
-            del self.filtered_out_rois[z][i]
-
-            if label not in self.locked_rois[z]:
-                self.locked_rois.append(label)
-
-        self.removed_rois[z] = self.filtered_out_rois[z] + self.discarded_rois[z]
+        self.removed_rois[group_num][z] = self.filtered_out_rois[group_num][z] + self.discarded_rois[group_num][z]
 
     def save_params(self):
         json.dump(self.params, open(PARAMS_FILENAME, "w"))

@@ -227,6 +227,17 @@ class GUIController():
 
         return True
 
+    def calculate_mean_images(self):
+        if self.use_mc_video and self.mc_video is not None:
+            video = self.mc_video
+        else:
+            video = self.video
+
+        if self.apply_blur:
+            self.mean_images = [ ndi.median_filter(utilities.sharpen(ndi.gaussian_filter(denoise_wavelet(utilities.mean(video, z)/self.video_max)*self.video_max, 1)), 3) for z in range(video.shape[1]) ]
+        else:
+            self.mean_images = [ (utilities.mean(video, z)/self.video_max)*self.video_max for z in range(video.shape[1]) ]
+
     def video_selected(self, index, force_show=False):
         if force_show or (index is not None and index != self.selected_video):
             self.selected_video = index
@@ -1327,7 +1338,11 @@ class GUIController():
 
         # print("selecting rois...")
 
-        rois_selected = self.controller.select_rois_near_point(roi_point, self.z, radius=radius)
+        _, selected_roi = utilities.get_roi_containing_point(self.controller.roi_spatial_footprints[z], None, roi_point, self.video.shape[2:])
+
+        rois_selected = []
+        if selected_roi is not None:
+            rois_selected.append(selected_roi)
 
         # print("rois selected")
 
