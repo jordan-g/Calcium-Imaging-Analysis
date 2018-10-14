@@ -196,7 +196,7 @@ class GUIController():
     def video_selected(self, index, force=False):
         if index is not None and (index != self.selected_video or force):
             print("Video #{} selected.".format(index))
-            
+
             self.selected_video = index
 
             self.open_video(self.selected_video_path())
@@ -610,7 +610,7 @@ class GUIController():
         self.show_roi_image()
 
     def show_roi_image(self, update_overlay=False):
-        self.preview_window.plot_image(self.adjusted_mean_images[self.z], background_mask=self.background_mask, video_max=255.0, show_rois=self.show_rois, update_overlay=update_overlay)
+        self.preview_window.plot_image(self.adjusted_mean_images[self.z], video_max=255.0, show_rois=self.show_rois, update_overlay=update_overlay)
 
     def filter_rois(self):
         self.controller.filter_rois()
@@ -648,7 +648,7 @@ class GUIController():
 
                 self.param_window.no_rois_selected()
 
-    def load_tail_angles(self):
+    def load_tail_angles(self): # TODO: Ask the user for FPS of tail traces and calcium traces
         if pyqt_version == 4:
             load_path = QFileDialog.getOpenFileName(self.param_window, 'Select saved tail angle data.', '', 'CSV (*.csv)')
         elif pyqt_version == 5:
@@ -659,7 +659,10 @@ class GUIController():
 
             self.controller.tail_angles[self.selected_video] = tail_angles
 
-            self.preview_window.plot_tail_angles(self.controller.tail_angles[self.selected_video])
+            tail_data_fps    = 349
+            calcium_data_fps = 3
+
+            self.preview_window.plot_tail_angles(self.controller.tail_angles[self.selected_video], tail_data_fps, calcium_data_fps)
 
     def discard_selected_rois(self):
         for roi in self.selected_rois:
