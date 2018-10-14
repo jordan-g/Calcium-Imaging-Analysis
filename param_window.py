@@ -144,6 +144,25 @@ class ParamWindow(QMainWindow):
 
         self.show()
 
+    def rois_loaded(self):
+        # enable ROI filtering tab
+        self.param_window.tab_widget.setTabEnabled(3, True)
+
+        # enable showing and saving ROIs
+        self.param_window.show_rois_action.setEnabled(True)
+        self.param_window.save_rois_action.setEnabled(True)
+
+        # show ROIs
+        self.roi_finding_param_widget.show_rois_checkbox.setChecked(True)
+
+    def toggle_show_rois(self):
+        show_rois = self.show_rois_checkbox.isChecked()
+        self.controller.show_roi_image(show_rois)
+
+        self.show_rois_action.setChecked(show_rois)
+        self.roi_finding_param_widget.show_rois_checkbox.setChecked(show_rois)
+        self.roi_filtering_param_widget.show_rois_checkbox.setChecked(show_rois)
+
     def tab_selected(self):
         index = self.tab_widget.currentIndex()
 
@@ -170,6 +189,44 @@ class ParamWindow(QMainWindow):
             # for video_path in self.controller.controller.video_paths:
             #     self.roi_filtering_widget.videos_list.addItem(os.path.basename(video_path))
             self.controller.show_roi_filtering_params()
+
+    def single_roi_selected(self, discarded=False):
+        if not discarded:
+            self.roi_filtering_param_widget.erase_selected_roi_button.setEnabled(True)
+            self.erase_rois_action.setEnabled(True)
+            self.roi_filtering_param_widget.unerase_selected_roi_button.setEnabled(False)
+            self.unerase_rois_action.setEnabled(False)
+        else:
+            self.roi_filtering_param_widget.erase_selected_roi_button.setEnabled(False)
+            self.erase_rois_action.setEnabled(False)
+            self.roi_filtering_param_widget.unerase_selected_roi_button.setEnabled(True)
+            self.unerase_rois_action.setEnabled(True)
+        self.roi_filtering_param_widget.merge_rois_button.setEnabled(False)
+        self.merge_rois_action.setEnabled(False)
+
+    def multiple_rois_selected(self, discarded=False, merge_enabled=True):
+        if not discarded:
+            self.roi_filtering_param_widget.erase_selected_roi_button.setEnabled(True)
+            self.erase_rois_action.setEnabled(True)
+            self.roi_filtering_param_widget.unerase_selected_roi_button.setEnabled(False)
+            self.unerase_rois_action.setEnabled(False)
+            self.roi_filtering_param_widget.merge_rois_button.setEnabled(merge_enabled)
+            self.merge_rois_action.setEnabled(merge_enabled)
+        else:
+            self.roi_filtering_param_widget.erase_selected_roi_button.setEnabled(False)
+            self.erase_rois_action.setEnabled(False)
+            self.roi_filtering_param_widget.unerase_selected_roi_button.setEnabled(True)
+            self.unerase_rois_action.setEnabled(True)
+            self.roi_filtering_param_widget.merge_rois_button.setEnabled(False)
+            self.merge_rois_action.setEnabled(False)
+
+    def no_rois_selected(self):
+        self.roi_filtering_param_widget.erase_selected_roi_button.setEnabled(False)
+        self.erase_rois_action.setEnabled(False)
+        self.roi_filtering_param_widget.unerase_selected_roi_button.setEnabled(False)
+        self.unerase_rois_action.setEnabled(False)
+        self.roi_filtering_param_widget.merge_rois_button.setEnabled(False)
+        self.merge_rois_action.setEnabled(False)
 
     def eventFilter(self, sender, event):
         if (event.type() == QEvent.ChildRemoved):
@@ -422,7 +479,7 @@ class ParamWindow(QMainWindow):
         for video_path in video_paths:
             self.videos_list.addItem(video_path)
 
-        print(self.controller.controller.groups)
+        # print(self.controller.controller.video_groups)
 
         self.main_param_widget.setDisabled(False)
         self.tab_widget.setTabEnabled(1, True)
@@ -433,6 +490,21 @@ class ParamWindow(QMainWindow):
 
     def process_videos_started(self):
         self.loading_widget.process_videos_started()
+
+    def roi_finding_ended(self):
+        self.roi_finding_param_widget.show_rois_checkbox.setDisabled(False)
+        self.roi_finding_param_widget.show_rois_checkbox.setChecked(True)
+        self.roi_finding_param_widget.process_video_button.setEnabled(True)
+        self.show_rois_action.setDisabled(False)
+        self.show_rois_action.setChecked(True)
+        self.save_rois_action.setDisabled(False)
+        self.tab_widget.setTabEnabled(0, True)
+        self.tab_widget.setTabEnabled(1, True)
+        self.tab_widget.setTabEnabled(3, True)
+
+    def motion_correction_ended(self):
+        self.motion_correction_param_widget.use_mc_video_checkbox.setEnabled(True)
+        self.motion_correction_param_widget.use_mc_video_checkbox.setChecked(True)
 
     def roi_erasing_started(self):
         self.main_param_widget.setEnabled(False)
@@ -895,7 +967,7 @@ class ROIFindingWidget(ParamWidget):
         self.show_rois_checkbox.setObjectName("Show ROIs")
         self.show_rois_checkbox.setChecked(False)
         self.show_rois_checkbox.setEnabled(False)
-        self.show_rois_checkbox.clicked.connect(lambda:self.controller.show_roi_image(self.show_rois_checkbox.isChecked()))
+        self.show_rois_checkbox.clicked.connect(self.parent_widget.toggle_show_rois)
         # self.show_rois_checkbox.setDisabled(True)
         self.button_layout.addWidget(self.show_rois_checkbox)
 
@@ -953,12 +1025,6 @@ class ROIFindingWidget(ParamWidget):
             self.process_video_button.setHoverMessage("Find ROIs using the watershed algorithm.")
         else:
             self.process_video_button.setText("Finding ROIs... {}%".format(int(percent)))
-
-    def roi_finding_ended(self):
-        self.process_video_button.setEnabled(True)
-        self.parent_widget.tab_widget.setTabEnabled(0, True)
-        self.parent_widget.tab_widget.setTabEnabled(1, True)
-        self.parent_widget.tab_widget.setTabEnabled(3, True)
 
     def tab_selected(self):
         index = self.tab_widget.currentIndex()
@@ -1200,7 +1266,7 @@ class ROIFilteringWidget(ParamWidget):
         self.filter_rois_button.clicked.connect(self.controller.filter_rois)
         self.button_layout.addWidget(self.filter_rois_button)
 
-        self.process_videos_button = HoverButton('Save Traces...', None, self.parent_widget.statusBar())
+        self.process_videos_button = HoverButton('Save...', None, self.parent_widget.statusBar())
         self.process_videos_button.setHoverMessage("Save traces, ROI centroids and other ROI data.")
         self.process_videos_button.setIcon(QIcon("icons/save_icon.png"))
         self.process_videos_button.setIconSize(QSize(16,16))

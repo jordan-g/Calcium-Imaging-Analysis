@@ -191,7 +191,53 @@ def adjust_contrast(image, contrast):
 
 def adjust_gamma(image, gamma):
     return skimage.exposure.adjust_gamma(image, gamma)
+
+def update_temporal_traces_multiple_videos(video_paths, groups, params, roi_spatial_footprints, bg_spatial_footprints, use_multiprocessing=True):
+    group_nums = np.unique(groups)
+
+    new_roi_spatial_footprints  = {}
+    new_roi_temporal_footprints = {}
+    new_roi_temporal_residuals  = {}
+    new_bg_spatial_footprints   = {}
+    new_bg_temporal_footprints  = {}
+
+    for n in range(len(group_nums)):
+        group_num = group_nums[n]
+        paths = [ video_paths[i] for i in range(len(video_paths)) if groups[i] == group_num ]
+
+        for i in range(len(paths)):
+            video_path = paths[i]
+
+            video = imread(video_path)
+                
+            if len(video.shape) == 3:
+                # add a z dimension
+                video = video[:, np.newaxis, :, :]
+
+            # flip video 90 degrees to match what is shown in Fiji
+            video = video.transpose((0, 1, 3, 2))
+            
+            video_lengths.append(video.shape[0])
+                
+            if i == 0:
+                final_video = video
+            else:
+                final_video = np.concatenate([final_video, video], axis=0)
+
+        for z in range(final_video.shape[1]):
+            roi_spatial_footprints_z, roi_temporal_footprints_z, roi_temporal_residuals_z, bg_spatial_footprints_z, bg_temporal_footprints_z = utilities.do_cnmf(final_video[:, z, :, :], params, roi_spatial_footprints[z], np.ones((roi_spatial_footprints[z].shape[1], final_video.shape[0])), np.ones((roi_spatial_footprints[z].shape[1], final_video.shape[0])), bg_spatial_footprints[z], np.ones((bg_spatial_footprints[z].shape[1], final_video.shape[0])), use_multiprocessing=use_multiprocessing)
+
+            new_roi_spatial_footprints[group_num][z]  = roi_spatial_footprints_z
+            new_roi_temporal_footprints[group_num][z] = roi_temporal_footprints_z
+            new_roi_temporal_residuals[group_num][z]  = roi_temporal_residuals_z
+            new_bg_spatial_footprints[group_num][z]   = bg_spatial_footprints_z
+            new_bg_temporal_footprints[group_num][z]  = bg_temporal_footprints_z
+
+        # calculate temporal components based on spatial components
+        new_roi_temporal_footprints[group_num], new_roi_temporal_residuals[group_num], new_bg_temporal_footprints[group_num] = utilities.calculate_temporal_components(paths, new_roi_spatial_footprints[group_num], new_roi_temporal_footprints[group_num], new_roi_temporal_residuals[group_num], new_bg_spatial_footprints[group_num], new_bg_temporal_footprints[group_num])
     
+    return new_roi_spatial_footprints, new_roi_temporal_footprints, new_roi_temporal_residuals, new_bg_spatial_footprints, new_bg_temporal_footpri
+
 def motion_correct_multiple_videos(video_paths, groups, max_shift, patch_stride, patch_overlap, progress_signal=None, thread=None, use_multiprocessing=True):
     start_time = time.time()
 
@@ -672,8 +718,8 @@ def calculate_temporal_components(video_paths, roi_spatial_footprints, roi_tempo
             final_video = np.concatenate([final_video, video], axis=0)
 
     roi_temporal_footprints = [ None for i in range(final_video.shape[1]) ]
-    roi_temporal_residuals = [ None for i in range(final_video.shape[1]) ]
-    bg_temporal_footprints = [ None for i in range(final_video.shape[1]) ]
+    roi_temporal_residuals  = [ None for i in range(final_video.shape[1]) ]
+    bg_temporal_footprints  = [ None for i in range(final_video.shape[1]) ]
 
     for z in range(final_video.shape[1]):
         print(z)

@@ -462,6 +462,9 @@ class PreviewWindow(QMainWindow):
         self.setWindowTitle("Preview")
 
     def plot_image(self, image, background_mask=None, video_max=255, update_overlay=True):
+        if update_overlay:
+            self.all_contours = None
+
         if self.image is None:
             self.image_plot.show()
             self.main_widget.setMinimumSize(QSize(image.shape[1], image.shape[0]))
@@ -525,6 +528,9 @@ class PreviewWindow(QMainWindow):
             self.video_name = ""
         self.play_movie(video, fps=fps)
 
+        # self.reset_zoom()
+        self.viewbox4.setXRange(0, self.controller.video.shape[0])
+
     def set_fps(self, fps):
         # restart the timer with the new fps
         self.timer.stop()
@@ -554,13 +560,10 @@ class PreviewWindow(QMainWindow):
             mask_points = []
             self.mask = None
 
-            if self.controller.controller.roi_spatial_footprints is not None:
-                spatial_footprints = self.controller.controller.roi_spatial_footprints[self.controller.z]
-                removed_rois = self.controller.controller.removed_rois[self.controller.z]
-            else:
-                spatial_footprints = None
-                removed_rois = None
-            self.update_image_plot(frame, background_mask=self.background_mask, mask_points=mask_points, mask=self.mask, selected_mask_num=self.controller.selected_mask_num, roi_spatial_footprints=spatial_footprints, manual_roi_spatial_footprints=None, video_dimensions=self.controller.video.shape, removed_rois=removed_rois, selected_rois=self.controller.selected_rois, manual_roi_selected=self.controller.manual_roi_selected, use_existing_roi_overlay=True)
+            spatial_footprints = self.controller.spatial_footprints()
+            removed_rois       = self.controller.removed_rois()
+
+            self.update_image_plot(frame, roi_spatial_footprints=spatial_footprints, manual_roi_spatial_footprints=None, video_dimensions=self.controller.video.shape, removed_rois=removed_rois, selected_rois=self.controller.selected_rois, use_existing_roi_overlay=True)
             # self.update_right_image_plot(self.image, background_mask=self.background_mask, mask_points=mask_points, mask=self.mask, selected_mask_num=self.controller.selected_mask_num, roi_spatial_footprints=self.controller.controller.roi_spatial_footprints[self.controller.z], manual_roi_spatial_footprints=self.controller.controller.manual_roi_spatial_footprints[self.controller.z], video_dimensions=self.controller.video.shape, removed_rois=self.controller.controller.removed_rois[self.controller.z], selected_rois=self.controller.selected_rois, manual_roi_selected=self.controller.manual_roi_selected, use_existing_roi_overlay=(not update_overlay))
 
             # increment frame number (keeping it between 0 and n_frames)
@@ -572,7 +575,7 @@ class PreviewWindow(QMainWindow):
 
     def update_image_plot(self, image, background_mask=None, mask_points=None, tentative_mask_point=None, mask=None, selected_mask_num=-1, roi_spatial_footprints=None, manual_roi_spatial_footprints=None, video_dimensions=None, removed_rois=None, selected_rois=None, manual_roi_selected=False, use_existing_roi_overlay=False):
         # print(use_existing_roi_overlay)
-        final_image = self.create_final_image(image, self.controller.controller.video_max, background_mask=background_mask, mask_points=mask_points, tentative_mask_point=tentative_mask_point, mask=mask, selected_mask_num=selected_mask_num, roi_spatial_footprints=roi_spatial_footprints, manual_roi_spatial_footprints=manual_roi_spatial_footprints, video_dimensions=video_dimensions, removed_rois=removed_rois, selected_rois=selected_rois, manual_roi_selected=manual_roi_selected, show_rois=self.controller.show_rois, use_existing_roi_overlay=use_existing_roi_overlay)
+        final_image = self.create_final_image(image, self.controller.video_max, background_mask=background_mask, mask_points=mask_points, tentative_mask_point=tentative_mask_point, mask=mask, selected_mask_num=selected_mask_num, roi_spatial_footprints=roi_spatial_footprints, manual_roi_spatial_footprints=manual_roi_spatial_footprints, video_dimensions=video_dimensions, removed_rois=removed_rois, selected_rois=selected_rois, manual_roi_selected=manual_roi_selected, show_rois=self.controller.show_rois, use_existing_roi_overlay=use_existing_roi_overlay)
 
         self.left_plot.setImage(final_image)
 
@@ -702,7 +705,7 @@ class PreviewWindow(QMainWindow):
 
     def update_right_image_plot(self, image, background_mask=None, mask_points=None, tentative_mask_point=None, mask=None, selected_mask_num=-1, roi_spatial_footprints=None, manual_roi_spatial_footprints=None, video_dimensions=None, removed_rois=None, selected_rois=None, manual_roi_selected=False, use_existing_roi_overlay=False):
         # print(use_existing_roi_overlay)
-        self.final_right_image = self.create_final_right_image(image, self.controller.controller.video_max, background_mask=background_mask, mask_points=mask_points, tentative_mask_point=tentative_mask_point, mask=mask, selected_mask_num=selected_mask_num, roi_spatial_footprints=roi_spatial_footprints, manual_roi_spatial_footprints=manual_roi_spatial_footprints, video_dimensions=video_dimensions, removed_rois=removed_rois, selected_rois=selected_rois, manual_roi_selected=manual_roi_selected, show_rois=self.controller.show_rois, use_existing_roi_overlay=use_existing_roi_overlay)
+        self.final_right_image = self.create_final_right_image(image, self.controller.video_max, background_mask=background_mask, mask_points=mask_points, tentative_mask_point=tentative_mask_point, mask=mask, selected_mask_num=selected_mask_num, roi_spatial_footprints=roi_spatial_footprints, manual_roi_spatial_footprints=manual_roi_spatial_footprints, video_dimensions=video_dimensions, removed_rois=removed_rois, selected_rois=selected_rois, manual_roi_selected=manual_roi_selected, show_rois=self.controller.show_rois, use_existing_roi_overlay=use_existing_roi_overlay)
 
         self.right_plot.setImage(self.final_right_image)
 

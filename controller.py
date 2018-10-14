@@ -63,6 +63,7 @@ class Controller():
         self.video_paths   = [] # paths of all videos to process
         self.video_lengths = [] # lengths (# of frames) of all videos
         self.video_groups  = [] # groups that videos belong to
+        self.tail_angles   = [] # tail angle traces for all videos
 
         # initialize all variables
         self.reset_variables()
@@ -73,8 +74,6 @@ class Controller():
     def reset_variables(self):
         self.use_mc_video        = False # whether to use the motion-corrected video for finding ROIs
         self.use_multiprocessing = True  # whether to use multi-processing
-        self.find_new_rois       = True  # whether we need to find new ROIs
-        self.mc_rois             = False # whether found ROIs are based on the motion-corrected video
 
     def reset_motion_correction_variables(self):
         self.mc_video_paths = [] # paths of all motion-corrected videos
