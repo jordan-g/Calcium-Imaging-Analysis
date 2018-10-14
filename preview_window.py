@@ -560,7 +560,7 @@ class PreviewWindow(QMainWindow):
             mask_points = []
             self.mask = None
 
-            spatial_footprints = self.controller.spatial_footprints()
+            spatial_footprints = self.controller.roi_spatial_footprints()
             removed_rois       = self.controller.removed_rois()
 
             self.update_image_plot(frame, roi_spatial_footprints=spatial_footprints, manual_roi_spatial_footprints=None, video_dimensions=self.controller.video.shape, removed_rois=removed_rois, selected_rois=self.controller.selected_rois, use_existing_roi_overlay=True)

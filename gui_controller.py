@@ -6,27 +6,6 @@ import utilities
 from param_window import ParamWindow
 from preview_window import PreviewWindow
 
-# from __future__ import division
-from past.utils import old_div
-from skimage.morphology import *
-import time
-import json
-import glob
-import sys
-import scipy.ndimage as ndi
-import scipy.signal
-from skimage.measure import find_contours, regionprops
-from skimage.filters import gaussian
-from skimage.restoration import (denoise_tv_chambolle, denoise_bilateral,
-                                 denoise_wavelet, estimate_sigma)
-from skimage import exposure
-import cv2
-import matplotlib.pyplot as plt
-import csv
-import pdb
-from scipy.sparse import issparse, spdiags, coo_matrix, csc_matrix
-from matplotlib import gridspec
-
 # import the Qt library
 try:
     from PyQt4.QtCore import *
@@ -36,15 +15,7 @@ except:
     from PyQt5.QtCore import *
     from PyQt5.QtGui import *
     from PyQt5.QtWidgets import *
-    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-    from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
-    from matplotlib.figure import Figure
     pyqt_version = 5
-
-if sys.version_info[0] < 3:
-    python_version = 2
-else:
-    python_version = 3
 
 class GUIController():
     def __init__(self, controller):
@@ -83,6 +54,18 @@ class GUIController():
         self.selected_video       = 0      # which video is selected
         self.group_num            = 0      # group number of currently loaded video
         self.video_max            = 1      # dynamic range of currently loaded video
+
+    def roi_spatial_footprints(self):
+        if len(self.controller.roi_spatial_footprints.keys()) > 0:
+            return self.controller.roi_spatial_footprints[self.group_num][self.z]
+        else:
+            return None
+
+    def removed_rois(self):
+        if len(self.controller.removed_rois.keys()) > 0:
+            return self.controller.removed_rois[self.group_num][self.z]
+        else:
+            return None
 
     def selected_video_path(self):
         video_paths = self.video_paths()
@@ -212,6 +195,8 @@ class GUIController():
 
     def video_selected(self, index, force=False):
         if index is not None and (index != self.selected_video or force):
+            print("Video #{} selected.".format(index))
+            
             self.selected_video = index
 
             self.open_video(self.selected_video_path())
@@ -683,6 +668,16 @@ class GUIController():
         self.selected_rois = []
 
         self.param_window.no_rois_selected()
+
+    def discard_all_rois(self):
+        self.controller.discarded_rois[self.group_num][self.z] = np.arange(self.controller.roi_spatial_footprints[self.group_num][self.z].shape[1]).tolist()
+        self.controller.removed_rois[self.group_num][self.z]   = self.controller.discarded_rois[self.group_num][self.z][:]
+
+        self.selected_rois = []
+
+        self.param_window.no_rois_selected()
+
+        self.show_roi_image(update_overlay=True)
 
     def keep_selected_rois(self):
         for roi in self.selected_rois:
