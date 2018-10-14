@@ -61,11 +61,42 @@ class GUIController():
         else:
             return None
 
+    def roi_temporal_footprints(self):
+        if len(self.controller.roi_temporal_footprints.keys()) > 0:
+            return self.controller.roi_temporal_footprints[self.group_num][self.z]
+        else:
+            return None
+
     def removed_rois(self):
         if len(self.controller.removed_rois.keys()) > 0:
             return self.controller.removed_rois[self.group_num][self.z]
         else:
             return None
+
+    def filtered_out_rois(self):
+        if len(self.controller.filtered_out_rois.keys()) > 0:
+            return self.controller.filtered_out_rois[self.group_num][self.z]
+        else:
+            return None
+
+    def bg_temporal_footprints(self):
+        if len(self.controller.bg_temporal_footprints.keys()) > 0:
+            return self.controller.bg_temporal_footprints[self.group_num][self.z]
+        else:
+            return None
+
+    def selected_group_video_paths(self):
+        video_paths   = self.video_paths()
+        group_indices = [ i for i in range(len(self.controller.video_paths)) if self.controller.video_groups[i] == self.group_num ]
+        group_paths = [ video_paths[i] for i in group_indices ]
+
+        return group_paths
+
+    def selected_group_video_lengths(self):
+        group_indices = [ i for i in range(len(self.controller.video_paths)) if self.controller.video_groups[i] == self.group_num ]
+        group_lengths = [ self.controller.video_lengths[i] for i in group_indices ]
+
+        return group_lengths
 
     def selected_video_path(self):
         video_paths = self.video_paths()
@@ -79,6 +110,15 @@ class GUIController():
             video_paths = self.controller.video_paths
 
         return video_paths
+
+    def video_groups(self):
+        return self.controller.video_groups
+
+    def params(self):
+        return self.controller.params
+
+    def selected_video_mean_image(self):
+        return self.mean_images[self.selected_video]
 
     def rois_exist(self):
         return len(self.controller.roi_spatial_footprints.keys()) > 0
@@ -215,7 +255,7 @@ class GUIController():
         self.preview_window.plot_mean_image(self.adjusted_mean_images[self.z], self.video_max)
 
     def videos_rearranged(self, old_indices, groups):
-        self.controller.groups        = groups
+        self.controller.video_groups        = groups
         self.controller.video_paths   = [ self.controller.video_paths[i] for i in old_indices ]
         self.controller.video_lengths = [ self.controller.video_lengths[i] for i in old_indices ]
 
@@ -261,7 +301,7 @@ class GUIController():
                 video_paths = self.video_paths()
 
                 # compute new temporal traces given the loaded ROIs
-                self.controller.roi_spatial_footprints, self.controller.roi_temporal_footprints, self.controller.roi_temporal_residuals, self.controller.bg_spatial_footprints, self.controller.bg_temporal_footprints = utilities.update_temporal_traces_multiple_videos(video_paths, self.controller.groups, self.controller.params, self.controller.roi_spatial_footprints, self.controller.bg_spatial_footprints, use_multiprocessing=self.controller.use_multiprocessing)
+                self.controller.roi_spatial_footprints, self.controller.roi_temporal_footprints, self.controller.roi_temporal_residuals, self.controller.bg_spatial_footprints, self.controller.bg_temporal_footprints = utilities.update_temporal_traces_multiple_videos(video_paths, self.controller.video_groups, self.controller.params, self.controller.roi_spatial_footprints, self.controller.bg_spatial_footprints, use_multiprocessing=self.controller.use_multiprocessing)
 
             # show ROI filtering parameters
             self.show_roi_filtering_params(update_overlay=True)
@@ -305,7 +345,7 @@ class GUIController():
                 # add z dimension
                 video = video[:, np.newaxis, :, :]
 
-            group_num = self.controller.group_nums[i]
+            group_num = self.controller.video_groups[i]
 
             roi_spatial_footprints  = self.controller.roi_spatial_footprints[group_num]
             roi_temporal_footprints = self.controller.roi_temporal_footprints[group_num]
@@ -349,8 +389,8 @@ class GUIController():
                 temporal_footprints = roi_temporal_footprints[z]
 
                 group_indices = [ i for i in range(len(self.controller.video_paths)) if self.controller.video_groups[i] == group_num ]
-                group_paths   = [ self.controller.video_paths[i] for i in indices ]
-                group_lengths = [ self.controller.video_lengths[i] for i in indices ]
+                group_paths   = [ self.controller.video_paths[i] for i in group_indices ]
+                group_lengths = [ self.controller.video_lengths[i] for i in group_indices ]
                 
                 index = group_paths.index(video_path)
 
@@ -387,10 +427,10 @@ class GUIController():
 
     def motion_correct_video(self):
         # create a motion correction thread
-        self.motion_correction_thread = MotionCorrectThread(self.motion_correction_param_widget)
+        self.motion_correction_thread = MotionCorrectThread(self.param_window)
 
         # set the parameters of the motion correction thread
-        self.motion_correction_thread.set_parameters(self.controller.video_paths, self.controller.groups, int(self.controller.params["max_shift"]), int(self.controller.params["patch_stride"]), int(self.controller.params["patch_overlap"]), use_multiprocessing=self.controller.use_multiprocessing)
+        self.motion_correction_thread.set_parameters(self.controller.video_paths, self.controller.video_groups, int(self.controller.params["max_shift"]), int(self.controller.params["patch_stride"]), int(self.controller.params["patch_overlap"]), use_multiprocessing=self.controller.use_multiprocessing)
         
         self.motion_correction_thread.progress.connect(self.motion_correction_progress)
         self.motion_correction_thread.finished.connect(self.motion_correction_ended)
@@ -398,12 +438,12 @@ class GUIController():
         # start the thread
         self.motion_correction_thread.start()
 
-        # notify the param widget
-        self.motion_correction_param_widget.motion_correction_started()
+        # notify the param window
+        self.param_window.motion_correction_started()
 
-    def motion_correction_progress(self, percent):
-        # notify the param widget
-        self.motion_correction_param_widget.update_motion_correction_progress(percent)
+    def motion_correction_progress(self, group_num):
+        # notify the param window
+        self.param_window.update_motion_correction_progress(group_num)
 
     def motion_correction_ended(self, mc_videos, mc_borders):
         mc_video_paths = []
@@ -414,14 +454,14 @@ class GUIController():
             mc_video_path = os.path.join(directory, os.path.splitext(filename)[0] + "_mc.tif")
             
             # save the motion-corrected video
-            imsave(mc_video_path, mc_videos[i])
+            tifffile.imsave(mc_video_path, mc_videos[i])
             
             mc_video_paths.append(mc_video_path)
 
         self.controller.mc_video_paths = mc_video_paths
         self.controller.mc_borders     = mc_borders
 
-        self.motion_correction_param_widget.motion_correction_ended()
+        self.param_window.motion_correction_ended()
 
         self.set_use_mc_video(True)
 
@@ -435,14 +475,16 @@ class GUIController():
         else:
             self.show_roi_image(update_overlay=True)
 
+        self.param_window.set_video_paths(self.video_paths())
+
     def find_rois(self):
         video_paths = self.video_paths()
 
         # create an ROI finding thread
-        self.roi_finding_thread = ROIFindingThread(self.roi_finding_param_widget)
+        self.roi_finding_thread = ROIFindingThread(self.param_window)
 
         # set the parameters of the ROI finding thread
-        self.roi_finding_thread.set_parameters(video_paths, self.controller.groups, self.controller.params, self.controller.mc_borders, self.controller.use_mc_video, self.controller.use_multiprocessing, method=self.roi_finding_mode)
+        self.roi_finding_thread.set_parameters(video_paths, self.controller.video_groups, self.controller.params, self.controller.mc_borders, self.controller.use_multiprocessing, method=self.roi_finding_mode)
 
         self.roi_finding_thread.progress.connect(self.roi_finding_progress)
         self.roi_finding_thread.finished.connect(self.roi_finding_ended)
@@ -450,12 +492,12 @@ class GUIController():
         # start the thread
         self.roi_finding_thread.start()
 
-        # notify the param widget
-        self.roi_finding_param_widget.roi_finding_started()
+        # notify the param window
+        self.param_window.roi_finding_started()
 
-    def roi_finding_progress(self, percent):
-        # notify the param widget
-        self.roi_finding_param_widget.update_roi_finding_progress(percent)
+    def roi_finding_progress(self, group_num):
+        # notify the param window
+        self.param_window.update_roi_finding_progress(group_num)
 
     def roi_finding_ended(self, roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints):
         self.selected_rois = []
@@ -465,15 +507,19 @@ class GUIController():
         self.controller.roi_temporal_residuals  = roi_temporal_residuals
         self.controller.bg_spatial_footprints   = bg_spatial_footprints
         self.controller.bg_temporal_footprints  = bg_temporal_footprints
-        self.controller.filtered_out_rois       = {}
+        self.controller.filtered_out_rois       = { group_num: [ [] for z in range(self.video.shape[1]) ] for group_num in np.unique(self.controller.video_groups) }
+        self.controller.discarded_rois          = { group_num: [ [] for z in range(self.video.shape[1]) ] for group_num in np.unique(self.controller.video_groups) }
+        self.controller.removed_rois            = { group_num: [ [] for z in range(self.video.shape[1]) ] for group_num in np.unique(self.controller.video_groups) }
+        self.controller.locked_rois             = { group_num: [ [] for z in range(self.video.shape[1]) ] for group_num in np.unique(self.controller.video_groups) }
 
-        # notify the param widget
+        # notify the param window
         self.param_window.roi_finding_ended()
+
+        self.show_rois = True
 
         self.show_roi_image(update_overlay=True)
 
     def show_video_loading_params(self):
-        self.param_window.tab_widget.setCurrentIndex(0)
         self.mode = "loading"
 
         self.preview_window.timer.stop()
@@ -483,8 +529,6 @@ class GUIController():
             self.play_video()
 
     def show_motion_correction_params(self):
-        # switch to showing motion correction params
-        self.param_window.tab_widget.setCurrentIndex(1)
         self.mode = "motion_correcting"
 
         self.preview_window.timer.stop()
@@ -494,26 +538,22 @@ class GUIController():
             self.play_video()
 
     def show_roi_finding_params(self):
-        # switch to showing ROI finding params
-        self.param_window.tab_widget.setCurrentIndex(2)
         self.mode = "roi_finding"
 
         self.preview_window.timer.stop()
 
         self.show_roi_image(update_overlay=False)
 
-        self.preview_window.setWindowTitle(os.path.basename(self.controller.video_path))
+        self.preview_window.setWindowTitle(os.path.basename(self.selected_video_path()))
 
     def show_roi_filtering_params(self, update_overlay=False):
-        # switch to showing ROI filtering params
-        self.param_window.tab_widget.setCurrentIndex(3)
         self.mode = "roi_filtering"
         
         self.preview_window.timer.stop()
 
         self.show_roi_image(update_overlay=update_overlay)
 
-        self.preview_window.setWindowTitle(os.path.basename(self.controller.video_path))
+        self.preview_window.setWindowTitle(os.path.basename(self.selected_video_path()))
 
     def close_all(self):
         self.closing = True
@@ -597,7 +637,7 @@ class GUIController():
                 self.selected_rois = []
 
                 # show the ROI image
-                self.show_roi_image(show=self.roi_filtering_param_widget.show_rois_checkbox.isChecked(), update_overlay=True)
+                self.show_roi_image(show=self.show_rois, update_overlay=True)
             elif param in ("min_area", "max_area", "min_circ", "max_circ"):
                 pass
 
@@ -624,7 +664,7 @@ class GUIController():
             return
 
         if roi_point is not None:
-            group_num = self.controller.group_nums[self.selected_video]
+            group_num = self.controller.video_groups[self.selected_video]
 
             # find out which ROI to select
             selected_roi = utilities.get_roi_containing_point(self.controller.roi_spatial_footprints[self.group_num][self.z], roi_point, self.mean_images[self.z].shape)
@@ -638,9 +678,9 @@ class GUIController():
                 print("ROI #{} selected.".format(selected_roi))
 
                 if len(self.selected_rois) == 1:
-                    self.param_window.single_roi_selected(discarded=selected_roi in self.controller.removed_rois[self.z])
+                    self.param_window.single_roi_selected(discarded=selected_roi in self.removed_rois())
                 elif len(self.selected_rois) > 1:
-                    self.param_window.multiple_roi_selected(discarded=any(x in self.selected_rois for x in self.controller.removed_rois[self.z]), merge_enabled=self.controller.bg_temporal_footprints[self.z] is not None)
+                    self.param_window.multiple_rois_selected(discarded=any(x in self.selected_rois for x in self.removed_rois()), merge_enabled=self.bg_temporal_footprints() is not None)
             else:
                 # no ROI is selected
 
@@ -774,6 +814,9 @@ class GUIController():
 
             self.show_roi_image(update_overlay=True)
 
+    def update_trace_plot(self):
+        self.preview_window.plot_traces(self.roi_temporal_footprints(), self.selected_rois)
+
     def save_params(self):
         self.controller.save_params()
 
@@ -781,7 +824,7 @@ class GUIController():
         self.controller.motion_correct_all_videos = boolean
 
 class MotionCorrectThread(QThread):
-    finished = pyqtSignal(list, list)
+    finished = pyqtSignal(list, dict)
     progress = pyqtSignal(int)
 
     def __init__(self, parent):
@@ -807,7 +850,7 @@ class MotionCorrectThread(QThread):
         self.running = False
 
 class ROIFindingThread(QThread):
-    finished = pyqtSignal(list, list, list, list, list)
+    finished = pyqtSignal(dict, dict, dict, dict, dict)
     progress = pyqtSignal(int)
 
     def __init__(self, parent):
@@ -815,19 +858,18 @@ class ROIFindingThread(QThread):
 
         self.running = False
     
-    def set_parameters(self, video_paths, groups, params, mc_borders, use_mc_video, use_multiprocessing, method="cnmf"):
+    def set_parameters(self, video_paths, groups, params, mc_borders, use_multiprocessing, method="cnmf"):
         self.video_paths         = video_paths
         self.groups              = groups
         self.params              = params
         self.mc_borders          = mc_borders
-        self.use_mc_video        = use_mc_video
         self.use_multiprocessing = use_multiprocessing
         self.method              = method
 
     def run(self):
         self.running = True
 
-        roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = utilities.find_rois_multiple_videos(self.video_paths, self.groups, self.params, use_mc_video=self.use_mc_video, mc_borders=self.mc_borders, progress_signal=self.progress, thread=self, use_multiprocessing=self.use_multiprocessing, method=method)
+        roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = utilities.find_rois_multiple_videos(self.video_paths, self.groups, self.params, mc_borders=self.mc_borders, progress_signal=self.progress, thread=self, use_multiprocessing=self.use_multiprocessing, method=self.method)
 
         self.finished.emit(roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints)
 

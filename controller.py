@@ -77,7 +77,7 @@ class Controller():
 
     def reset_motion_correction_variables(self):
         self.mc_video_paths = [] # paths of all motion-corrected videos
-        self.mc_borders     = [] # borders of all motion-corrected videos
+        self.mc_borders     = {} # borders of all motion-corrected videos
 
     def reset_roi_finding_variables(self):
         self.roi_spatial_footprints  = {}
