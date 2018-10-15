@@ -59,6 +59,8 @@ class GUIController():
         self.selected_video       = 0      # which video is selected
         self.group_num            = 0      # group number of currently loaded video
         self.video_max            = 1      # dynamic range of currently loaded video
+        self.tail_data_fps        = 200
+        self.calcium_data_fps     = 30
 
     def roi_spatial_footprints(self):
         if len(self.controller.roi_spatial_footprints.keys()) > 0:
@@ -257,6 +259,8 @@ class GUIController():
                 self.play_video()
             else:
                 self.show_roi_image(update_overlay=True)
+
+            self.preview_window.plot_tail_angles(self.controller.tail_angles[self.selected_video], self.tail_data_fps, self.calcium_data_fps)
 
     def play_video(self):
         # calculate gamma- and contrast-adjusted video and mean images
@@ -715,7 +719,7 @@ class GUIController():
 
             self.controller.tail_angles[self.selected_video] = tail_angles
 
-            tail_data_fps, calcium_data_fps, ok = TailTraceParametersDialog.getParameters()
+            tail_data_fps, calcium_data_fps, ok = TailTraceParametersDialog.getParameters(None, self.tail_data_fps, self.calcium_data_fps)
 
             if ok:
                 self.tail_data_fps    = tail_data_fps
@@ -903,7 +907,7 @@ class ROIFindingThread(QThread):
         self.running = False
 
 class TailTraceParametersDialog(QDialog):
-    def __init__(self, parent = None):
+    def __init__(self, parent, tail_fps, calcium_fps):
         super(TailTraceParametersDialog, self).__init__(parent)
 
         param_layout = QVBoxLayout(self)
@@ -924,7 +928,7 @@ class TailTraceParametersDialog(QDialog):
         self.tail_fps_textbox.setFixedWidth(60)
         self.tail_fps_textbox.setFixedHeight(20)
         self.tail_fps_textbox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.tail_fps_textbox.setText("200")
+        self.tail_fps_textbox.setText("{}".format(tail_fps))
         layout.addWidget(self.tail_fps_textbox)
 
         widget = QWidget(self)
@@ -942,7 +946,7 @@ class TailTraceParametersDialog(QDialog):
         self.calcium_fps_textbox.setFixedWidth(60)
         self.calcium_fps_textbox.setFixedHeight(20)
         self.calcium_fps_textbox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.calcium_fps_textbox.setText("30")
+        self.calcium_fps_textbox.setText("{}".format(calcium_fps))
         layout.addWidget(self.calcium_fps_textbox)
 
         param_layout.addStretch()
@@ -963,9 +967,10 @@ class TailTraceParametersDialog(QDialog):
         return float(self.calcium_fps_textbox.text())
 
     @staticmethod
-    def getParameters(parent=None):
-        dialog = TailTraceParametersDialog(parent)
-        result = dialog.exec_()
-        tail_fps = dialog.tail_fps()
+    def getParameters(parent, tail_fps, calcium_fps):
+        dialog      = TailTraceParametersDialog(parent, tail_fps, calcium_fps)
+        result      = dialog.exec_()
+        tail_fps    = dialog.tail_fps()
         calcium_fps = dialog.calcium_fps()
+
         return (tail_fps, calcium_fps, result == QDialog.Accepted)

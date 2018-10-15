@@ -149,11 +149,12 @@ class PreviewWindow(QMainWindow):
     def plot_tail_angles(self, tail_angles, tail_data_fps, calcium_data_fps):
         self.viewbox6.clear()
 
-        one_frame    = int(np.floor((1.0/calcium_data_fps)*tail_data_fps))
-        total_frames = int(np.floor(one_frame*self.controller.video.shape[0]))
+        if tail_angles is not None:
+            one_frame    = int(np.floor((1.0/calcium_data_fps)*tail_data_fps))
+            total_frames = int(np.floor(one_frame*self.controller.video.shape[0]))
 
-        x = np.linspace(0, self.controller.video.shape[0], total_frames)
-        self.viewbox6.plot(x, tail_angles[:total_frames, -1], pen=pg.mkPen((255, 255, 0), width=2))
+            x = np.linspace(0, self.controller.video.shape[0], total_frames)
+            self.viewbox6.plot(x, tail_angles[:total_frames, -1], pen=pg.mkPen((255, 255, 0), width=2))
 
     def plot_traces(self, roi_temporal_footprints, selected_rois=[]):
         self.viewbox3.clear()
