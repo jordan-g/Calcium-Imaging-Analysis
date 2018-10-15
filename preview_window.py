@@ -46,7 +46,7 @@ class PreviewWindow(QMainWindow):
         self.image_widget = QWidget(self)
         self.image_layout = QHBoxLayout(self.image_widget)
         self.image_layout.setContentsMargins(0, 0, 0, 0)
-        # bg_color = (self.palette().color(self.backgroundRole()).red(), self.palette().color(self.backgroundRole()).green(), self.palette().color(self.backgroundRole()).blue())
+        
         bg_color = (50, 50, 50)
         self.main_widget.setStyleSheet("background-color: rgba({}, {}, {}, 1);".format(bg_color[0], bg_color[1], bg_color[2]))
         pg.setConfigOption('background', bg_color)

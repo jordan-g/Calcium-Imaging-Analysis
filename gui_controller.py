@@ -6,7 +6,7 @@ import csv
 import scipy
 
 import utilities
-from param_window import ParamWindow
+import param_window
 from preview_window import PreviewWindow
 
 # import the Qt library
@@ -25,7 +25,7 @@ class GUIController():
         self.controller = controller
         
         # create windows
-        self.param_window   = ParamWindow(self)
+        self.param_window   = param_window.ParamWindow(self)
         self.preview_window = PreviewWindow(self)
 
         # initialize variables
@@ -715,10 +715,13 @@ class GUIController():
 
             self.controller.tail_angles[self.selected_video] = tail_angles
 
-            tail_data_fps    = 349
-            calcium_data_fps = 3
+            tail_data_fps, calcium_data_fps, ok = TailTraceParametersDialog.getParameters()
 
-            self.preview_window.plot_tail_angles(self.controller.tail_angles[self.selected_video], tail_data_fps, calcium_data_fps)
+            if ok:
+                self.tail_data_fps    = tail_data_fps
+                self.calcium_data_fps = calcium_data_fps
+
+                self.preview_window.plot_tail_angles(self.controller.tail_angles[self.selected_video], self.tail_data_fps, self.calcium_data_fps)
 
     def discard_selected_rois(self):
         for roi in self.selected_rois:
@@ -898,3 +901,71 @@ class ROIFindingThread(QThread):
         self.finished.emit(roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints)
 
         self.running = False
+
+class TailTraceParametersDialog(QDialog):
+    def __init__(self, parent = None):
+        super(TailTraceParametersDialog, self).__init__(parent)
+
+        param_layout = QVBoxLayout(self)
+        param_layout.setContentsMargins(0, 0, 0, 0)
+
+        widget = QWidget(self)
+        layout = QHBoxLayout(widget)
+        layout.setSpacing(5)
+        param_layout.addWidget(widget)
+
+        label = QLabel("Tail trace FPS:")
+        layout.addWidget(label)
+
+        self.tail_fps_textbox = QLineEdit()
+        self.tail_fps_textbox.setStyleSheet(param_window.rounded_stylesheet)
+        self.tail_fps_textbox.setAlignment(Qt.AlignHCenter)
+        self.tail_fps_textbox.setObjectName("Tail Trace FPS")
+        self.tail_fps_textbox.setFixedWidth(60)
+        self.tail_fps_textbox.setFixedHeight(20)
+        self.tail_fps_textbox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.tail_fps_textbox.setText("200")
+        layout.addWidget(self.tail_fps_textbox)
+
+        widget = QWidget(self)
+        layout = QHBoxLayout(widget)
+        layout.setSpacing(5)
+        param_layout.addWidget(widget)
+
+        label = QLabel("Calcium imaging FPS:")
+        layout.addWidget(label)
+
+        self.calcium_fps_textbox = QLineEdit()
+        self.calcium_fps_textbox.setStyleSheet(param_window.rounded_stylesheet)
+        self.calcium_fps_textbox.setAlignment(Qt.AlignHCenter)
+        self.calcium_fps_textbox.setObjectName("Calcium Imaging FPS")
+        self.calcium_fps_textbox.setFixedWidth(60)
+        self.calcium_fps_textbox.setFixedHeight(20)
+        self.calcium_fps_textbox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.calcium_fps_textbox.setText("30")
+        layout.addWidget(self.calcium_fps_textbox)
+
+        param_layout.addStretch()
+
+        # OK and Cancel buttons
+        self.buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
+            Qt.Horizontal, self)
+        param_layout.addWidget(self.buttons)
+
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+
+    def tail_fps(self):
+        return float(self.tail_fps_textbox.text())
+
+    def calcium_fps(self):
+        return float(self.calcium_fps_textbox.text())
+
+    @staticmethod
+    def getParameters(parent=None):
+        dialog = TailTraceParametersDialog(parent)
+        result = dialog.exec_()
+        tail_fps = dialog.tail_fps()
+        calcium_fps = dialog.calcium_fps()
+        return (tail_fps, calcium_fps, result == QDialog.Accepted)
