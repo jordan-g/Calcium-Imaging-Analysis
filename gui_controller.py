@@ -259,7 +259,7 @@ class GUIController():
                 self.show_roi_image(update_overlay=True)
 
             self.preview_window.plot_tail_angles(self.controller.tail_angles[self.selected_video], self.controller.params['tail_data_fps'], self.controller.params['calcium_data_fps'])
-
+            self.update_trace_plot()
     def play_video(self):
         # calculate gamma- and contrast-adjusted video and mean images
         self.update_adjusted_video()
@@ -844,7 +844,20 @@ class GUIController():
             self.show_roi_image(update_overlay=True)
 
     def update_trace_plot(self):
-        self.preview_window.plot_traces(self.roi_temporal_footprints(), self.selected_rois)
+        temporal_footprints = self.roi_temporal_footprints()
+
+        group_indices = [ i for i in range(len(self.controller.video_paths)) if self.controller.video_groups[i] == self.group_num ]
+        group_paths   = [ self.controller.video_paths[i] for i in group_indices ]
+        group_lengths = [ self.controller.video_lengths[i] for i in group_indices ]
+        
+        index = group_paths.index(self.selected_video_path())
+
+        if index == 0:
+            temporal_footprints = temporal_footprints[:, :group_lengths[0]]
+        else:
+            temporal_footprints = temporal_footprints[:, np.sum(group_lengths[:index]):np.sum(group_lengths[:index+1])]
+
+        self.preview_window.plot_traces(temporal_footprints, self.selected_rois)
 
     def save_params(self):
         self.controller.save_params()

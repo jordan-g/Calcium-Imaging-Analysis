@@ -821,6 +821,9 @@ class ROIFindingWidget(ParamWidget):
         self.tab_widget.addTab(self.suite2p_roi_finding_widget, "Suite2p")
         self.tab_widget.currentChanged.connect(self.tab_selected)
 
+        # disable suite2p for now
+        self.tab_widget.setTabEnabled(1, False)
+
         self.main_layout.addStretch()
 
         self.button_widget = QWidget(self)

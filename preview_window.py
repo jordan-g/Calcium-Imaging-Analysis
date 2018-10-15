@@ -3,6 +3,7 @@ import numpy as np
 import cv2
 import pyqtgraph as pg
 from matplotlib import cm
+import scipy
 
 import utilities
 
@@ -430,6 +431,7 @@ class PreviewWindow(QMainWindow):
                         heatmap = heatmap[np.sum(video_lengths[:index]):np.sum(video_lengths[:index+1])]
 
                     if heatmap.shape[1] > 0:
+                        # heatmap = scipy.ndimage.interpolation.shift(heatmap, (self.controller.z, 0), cval=0)
                         if self.controller.show_zscore:
                             heatmap = (heatmap - np.mean(heatmap, axis=0)[np.newaxis, :])/np.std(heatmap, axis=0)[np.newaxis, :]
 
