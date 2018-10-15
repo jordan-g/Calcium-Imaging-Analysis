@@ -59,8 +59,6 @@ class GUIController():
         self.selected_video       = 0      # which video is selected
         self.group_num            = 0      # group number of currently loaded video
         self.video_max            = 1      # dynamic range of currently loaded video
-        self.tail_data_fps        = 200
-        self.calcium_data_fps     = 30
 
     def roi_spatial_footprints(self):
         if len(self.controller.roi_spatial_footprints.keys()) > 0:
@@ -260,7 +258,7 @@ class GUIController():
             else:
                 self.show_roi_image(update_overlay=True)
 
-            self.preview_window.plot_tail_angles(self.controller.tail_angles[self.selected_video], self.tail_data_fps, self.calcium_data_fps)
+            self.preview_window.plot_tail_angles(self.controller.tail_angles[self.selected_video], self.controller.params['tail_data_fps'], self.controller.params['calcium_data_fps'])
 
     def play_video(self):
         # calculate gamma- and contrast-adjusted video and mean images
@@ -719,13 +717,13 @@ class GUIController():
 
             self.controller.tail_angles[self.selected_video] = tail_angles
 
-            tail_data_fps, calcium_data_fps, ok = TailTraceParametersDialog.getParameters(None, self.tail_data_fps, self.calcium_data_fps)
+            tail_data_fps, calcium_data_fps, ok = TailTraceParametersDialog.getParameters(None, self.controller.params['tail_data_fps'], self.controller.params['calcium_data_fps'])
 
             if ok:
-                self.tail_data_fps    = tail_data_fps
-                self.calcium_data_fps = calcium_data_fps
+                self.controller.params['tail_data_fps']    = tail_data_fps
+                self.controller.params['calcium_data_fps'] = calcium_data_fps
 
-                self.preview_window.plot_tail_angles(self.controller.tail_angles[self.selected_video], self.tail_data_fps, self.calcium_data_fps)
+                self.preview_window.plot_tail_angles(self.controller.tail_angles[self.selected_video], self.controller.params['tail_data_fps'], self.controller.params['calcium_data_fps'])
 
     def discard_selected_rois(self):
         for roi in self.selected_rois:

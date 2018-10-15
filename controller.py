@@ -39,7 +39,9 @@ DEFAULT_PARAMS = {'gamma'                : 1.0,
                   'neuropil_basis_ratio' : 6,
                   'neuropil_radius_ratio': 3,
                   'inner_neuropil_radius': 2,
-                  'min_neuropil_pixels'  : 350
+                  'min_neuropil_pixels'  : 350,
+                  'tail_data_fps'        : 200,
+                  'calcium_data_fps'     : 30
                   }
 
 # set filename for saving current parameters
