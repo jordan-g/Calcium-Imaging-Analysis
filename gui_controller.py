@@ -1,6 +1,9 @@
 import os
 import numpy as np
 import skimage.external.tifffile as tifffile
+import cv2
+import csv
+import scipy
 
 import utilities
 from param_window import ParamWindow
@@ -31,7 +34,8 @@ class GUIController():
         self.roi_finding_mode     = "cnmf" # which algorithm to use to find ROIs -- "cnmf" / "suite2p"
 
         # initialize state variables
-        self.closing = False # whether the user has requested to close the application
+        self.closing            = False # whether the user has requested to close the application
+        self.roi_finding_queued = False
 
         # initialize thread variables
         self.motion_correction_thread = None
@@ -51,6 +55,7 @@ class GUIController():
         self.adjusted_mean_images = []     # gamma- and contrast-adjusted mean images
         self.selected_rois        = []     # ROIs currently selected by the user
         self.show_rois            = False  # whether to show ROIs
+        self.show_zscore          = True   # whether to show z-score vs. raw fluorescence
         self.selected_video       = 0      # which video is selected
         self.group_num            = 0      # group number of currently loaded video
         self.video_max            = 1      # dynamic range of currently loaded video
@@ -84,6 +89,11 @@ class GUIController():
             return self.controller.bg_temporal_footprints[self.group_num][self.z]
         else:
             return None
+
+    def selected_group_video_nums(self):
+        group_nums = [ i for i in range(len(self.controller.video_paths)) if self.controller.video_groups[i] == self.group_num ]
+
+        return group_nums
 
     def selected_group_video_paths(self):
         video_paths   = self.video_paths()
@@ -235,11 +245,13 @@ class GUIController():
 
     def video_selected(self, index, force=False):
         if index is not None and (index != self.selected_video or force):
-            print("Video #{} selected.".format(index))
+            print("Video #{} selected.".format(index+1))
 
             self.selected_video = index
+            self.group_num      = self.controller.video_groups[self.selected_video]
 
             self.open_video(self.selected_video_path())
+            self.update_adjusted_mean_images()
 
             if self.mode in ("loading", "motion_correcting"):
                 self.play_video()
@@ -255,24 +267,19 @@ class GUIController():
         self.preview_window.plot_mean_image(self.adjusted_mean_images[self.z], self.video_max)
 
     def videos_rearranged(self, old_indices, groups):
-        self.controller.video_groups        = groups
+        self.controller.video_groups  = groups
         self.controller.video_paths   = [ self.controller.video_paths[i] for i in old_indices ]
         self.controller.video_lengths = [ self.controller.video_lengths[i] for i in old_indices ]
 
         if len(self.controller.mc_video_paths) > 0:
             self.controller.mc_video_paths = [ self.controller.mc_video_paths[i] for i in old_indices ]
 
-    def save_rois(self):
-        # let the user pick where to save the ROIs
-        if pyqt_version == 4:
-            save_path = str(QFileDialog.getSaveFileName(self.param_window, 'Save ROIs', '{}_rois'.format(os.path.splitext(self.selected_video_path())[0]), 'Numpy (*.npy)'))
-        elif pyqt_version == 5:
-            save_path = str(QFileDialog.getSaveFileName(self.param_window, 'Save ROIs', '{}_rois'.format(os.path.splitext(self.selected_video_path())[0]), 'Numpy (*.npy)')[0])
-        if not save_path.endswith('.npy'):
-            save_path += ".npy"
+        self.selected_video = old_indices.index(self.selected_video)
+        self.group_num      = self.controller.video_groups[self.selected_video]
 
-        if save_path is not None and len(save_path) > 0:
-            self.controller.save_rois(save_path)
+    def save_rois(self):
+        self.process_all_videos()
+        self.process_all_videos()
 
     def load_rois(self):
         # let the user pick saved ROIs
@@ -282,26 +289,12 @@ class GUIController():
             load_path = QFileDialog.getOpenFileName(self.param_window, 'Select saved ROI data.', '', 'Numpy (*.npy)')[0]
 
         if load_path is not None and len(load_path) > 0:
-            self.controller.load_rois(load_path)
+            self.controller.load_rois(load_path, group_num=self.group_num, video_path=self.selected_video_path())
 
             self.param_window.rois_loaded()
             self.show_rois = True
 
             self.preview_window.timer.stop()
-
-            message_box = QMessageBox()
-            message_box.setIcon(QMessageBox.Warning)
-
-            message_box.setText("Do you want to compute new temporal traces? This is required if you are loading ROIs created using one set of videos onto a different set of videos.")
-            message_box.setWindowTitle("")
-            message_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-
-            return_value = message_box.exec_()
-            if return_value != QMessageBox.No:
-                video_paths = self.video_paths()
-
-                # compute new temporal traces given the loaded ROIs
-                self.controller.roi_spatial_footprints, self.controller.roi_temporal_footprints, self.controller.roi_temporal_residuals, self.controller.bg_spatial_footprints, self.controller.bg_temporal_footprints = utilities.update_temporal_traces_multiple_videos(video_paths, self.controller.video_groups, self.controller.params, self.controller.roi_spatial_footprints, self.controller.bg_spatial_footprints, use_multiprocessing=self.controller.use_multiprocessing)
 
             # show ROI filtering parameters
             self.show_roi_filtering_params(update_overlay=True)
@@ -418,12 +411,17 @@ class GUIController():
                     writer.writerow(['Label', 'X', 'Y'])
 
                     for j in range(centroids.shape[0]):
-                        writer.writerow(["ROI #{}".format(kept_rois[j])] + centroids[j].tolist())
+                        writer.writerow(["ROI #{}".format(kept_rois[j]+1)] + centroids[j].tolist())
 
                 # save ROIs
-                self.controller.save_rois(os.path.join(video_dir_path, 'roi_data.npy'))
+                self.controller.save_rois(os.path.join(video_dir_path, 'roi_data.npy'), group_num=group_num, video_path=video_path)
 
                 print("Done.")
+
+    def motion_correct_and_find_rois(self):
+        self.roi_finding_queued = True
+
+        self.motion_correct_video()
 
     def motion_correct_video(self):
         # create a motion correction thread
@@ -464,6 +462,9 @@ class GUIController():
         self.param_window.motion_correction_ended()
 
         self.set_use_mc_video(True)
+
+        if self.roi_finding_queued:
+            self.find_rois()
 
     def set_use_mc_video(self, use_mc_video):
         self.controller.use_mc_video = use_mc_video
@@ -519,7 +520,11 @@ class GUIController():
 
         self.show_roi_image(update_overlay=True)
 
+        self.roi_finding_queued = False
+
     def show_video_loading_params(self):
+        self.param_window.tab_widget.setCurrentIndex(0)
+
         self.mode = "loading"
 
         self.preview_window.timer.stop()
@@ -529,6 +534,8 @@ class GUIController():
             self.play_video()
 
     def show_motion_correction_params(self):
+        self.param_window.tab_widget.setCurrentIndex(1)
+
         self.mode = "motion_correcting"
 
         self.preview_window.timer.stop()
@@ -538,6 +545,8 @@ class GUIController():
             self.play_video()
 
     def show_roi_finding_params(self):
+        self.param_window.tab_widget.setCurrentIndex(2)
+
         self.mode = "roi_finding"
 
         self.preview_window.timer.stop()
@@ -547,6 +556,8 @@ class GUIController():
         self.preview_window.setWindowTitle(os.path.basename(self.selected_video_path()))
 
     def show_roi_filtering_params(self, update_overlay=False):
+        self.param_window.tab_widget.setCurrentIndex(3)
+
         self.mode = "roi_filtering"
         
         self.preview_window.timer.stop()
@@ -637,7 +648,7 @@ class GUIController():
                 self.selected_rois = []
 
                 # show the ROI image
-                self.show_roi_image(show=self.show_rois, update_overlay=True)
+                self.show_roi_image(update_overlay=True)
             elif param in ("min_area", "max_area", "min_circ", "max_circ"):
                 pass
 
@@ -647,13 +658,18 @@ class GUIController():
     def set_show_rois(self, show_rois):
         self.show_rois = show_rois
 
-        self.show_roi_image()
+        self.show_roi_image(update_overlay=False, recreate_roi_images=False)
 
-    def show_roi_image(self, update_overlay=False):
-        self.preview_window.plot_image(self.adjusted_mean_images[self.z], video_max=255.0, show_rois=self.show_rois, update_overlay=update_overlay)
+    def set_show_zscore(self, show_zscore):
+        self.show_zscore = show_zscore
+
+        self.show_roi_image(update_overlay=False)
+
+    def show_roi_image(self, update_overlay=False, recreate_roi_images=True):
+        self.preview_window.plot_image(self.adjusted_mean_images[self.z], video_max=255.0, show_rois=self.show_rois, update_overlay=update_overlay, recreate_roi_images=recreate_roi_images)
 
     def filter_rois(self):
-        self.controller.filter_rois()
+        self.controller.filter_rois(group_num=self.group_num)
 
         self.selected_rois = []
 
@@ -712,6 +728,8 @@ class GUIController():
 
         self.param_window.no_rois_selected()
 
+        self.show_roi_image()
+
     def discard_all_rois(self):
         self.controller.discarded_rois[self.group_num][self.z] = np.arange(self.controller.roi_spatial_footprints[self.group_num][self.z].shape[1]).tolist()
         self.controller.removed_rois[self.group_num][self.z]   = self.controller.discarded_rois[self.group_num][self.z][:]
@@ -720,7 +738,7 @@ class GUIController():
 
         self.param_window.no_rois_selected()
 
-        self.show_roi_image(update_overlay=True)
+        self.show_roi_image()
 
     def keep_selected_rois(self):
         for roi in self.selected_rois:
@@ -731,6 +749,8 @@ class GUIController():
         self.selected_rois = []
 
         self.param_window.no_rois_selected()
+
+        self.show_roi_image()
 
     def merge_selected_rois(self):
         if len(self.selected_rois) > 1:
@@ -770,7 +790,7 @@ class GUIController():
                 else:
                     final_video = np.concatenate([final_video, video], axis=0)
 
-            roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = utilities.do_cnmf(final_video[:, self.z, :, :], self.controller.params, roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints, use_multiprocessing=self.controller.use_multiprocessing)
+            roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = utilities.perform_cnmf(final_video[:, self.z, :, :], self.controller.params, roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints, use_multiprocessing=self.controller.use_multiprocessing)
 
             self.controller.roi_spatial_footprints[self.group_num][self.z]  = roi_spatial_footprints.tocsc()
             self.controller.roi_temporal_footprints[self.group_num][self.z] = roi_temporal_footprints
@@ -811,6 +831,10 @@ class GUIController():
             self.selected_rois = []
 
             self.param_window.no_rois_selected()
+
+            self.preview_window.clear_text_and_outline_items()
+
+            self.update_trace_plot()
 
             self.show_roi_image(update_overlay=True)
 

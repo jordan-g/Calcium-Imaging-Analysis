@@ -8,12 +8,14 @@ import skimage.external.tifffile as tifffile
 import time
 import shutil
 import h5py
+import scipy
 
 import caiman as cm
 from caiman.source_extraction.cnmf import cnmf as cnmf
 from caiman.components_evaluation import estimate_components_quality_auto
 from caiman.source_extraction.cnmf.temporal import update_temporal_components
 from caiman.source_extraction.cnmf.pre_processing import preprocess_data
+from caiman.motion_correction import MotionCorrect
 
 import suite2p
 from suite2p.run_s2p import run_s2p
@@ -84,10 +86,7 @@ def update_temporal_traces_multiple_videos(video_paths, video_groups, params, ro
 
 def perform_cnmf(video, params, roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints, use_multiprocessing=True):
     if use_multiprocessing:
-        if os.name == 'nt':
-            backend = 'multiprocessing'
-        else:
-            backend = 'ipyparallel'
+        backend = 'multiprocessing'
 
         cm.stop_server()
         c, dview, n_processes = cm.cluster.setup_cluster(backend=backend, n_processes=None, single_thread=False)
@@ -342,11 +341,6 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, us
 
         # Do rigid motion correction
         mc.motion_correct_rigid(save_movie=False)
-
-        if progress_signal:
-            # send an update signal to the GUI
-            percent_complete = int(100.0*float(counter + (1/3))/len(z_range))
-            progress_signal.emit(percent_complete)
 
         # --- ELASTIC MOTION CORRECTION --- #
 

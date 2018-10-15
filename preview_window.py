@@ -17,7 +17,7 @@ except:
     from PyQt5.QtWidgets import *
     pyqt_version = 5
 
-roi_colors = [ (np.random.uniform(50, 200), np.random.uniform(50, 200), np.random.uniform(50, 200)) for i in range(10000) ]
+roi_colors = [ np.random.permutation((np.random.uniform(120, 200), np.random.uniform(50, 200), np.random.uniform(50, 200))) for i in range(10000) ]
 
 class PreviewWindow(QMainWindow):
     def __init__(self, controller):
@@ -46,10 +46,12 @@ class PreviewWindow(QMainWindow):
         self.image_widget = QWidget(self)
         self.image_layout = QHBoxLayout(self.image_widget)
         self.image_layout.setContentsMargins(0, 0, 0, 0)
-        bg_color = (self.palette().color(self.backgroundRole()).red(), self.palette().color(self.backgroundRole()).green(), self.palette().color(self.backgroundRole()).blue())
+        # bg_color = (self.palette().color(self.backgroundRole()).red(), self.palette().color(self.backgroundRole()).green(), self.palette().color(self.backgroundRole()).blue())
+        bg_color = (50, 50, 50)
+        self.main_widget.setStyleSheet("background-color: rgba({}, {}, {}, 1);".format(bg_color[0], bg_color[1], bg_color[2]))
         pg.setConfigOption('background', bg_color)
         if bg_color[0] < 100:
-            pg.setConfigOption('foreground', (200, 200, 200))
+            pg.setConfigOption('foreground', (150, 150, 150))
         else:
             pg.setConfigOption('foreground', (50, 50, 50))
         self.image_plot = pg.GraphicsLayoutWidget()
@@ -163,6 +165,17 @@ class PreviewWindow(QMainWindow):
 
                 self.viewbox3.plot(roi_temporal_footprints[roi]/max_value, pen=pg.mkPen((roi_colors[roi][0], roi_colors[roi][1], roi_colors[roi][2]), width=2))
 
+    def clear_text_and_outline_items(self):
+        # remove all text and outline items from left and right plots
+        for text_item in self.text_items:
+            self.viewbox1.removeItem(text_item)
+            self.viewbox2.removeItem(text_item)
+            self.text_items = []
+        for outline_item in self.outline_items:
+            self.viewbox1.removeItem(outline_item)
+            self.viewbox2.removeItem(outline_item)
+            self.outline_items = []
+
     def plot_clicked(self, event):
         if self.controller.mode not in ("loading", "motion_correcting"):
             # get x-y coordinates of where the user clicked
@@ -180,14 +193,7 @@ class PreviewWindow(QMainWindow):
             ctrl_held = event.modifiers() == Qt.ControlModifier
 
             # remove all text and outline items from left and right plots
-            for text_item in self.text_items:
-                self.viewbox1.removeItem(text_item)
-                self.viewbox2.removeItem(text_item)
-                self.text_items = []
-            for outline_item in self.outline_items:
-                self.viewbox1.removeItem(outline_item)
-                self.viewbox2.removeItem(outline_item)
-                self.outline_items = []
+            self.clear_text_and_outline_items()
 
             if event.button() == 1:
                 # left click means selecting ROIs
@@ -262,10 +268,6 @@ class PreviewWindow(QMainWindow):
                         print("ROIs selected: {}.".format(self.controller.selected_rois))
 
                         self.controller.discard_selected_rois()
-
-                        self.controller.selected_rois = []
-
-                        self.controller.show_roi_image(update_overlay=True)
                 else:
                     selected_roi = utilities.get_roi_containing_point(self.controller.roi_spatial_footprints(), (int(y), int(x)), self.controller.selected_video_mean_image().shape)
 
@@ -277,13 +279,9 @@ class PreviewWindow(QMainWindow):
 
                         self.controller.keep_selected_rois()
 
-                        self.controller.selected_rois = []
-
-                        self.controller.show_roi_image(update_overlay=True)
-
             self.controller.update_trace_plot()
 
-    def plot_image(self, image, video_max=255, show_rois=False, update_overlay=True):
+    def plot_image(self, image, video_max=255, show_rois=False, update_overlay=True, recreate_roi_images=True):
         if update_overlay:
             self.kept_rois_overlay      = None
             self.discarded_rois_overlay = None
@@ -299,8 +297,24 @@ class PreviewWindow(QMainWindow):
         self.image = image
 
         # update image plot
-        self.update_left_image_plot(self.image, roi_spatial_footprints=self.controller.roi_spatial_footprints(), video_dimensions=self.controller.video.shape, removed_rois=self.controller.removed_rois(), selected_rois=self.controller.selected_rois, show_rois=show_rois, use_existing_roi_overlay=(not update_overlay))
-        self.update_right_image_plot(self.image, roi_spatial_footprints=self.controller.roi_spatial_footprints(), video_dimensions=self.controller.video.shape, removed_rois=self.controller.removed_rois(), selected_rois=self.controller.selected_rois, show_rois=show_rois, use_existing_roi_overlay=(not update_overlay))
+        if recreate_roi_images:
+            self.update_left_image_plot(self.image, roi_spatial_footprints=self.controller.roi_spatial_footprints(), video_dimensions=self.controller.video.shape, removed_rois=self.controller.removed_rois(), selected_rois=self.controller.selected_rois, show_rois=show_rois, use_existing_roi_overlay=(not update_overlay))
+            self.update_right_image_plot(self.image, roi_spatial_footprints=self.controller.roi_spatial_footprints(), video_dimensions=self.controller.video.shape, removed_rois=self.controller.removed_rois(), selected_rois=self.controller.selected_rois, show_rois=show_rois, use_existing_roi_overlay=(not update_overlay))
+        else:
+            if not show_rois:
+                image = 255.0*self.image/self.controller.video_max
+                image[image > 255] = 255
+
+                if len(image.shape) < 3:
+                    image = cv2.cvtColor(image.astype(np.uint8), cv2.COLOR_GRAY2RGB)
+                else:
+                    image = image.astype(np.uint8)
+
+                self.left_plot.setImage(image, autoLevels=False)
+                self.right_plot.setImage(image, autoLevels=False)
+            else:
+                self.left_plot.setImage(self.kept_rois_image, autoLevels=False)
+                self.right_plot.setImage(self.discarded_rois_image, autoLevels=False)
 
     def play_video(self, video, video_path, fps):
         self.video_name = os.path.basename(video_path)
@@ -328,7 +342,7 @@ class PreviewWindow(QMainWindow):
         self.timer.start(int(1000.0/fps))
 
     def show_frame(self, frame):
-        self.update_left_image_plot(frame)
+        self.update_left_image_plot(frame, show_rois=self.controller.show_rois)
 
     def update_frame(self):
         if self.frames is not None:
@@ -338,7 +352,7 @@ class PreviewWindow(QMainWindow):
             spatial_footprints = self.controller.roi_spatial_footprints()
             removed_rois       = self.controller.removed_rois()
 
-            self.update_left_image_plot(frame, roi_spatial_footprints=spatial_footprints, video_dimensions=self.controller.video.shape, removed_rois=removed_rois, selected_rois=self.controller.selected_rois, use_existing_roi_overlay=True)
+            self.update_left_image_plot(frame, roi_spatial_footprints=spatial_footprints, video_dimensions=self.controller.video.shape, removed_rois=removed_rois, selected_rois=self.controller.selected_rois, show_rois=self.controller.show_rois, use_existing_roi_overlay=True)
 
             # increment frame number (keeping it between 0 and n_frames)
             self.frame_num += 1
@@ -349,7 +363,7 @@ class PreviewWindow(QMainWindow):
 
     def update_left_image_plot(self, image, roi_spatial_footprints=None, video_dimensions=None, removed_rois=None, selected_rois=None, show_rois=False, use_existing_roi_overlay=False):
         self.kept_rois_image = self.create_kept_rois_image(image, self.controller.video_max, roi_spatial_footprints=roi_spatial_footprints, video_dimensions=video_dimensions, removed_rois=removed_rois, selected_rois=selected_rois, show_rois=show_rois, use_existing_roi_overlay=use_existing_roi_overlay)
-
+            
         self.left_plot.setImage(self.kept_rois_image, autoLevels=False)
 
     def create_kept_rois_image(self, image, video_max, roi_spatial_footprints=None, video_dimensions=None, removed_rois=None, selected_rois=None, show_rois=False, use_existing_roi_overlay=False):
@@ -390,8 +404,7 @@ class PreviewWindow(QMainWindow):
                         self.roi_contours[i] = contours
                         self.flat_contours += contours
 
-                if (not use_existing_roi_overlay or self.roi_overlay is None) and roi_spatial_footprints is not None:
-
+                if roi_spatial_footprints is not None:
                     kept_rois = [ roi for roi in range(roi_spatial_footprints.shape[-1]) if roi not in removed_rois ]
 
                     denominator = np.count_nonzero(self.roi_overlays[kept_rois], axis=0)
@@ -408,13 +421,16 @@ class PreviewWindow(QMainWindow):
                     
                     video_lengths = self.controller.selected_group_video_lengths()
 
-                    if self.controller.selected_video == 0:
+                    index = self.controller.selected_group_video_paths().index(self.controller.selected_video_path())
+
+                    if index == 0:
                         heatmap = heatmap[:video_lengths[0]]
                     else:
-                        heatmap = heatmap[np.sum(video_lengths[:i]):np.sum(video_lengths[:i+1])]
+                        heatmap = heatmap[np.sum(video_lengths[:index]):np.sum(video_lengths[:index+1])]
 
                     if heatmap.shape[1] > 0:
-                        heatmap = (heatmap - np.mean(heatmap, axis=0)[np.newaxis, :])/np.std(heatmap, axis=0)[np.newaxis, :]
+                        if self.controller.show_zscore:
+                            heatmap = (heatmap - np.mean(heatmap, axis=0)[np.newaxis, :])/np.std(heatmap, axis=0)[np.newaxis, :]
 
                         heatmap2 = np.sort(heatmap, axis=1)
 
@@ -443,7 +459,7 @@ class PreviewWindow(QMainWindow):
                 roi_spatial_footprints = roi_spatial_footprints.toarray().reshape((video_dimensions[2], video_dimensions[3], roi_spatial_footprints.shape[-1])).transpose((1, 0, 2))
 
             if video_dimensions is not None:
-                if (not use_existing_roi_overlay or self.discarded_rois_overlay is None) and roi_spatial_footprints is not None:
+                if roi_spatial_footprints is not None:
 
                     denominator = np.count_nonzero(self.roi_overlays[removed_rois], axis=0)
                     denominator[denominator == 0] = 1

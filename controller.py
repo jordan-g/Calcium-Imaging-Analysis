@@ -107,39 +107,120 @@ class Controller():
             video = tifffile.imread(video_path)
             self.video_lengths.append(video.shape[0])
             self.video_groups.append(group_num)
+            self.tail_angles.append(None)
 
-    def save_rois(self, save_path):
-        # create a dictionary to hold the ROI data
-        roi_data = {'roi_spatial_footprints' : self.roi_spatial_footprints,
-                    'roi_temporal_footprints': self.roi_temporal_footprints,
-                    'roi_temporal_residuals' : self.roi_temporal_residuals,
-                    'bg_spatial_footprints'  : self.bg_spatial_footprints,
-                    'bg_temporal_footprints' : self.bg_temporal_footprints,
-                    'filtered_out_rois'      : self.filtered_out_rois,
-                    'erased_rois'            : self.discarded_rois,
-                    'removed_rois'           : self.removed_rois,
-                    'locked_rois'            : self.locked_rois}
+    def save_rois(self, save_path, group_num=None, video_path=None):
+        if group_num is None:
+            # set video paths
+            if self.use_mc_video and len(self.mc_video_paths) > 0:
+                video_paths = self.mc_video_paths
+            else:
+                video_paths = self.video_paths
+
+            # create a dictionary to hold the ROI data
+            roi_data = {'roi_spatial_footprints' : self.roi_spatial_footprints,
+                        'roi_temporal_footprints': self.roi_temporal_footprints,
+                        'roi_temporal_residuals' : self.roi_temporal_residuals,
+                        'bg_spatial_footprints'  : self.bg_spatial_footprints,
+                        'bg_temporal_footprints' : self.bg_temporal_footprints,
+                        'filtered_out_rois'      : self.filtered_out_rois,
+                        'discarded_rois'         : self.discarded_rois,
+                        'removed_rois'           : self.removed_rois,
+                        'locked_rois'            : self.locked_rois,
+                        'video_paths'            : video_paths}
+        else:
+            group_indices = [ i for i in range(len(self.video_paths)) if self.video_groups[i] == group_num ]
+            group_lengths = [ self.video_lengths[i] for i in group_indices ]
+            group_paths   = [ self.video_paths[i] for i in group_indices ]
+
+            index = group_paths.index(video_path)
+
+            roi_spatial_footprints = self.roi_spatial_footprints[group_num]
+            bg_spatial_footprints  = self.bg_spatial_footprints[group_num]
+            filtered_out_rois      = self.filtered_out_rois[group_num]
+            discarded_rois         = self.discarded_rois[group_num]
+            removed_rois           = self.removed_rois[group_num]
+            locked_rois            = self.locked_rois[group_num]
+            if index == 0:
+                roi_temporal_footprints = [ self.roi_temporal_footprints[group_num][z][:, :group_lengths[0]] for z in range(len(roi_spatial_footprints)) ]
+                roi_temporal_residuals  = [ self.roi_temporal_residuals[group_num][z][:, :group_lengths[0]] for z in range(len(roi_spatial_footprints)) ]
+                bg_temporal_footprints  = [ self.bg_temporal_footprints[group_num][z][:, :group_lengths[0]] for z in range(len(roi_spatial_footprints)) ]
+            else:
+                roi_temporal_footprints = [ self.roi_temporal_footprints[group_num][z][:, np.sum(group_lengths[:index]):np.sum(group_lengths[:index+1])] for z in range(len(roi_spatial_footprints)) ]
+                roi_temporal_residuals  = [ self.roi_temporal_residuals[group_num][z][:, np.sum(group_lengths[:index]):np.sum(group_lengths[:index+1])] for z in range(len(roi_spatial_footprints)) ]
+                bg_temporal_footprints  = [ self.bg_temporal_footprints[group_num][z][:, np.sum(group_lengths[:index]):np.sum(group_lengths[:index+1])] for z in range(len(roi_spatial_footprints)) ]
+
+            roi_data = {'roi_spatial_footprints' : roi_spatial_footprints,
+                        'roi_temporal_footprints': roi_temporal_footprints,
+                        'roi_temporal_residuals' : roi_temporal_residuals,
+                        'bg_spatial_footprints'  : bg_spatial_footprints,
+                        'bg_temporal_footprints' : bg_temporal_footprints,
+                        'filtered_out_rois'      : filtered_out_rois,
+                        'discarded_rois'         : discarded_rois,
+                        'removed_rois'           : removed_rois,
+                        'locked_rois'            : locked_rois,
+                        'video_paths'            : [video_path]}
 
         # save the ROI data
         np.save(save_path, roi_data)
 
-    def load_rois(self, load_path):
+    def load_rois(self, load_path, group_num=None, video_path=None):
         # load the saved ROIs
         roi_data = np.load(load_path)
 
         # extract the dictionary
         roi_data = roi_data[()]
 
-        # set ROI variables
-        self.roi_spatial_footprints  = roi_data['roi_spatial_footprints']
-        self.roi_temporal_footprints = roi_data['roi_temporal_footprints']
-        self.roi_temporal_residuals  = roi_data['roi_temporal_residuals']
-        self.bg_spatial_footprints   = roi_data['bg_spatial_footprints']
-        self.bg_temporal_footprints  = roi_data['bg_temporal_footprints']
-        self.filtered_out_rois       = roi_data['filtered_out_rois']
-        self.discarded_rois          = roi_data['erased_rois']
-        self.removed_rois            = roi_data['removed_rois']
-        self.locked_rois             = roi_data['locked_rois']
+        if group_num is None:
+            # set ROI variables
+            self.roi_spatial_footprints  = roi_data['roi_spatial_footprints']
+            self.roi_temporal_footprints = roi_data['roi_temporal_footprints']
+            self.roi_temporal_residuals  = roi_data['roi_temporal_residuals']
+            self.bg_spatial_footprints   = roi_data['bg_spatial_footprints']
+            self.bg_temporal_footprints  = roi_data['bg_temporal_footprints']
+            self.filtered_out_rois       = roi_data['filtered_out_rois']
+            self.discarded_rois          = roi_data['discarded_rois']
+            self.removed_rois            = roi_data['removed_rois']
+            self.locked_rois             = roi_data['locked_rois']
+        else:
+            roi_spatial_footprints  = roi_data['roi_spatial_footprints']
+            roi_temporal_footprints = roi_data['roi_temporal_footprints']
+            roi_temporal_residuals  = roi_data['roi_temporal_residuals']
+            bg_spatial_footprints   = roi_data['bg_spatial_footprints']
+            bg_temporal_footprints  = roi_data['bg_temporal_footprints']
+            filtered_out_rois       = roi_data['filtered_out_rois']
+            discarded_rois          = roi_data['discarded_rois']
+            removed_rois            = roi_data['removed_rois']
+            locked_rois             = roi_data['locked_rois']
+
+            self.roi_spatial_footprints[group_num] = roi_spatial_footprints
+            self.bg_spatial_footprints[group_num]  = bg_spatial_footprints
+            self.filtered_out_rois[group_num]      = filtered_out_rois
+            self.discarded_rois[group_num]         = discarded_rois
+            self.removed_rois[group_num]           = removed_rois
+            self.locked_rois[group_num]            = locked_rois
+
+            group_indices = [ i for i in range(len(self.video_paths)) if self.video_groups[i] == group_num ]
+            group_lengths = [ self.video_lengths[i] for i in group_indices ]
+            group_paths   = [ self.video_paths[i] for i in group_indices ]
+
+            index = group_paths.index(video_path)
+
+            if group_num not in self.roi_temporal_footprints.keys():
+                self.roi_temporal_footprints[group_num] = [ np.zeros((self.roi_spatial_footprints[group_num][z].shape[1], np.sum(group_lengths))) for z in range(len(roi_spatial_footprints)) ]
+                self.roi_temporal_residuals[group_num]  = [ np.zeros((self.roi_spatial_footprints[group_num][z].shape[1], np.sum(group_lengths))) for z in range(len(roi_spatial_footprints)) ]
+                self.bg_temporal_footprints[group_num]  = [ np.zeros((self.bg_spatial_footprints[group_num][z].shape[1], np.sum(group_lengths))) for z in range(len(roi_spatial_footprints)) ]
+
+            if index == 0:
+                for z in range(len(roi_spatial_footprints)):
+                    self.roi_temporal_footprints[group_num][z][:, :group_lengths[0]] = roi_temporal_footprints[z]
+                    self.roi_temporal_residuals[group_num][z][:, :group_lengths[0]]  = roi_temporal_residuals[z]
+                    self.bg_temporal_footprints[group_num][z][:, :group_lengths[0]]  = bg_temporal_footprints[z]
+            else:
+                for z in range(len(roi_spatial_footprints)):
+                    self.roi_temporal_footprints[group_num][z][:, np.sum(group_lengths[:index]):np.sum(group_lengths[:index+1])] = roi_temporal_footprints[z]
+                    self.roi_temporal_residuals[group_num][z][:, np.sum(group_lengths[:index]):np.sum(group_lengths[:index+1])]  = roi_temporal_residuals[z]
+                    self.bg_temporal_footprints[group_num][z][:, np.sum(group_lengths[:index]):np.sum(group_lengths[:index+1])]  = bg_temporal_footprints[z]
 
         self.find_new_rois = False
 
@@ -153,6 +234,7 @@ class Controller():
             del self.video_paths[index]
             del self.video_lengths[index]
             del self.video_groups[index]
+            del self.tail_angles[index]
 
             if len(self.mc_video_paths) > 0:
                 del self.mc_video_paths[index]

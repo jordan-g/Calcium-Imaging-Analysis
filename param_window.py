@@ -13,25 +13,30 @@ import os
 import numpy as np
 
 # set styles of title and subtitle labels
-TITLE_STYLESHEET         = "font-size: 16px; font-weight: bold;"
-SUBTITLE_STYLESHEET      = "font-size: 14px; font-weight: bold;"
-ROUNDED_STYLESHEET_DARK  = "background-color: rgba(0, 0, 0, 0.3); border-radius: 2px; border: 1px solid rgba(0, 0, 0, 0.5); padding: 2px;"
-ROUNDED_STYLESHEET_LIGHT = "background-color: rgba(255, 255, 255, 1); border-radius: 2px; border: 1px solid rgba(0, 0, 0, 0.2); padding: 2px;"
-rounded_stylesheet       = ROUNDED_STYLESHEET_LIGHT
+TITLE_STYLESHEET           = "font-size: 16px; font-weight: bold;"
+SUBTITLE_STYLESHEET        = "font-size: 14px; font-weight: bold;"
+ROUNDED_STYLESHEET_DARK    = "background-color: rgba(0, 0, 0, 0.3); border-radius: 2px; border: 1px solid rgba(0, 0, 0, 0.5); padding: 2px;"
+ROUNDED_STYLESHEET_LIGHT   = "background-color: rgba(255, 255, 255, 1); border-radius: 2px; border: 1px solid rgba(0, 0, 0, 0.2); padding: 2px;"
+STATUSBAR_STYLESHEET_LIGHT = "background-color: rgba(255, 255, 255, 0.3); border-top: 1px solid rgba(0, 0, 0, 0.2); font-size: 12px; font-style: italic;"
+STATUSBAR_STYLESHEET_DARK  = "background-color: rgba(255, 255, 255, 0.1); border-top: 1px solid rgba(0, 0, 0, 0.5); font-size: 12px; font-style: italic;"
+rounded_stylesheet         = ROUNDED_STYLESHEET_LIGHT
+statusbar_stylesheet       = STATUSBAR_STYLESHEET_LIGHT
 
 categoryFont = QFont()
 categoryFont.setBold(True)
 
 class ParamWindow(QMainWindow):
     def __init__(self, controller):
-        global rounded_stylesheet
+        global rounded_stylesheet, statusbar_stylesheet
         QMainWindow.__init__(self)
 
         self.bg_color = (self.palette().color(self.backgroundRole()).red(), self.palette().color(self.backgroundRole()).green(), self.palette().color(self.backgroundRole()).blue())
         if self.bg_color[0] < 100:
-            rounded_stylesheet  = ROUNDED_STYLESHEET_DARK
+            rounded_stylesheet   = ROUNDED_STYLESHEET_DARK
+            statusbar_stylesheet = STATUSBAR_STYLESHEET_DARK
         else:
-            rounded_stylesheet  = ROUNDED_STYLESHEET_LIGHT
+            rounded_stylesheet   = ROUNDED_STYLESHEET_LIGHT
+            statusbar_stylesheet = STATUSBAR_STYLESHEET_LIGHT
 
         # set controller
         self.controller = controller
@@ -45,15 +50,16 @@ class ParamWindow(QMainWindow):
         # create main widget & layout
         self.main_widget = QWidget(self)
         self.main_layout = QGridLayout(self.main_widget)
-        self.main_layout.setContentsMargins(5, 5, 5, 5)
+        self.main_layout.setContentsMargins(5, 5, 5, 10)
         self.main_layout.setSpacing(0)
 
         # set main widget to be the central widget
         self.setCentralWidget(self.main_widget)
 
         # set up the status bar
-        self.statusBar().setStyleSheet("background-color: rgba(255, 255, 255, 0.3); border-top: 1px solid rgba(0, 0, 0, 0.2); font-size: 10px; font-style: italic;")
-        self.statusBar().showMessage("To begin, open one or more video files. Only TIFF files are currently supported.")
+        self.statusBar().setStyleSheet(statusbar_stylesheet)
+
+        self.set_default_statusbar_message("To begin, open one or more video files. Only TIFF files are currently supported.")
 
         self.main_param_widget = MainParamWidget(self, self.controller)
         self.main_layout.addWidget(self.main_param_widget, 0, 0)
@@ -119,6 +125,10 @@ class ParamWindow(QMainWindow):
 
         self.show()
 
+    def set_default_statusbar_message(self, message):
+        self.default_statusbar_message = message
+        self.statusBar().showMessage(self.default_statusbar_message)
+
     def set_initial_state(self):
         # disable buttons, widgets & menu items
         self.main_param_widget.setDisabled(True)
@@ -128,6 +138,8 @@ class ParamWindow(QMainWindow):
         self.tab_widget.setTabEnabled(3, False)
         self.show_rois_action.setEnabled(False)
         self.load_rois_action.setEnabled(False)
+
+        self.set_default_statusbar_message("To begin, open one or more video files. Only TIFF files are currently supported.")
 
     def set_video_paths(self, video_paths):
         video_num = 0
@@ -157,6 +169,12 @@ class ParamWindow(QMainWindow):
         self.show_rois_action.setChecked(show_rois)
         self.roi_finding_widget.show_rois_checkbox.setChecked(show_rois)
         self.roi_filtering_widget.show_rois_checkbox.setChecked(show_rois)
+
+    def set_show_zscore(self, show_zscore):
+        self.controller.set_show_zscore(show_zscore)
+
+        self.roi_finding_widget.show_zscore_checkbox.setChecked(show_zscore)
+        self.roi_filtering_widget.show_zscore_checkbox.setChecked(show_zscore)
 
     def tab_selected(self):
         index = self.tab_widget.currentIndex()
@@ -249,7 +267,8 @@ class ParamWindow(QMainWindow):
         item = QListWidgetItem("Group {}".format(group_num+1))
         item.setFont(categoryFont)
         if self.bg_color[0] < 100:
-            color = QColor(20, 30, 40, 120)
+            # color = QColor(40, 50, 100, 200)
+            color = QColor(0, 0, 0, 200)
         else:
             color = QColor(36, 87, 201, 60)
         item.setBackground(QBrush(color, Qt.SolidPattern))
@@ -438,6 +457,9 @@ class ParamWindow(QMainWindow):
         self.tab_widget.setTabEnabled(3, False)
         self.tab_widget.setCurrentIndex(0)
         self.load_rois_action.setEnabled(True)
+        self.load_tail_angles_action.setEnabled(True)
+
+        self.set_default_statusbar_message("")
 
     def video_opened(self, max_z, z):
         self.statusBar().showMessage("")
@@ -455,6 +477,8 @@ class ParamWindow(QMainWindow):
         self.roi_finding_widget.roi_finding_started()
 
     def roi_finding_ended(self):
+        self.roi_finding_widget.roi_finding_ended()
+
         self.roi_finding_widget.show_rois_checkbox.setDisabled(False)
         self.roi_finding_widget.show_rois_checkbox.setChecked(True)
         self.roi_finding_widget.process_video_button.setEnabled(True)
@@ -502,7 +526,7 @@ class VideoLoadingWidget(QWidget):
         self.button_layout.setSpacing(5)
         self.main_layout.addWidget(self.button_widget)
 
-        self.open_file_button = HoverButton('Add Videos...', None, self.parent_widget.statusBar())
+        self.open_file_button = HoverButton('Add Videos...', self.parent_widget, self.parent_widget.statusBar())
         self.open_file_button.setHoverMessage("Add video files for processing.")
         self.open_file_button.setStyleSheet('font-weight: bold;')
         self.open_file_button.setIcon(QIcon("icons/open_file_icon.png"))
@@ -510,7 +534,7 @@ class VideoLoadingWidget(QWidget):
         self.open_file_button.clicked.connect(self.controller.import_videos)
         self.button_layout.addWidget(self.open_file_button)
 
-        self.remove_videos_button = HoverButton('Remove', None, self.parent_widget.statusBar())
+        self.remove_videos_button = HoverButton('Remove', self.parent_widget, self.parent_widget.statusBar())
         self.remove_videos_button.setHoverMessage("Remove the selected video.")
         self.remove_videos_button.setIcon(QIcon("icons/trash_icon.png"))
         self.remove_videos_button.setIconSize(QSize(16,16))
@@ -520,7 +544,7 @@ class VideoLoadingWidget(QWidget):
 
         self.button_layout.addStretch()
 
-        self.remove_group_button = HoverButton('Remove Group', None, self.parent_widget.statusBar())
+        self.remove_group_button = HoverButton('Remove Group', self.parent_widget, self.parent_widget.statusBar())
         self.remove_group_button.setHoverMessage("Remove the selected group.")
         self.remove_group_button.setIcon(QIcon("icons/remove_group_icon.png"))
         self.remove_group_button.setIconSize(QSize(16,16))
@@ -528,7 +552,7 @@ class VideoLoadingWidget(QWidget):
         self.remove_group_button.clicked.connect(self.parent_widget.remove_selected_group)
         self.button_layout.addWidget(self.remove_group_button)
 
-        self.add_group_button = HoverButton('Add Group', None, self.parent_widget.statusBar())
+        self.add_group_button = HoverButton('Add Group', self.parent_widget, self.parent_widget.statusBar())
         self.add_group_button.setHoverMessage("Add a new group.")
         self.add_group_button.setIcon(QIcon("icons/add_group_icon.png"))
         self.add_group_button.setIconSize(QSize(16,16))
@@ -544,17 +568,18 @@ class VideoLoadingWidget(QWidget):
 
         self.button_layout_2.addStretch()
 
-        self.use_multiprocessing_checkbox = HoverCheckBox("Use multiprocessing", None, self.parent_widget.statusBar())
+        self.use_multiprocessing_checkbox = HoverCheckBox("Use multiprocessing", self.parent_widget, self.parent_widget.statusBar())
         self.use_multiprocessing_checkbox.setHoverMessage("Use multiple cores to speed up computations.")
         self.use_multiprocessing_checkbox.setChecked(True)
         self.use_multiprocessing_checkbox.clicked.connect(lambda:self.controller.set_use_multiprocessing(self.use_multiprocessing_checkbox.isChecked()))
         self.button_layout_2.addWidget(self.use_multiprocessing_checkbox)
 
-        self.process_all_button = HoverButton('Motion Correct && Find ROIs...', None, self.parent_widget.statusBar())
+        self.process_all_button = HoverButton('Motion Correct && Find ROIs...', self.parent_widget, self.parent_widget.statusBar())
         self.process_all_button.setHoverMessage("Motion correct and find ROIs for all videos using the current parameters.")
         self.process_all_button.setStyleSheet('font-weight: bold;')
         self.process_all_button.setIcon(QIcon("icons/skip_icon.png"))
         self.process_all_button.setIconSize(QSize(16,16))
+        self.process_all_button.clicked.connect(self.controller.motion_correct_and_find_rois)
         self.button_layout_2.addWidget(self.process_all_button)
 
 class ParamWidget(QWidget):
@@ -603,7 +628,7 @@ class ParamWidget(QWidget):
         self.param_layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(5)
         self.param_layout.addWidget(widget, row, col)
-        label = HoverLabel("{}:".format(label_name), None, self.parent_widget.statusBar())
+        label = HoverLabel("{}:".format(label_name), self.parent_widget, self.parent_widget.statusBar())
         label.setHoverMessage(description)
         layout.addWidget(label)
 
@@ -653,13 +678,13 @@ class ParamWidget(QWidget):
         self.param_layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(5)
         self.param_layout.addWidget(widget, row, col)
-        label = HoverLabel("{}:".format(label_name), None, self.parent_widget.statusBar())
+        label = HoverLabel("{}:".format(label_name), self.parent_widget, self.parent_widget.statusBar())
         label.setHoverMessage(description)
         layout.addWidget(label)
 
         layout.addStretch()
 
-        checkbox = HoverCheckBox("", None, self.parent_widget.statusBar())
+        checkbox = HoverCheckBox("", self.parent_widget, self.parent_widget.statusBar())
         checkbox.setHoverMessage(description)
         checkbox.setChecked(self.controller.params()[name])
         widget.setContentsMargins(0, 0, 5, 0)
@@ -733,7 +758,7 @@ class MotionCorrectionWidget(ParamWidget):
         self.button_layout_2.setSpacing(15)
         self.main_layout.addWidget(self.button_widget_2)
 
-        self.use_mc_video_checkbox = HoverCheckBox("Use motion-corrected videos", None, self.parent_widget.statusBar())
+        self.use_mc_video_checkbox = HoverCheckBox("Use motion-corrected videos", self.parent_widget, self.parent_widget.statusBar())
         self.use_mc_video_checkbox.setHoverMessage("Use the motion-corrected videos for finding ROIs.")
         self.use_mc_video_checkbox.setChecked(False)
         self.use_mc_video_checkbox.clicked.connect(lambda:self.controller.set_use_mc_video(self.use_mc_video_checkbox.isChecked()))
@@ -742,13 +767,13 @@ class MotionCorrectionWidget(ParamWidget):
 
         self.button_layout_2.addStretch()
 
-        self.use_multiprocessing_checkbox = HoverCheckBox("Use multiprocessing", None, self.parent_widget.statusBar())
+        self.use_multiprocessing_checkbox = HoverCheckBox("Use multiprocessing", self.parent_widget, self.parent_widget.statusBar())
         self.use_multiprocessing_checkbox.setHoverMessage("Use multiple cores to speed up computations.")
         self.use_multiprocessing_checkbox.setChecked(True)
         self.use_multiprocessing_checkbox.clicked.connect(lambda:self.controller.set_use_multiprocessing(self.use_multiprocessing_checkbox.isChecked()))
         self.button_layout_2.addWidget(self.use_multiprocessing_checkbox)
 
-        self.motion_correct_button = HoverButton('Motion Correct', None, self.parent_widget.statusBar())
+        self.motion_correct_button = HoverButton('Motion Correct', self.parent_widget, self.parent_widget.statusBar())
         self.motion_correct_button.setHoverMessage("Perform motion correction on the videos.")
         self.motion_correct_button.setIcon(QIcon("icons/accept_icon.png"))
         self.motion_correct_button.setIconSize(QSize(16,16))
@@ -757,9 +782,9 @@ class MotionCorrectionWidget(ParamWidget):
         self.button_layout_2.addWidget(self.motion_correct_button)
 
     def motion_correction_started(self):
-        n_groups = len(self.controller.video_groups())
+        n_groups = len(np.unique(self.controller.video_groups()))
 
-        self.motion_correct_button.setText("Motion correcting group {}/{}...".format(1, n_groups))
+        self.parent_widget.set_default_statusbar_message("Motion correcting group {}/{}...".format(1, n_groups))
         self.motion_correct_button.setEnabled(False)
         self.parent_widget.tab_widget.setTabEnabled(0, False)
         self.parent_widget.tab_widget.setTabEnabled(2, False)
@@ -772,14 +797,13 @@ class MotionCorrectionWidget(ParamWidget):
         self.use_mc_video_checkbox.setEnabled(True)
         self.use_mc_video_checkbox.setChecked(True)
 
-    def update_motion_correction_progress(self, group_num):
-        n_groups = len(self.controller.video_groups())
+        self.parent_widget.set_default_statusbar_message("")
 
-        if group_num == n_groups-1:
-            self.motion_correct_button.setText('Motion Correct')
-            self.motion_correct_button.setHoverMessage("Perform motion correction on the videos.")
-        else:
-            self.motion_correct_button.setText("Motion correcting group {}/{}...".format(group_num+1, n_groups))
+    def update_motion_correction_progress(self, group_num):
+        n_groups = len(np.unique(self.controller.video_groups()))
+
+        if group_num != n_groups-1:
+            self.parent_widget.set_default_statusbar_message("Motion correcting group {}/{}...".format(group_num+2, n_groups))
 
 class ROIFindingWidget(ParamWidget):
     def __init__(self, parent_widget, controller):
@@ -812,15 +836,21 @@ class ROIFindingWidget(ParamWidget):
         self.show_rois_checkbox.clicked.connect(self.toggle_show_rois)
         self.button_layout.addWidget(self.show_rois_checkbox)
 
+        self.show_zscore_checkbox = QCheckBox("Show Z-Score")
+        self.show_zscore_checkbox.setObjectName("Show Z-Score")
+        self.show_zscore_checkbox.setChecked(True)
+        self.show_zscore_checkbox.clicked.connect(self.toggle_show_zscore)
+        self.button_layout.addWidget(self.show_zscore_checkbox)
+
         self.button_layout.addStretch()
 
-        self.use_multiprocessing_checkbox = HoverCheckBox("Use multiprocessing", None, self.parent_widget.statusBar())
+        self.use_multiprocessing_checkbox = HoverCheckBox("Use multiprocessing", self.parent_widget, self.parent_widget.statusBar())
         self.use_multiprocessing_checkbox.setHoverMessage("Use multiple cores to speed up computations.")
         self.use_multiprocessing_checkbox.setChecked(True)
         self.use_multiprocessing_checkbox.clicked.connect(lambda:self.controller.set_use_multiprocessing(self.use_multiprocessing_checkbox.isChecked()))
         self.button_layout.addWidget(self.use_multiprocessing_checkbox)
 
-        self.process_video_button = HoverButton('Find ROIs', None, self.parent_widget.statusBar())
+        self.process_video_button = HoverButton('Find ROIs', self.parent_widget, self.parent_widget.statusBar())
         self.process_video_button.setHoverMessage("Find ROIs using the watershed algorithm.")
         self.process_video_button.setIcon(QIcon("icons/accept_icon.png"))
         self.process_video_button.setIconSize(QSize(16,16))
@@ -833,23 +863,28 @@ class ROIFindingWidget(ParamWidget):
 
         self.parent_widget.set_show_rois(show_rois)
 
-    def roi_finding_started(self):
-        n_groups = len(self.controller.video_groups())
+    def toggle_show_zscore(self):
+        show_zscore = self.show_zscore_checkbox.isChecked()
 
-        self.process_video_button.setText("Finding ROIs for group {}/{}...".format(1, n_groups))
+        self.parent_widget.set_show_zscore(show_zscore)
+
+    def roi_finding_started(self):
+        n_groups = len(np.unique(self.controller.video_groups()))
+
+        self.parent_widget.set_default_statusbar_message("Finding ROIs for group {}/{}...".format(1, n_groups))
         self.process_video_button.setEnabled(False)
         self.parent_widget.tab_widget.setTabEnabled(0, False)
         self.parent_widget.tab_widget.setTabEnabled(1, False)
         self.parent_widget.tab_widget.setTabEnabled(3, False)
 
     def update_roi_finding_progress(self, group_num):
-        n_groups = len(self.controller.video_groups())
+        n_groups = len(np.unique(self.controller.video_groups()))
 
-        if group_num == n_groups-1:
-            self.process_video_button.setText('Find ROIs')
-            self.process_video_button.setHoverMessage("Find ROIs using the watershed algorithm.")
-        else:
-            self.process_video_button.setText("Finding ROIs for group {}/{}...".format(group_num+1, n_groups))
+        if group_num != n_groups-1:
+             self.parent_widget.set_default_statusbar_message("Finding ROIs for group {}/{}...".format(group_num+2, n_groups))
+
+    def roi_finding_ended(self):
+        self.parent_widget.set_default_statusbar_message("")
 
     def tab_selected(self):
         index = self.tab_widget.currentIndex()
@@ -937,7 +972,7 @@ class ROIFilteringWidget(ParamWidget):
 
         self.roi_button_layout_2.addStretch()
 
-        self.erase_selected_roi_button = HoverButton('Discard', None, self.parent_widget.statusBar())
+        self.erase_selected_roi_button = HoverButton('Discard', self.parent_widget, self.parent_widget.statusBar())
         self.erase_selected_roi_button.setHoverMessage("Discard the selected ROIs.")
         self.erase_selected_roi_button.setIcon(QIcon("icons/hide_icon.png"))
         self.erase_selected_roi_button.setIconSize(QSize(16, 16))
@@ -945,14 +980,14 @@ class ROIFilteringWidget(ParamWidget):
         self.erase_selected_roi_button.setEnabled(False)
         self.roi_button_layout_2.addWidget(self.erase_selected_roi_button)
 
-        self.erase_all_rois_button = HoverButton('Discard All', None, self.parent_widget.statusBar())
+        self.erase_all_rois_button = HoverButton('Discard All', self.parent_widget, self.parent_widget.statusBar())
         self.erase_all_rois_button.setHoverMessage("Discard all ROIs.")
         self.erase_all_rois_button.setIcon(QIcon("icons/hide_icon.png"))
         self.erase_all_rois_button.setIconSize(QSize(16, 16))
         self.erase_all_rois_button.clicked.connect(self.controller.discard_all_rois)
         self.roi_button_layout_2.addWidget(self.erase_all_rois_button)
 
-        self.unerase_selected_roi_button = HoverButton('Keep', None, self.parent_widget.statusBar())
+        self.unerase_selected_roi_button = HoverButton('Keep', self.parent_widget, self.parent_widget.statusBar())
         self.unerase_selected_roi_button.setHoverMessage("Keep the selected ROIs.")
         self.unerase_selected_roi_button.setIcon(QIcon("icons/show_icon.png"))
         self.unerase_selected_roi_button.setIconSize(QSize(16, 16))
@@ -960,7 +995,7 @@ class ROIFilteringWidget(ParamWidget):
         self.unerase_selected_roi_button.setEnabled(False)
         self.roi_button_layout_2.addWidget(self.unerase_selected_roi_button)
 
-        self.merge_rois_button = HoverButton('Merge', None, self.parent_widget.statusBar())
+        self.merge_rois_button = HoverButton('Merge', self.parent_widget, self.parent_widget.statusBar())
         self.merge_rois_button.setHoverMessage("Merge the selected ROIs.")
         self.merge_rois_button.setIcon(QIcon("icons/merge_icon.png"))
         self.merge_rois_button.setIconSize(QSize(16, 16))
@@ -971,7 +1006,7 @@ class ROIFilteringWidget(ParamWidget):
         self.button_widget = QWidget(self)
         self.button_layout = QHBoxLayout(self.button_widget)
         self.button_layout.setContentsMargins(5, 5, 5, 5)
-        self.button_layout.setSpacing(5)
+        self.button_layout.setSpacing(15)
         self.main_layout.addWidget(self.button_widget)
 
         self.show_rois_checkbox = QCheckBox("Show ROIs")
@@ -980,9 +1015,15 @@ class ROIFilteringWidget(ParamWidget):
         self.show_rois_checkbox.clicked.connect(self.toggle_show_rois)
         self.button_layout.addWidget(self.show_rois_checkbox)
 
+        self.show_zscore_checkbox = QCheckBox("Show Z-Score")
+        self.show_zscore_checkbox.setObjectName("Show Z-Score")
+        self.show_zscore_checkbox.setChecked(True)
+        self.show_zscore_checkbox.clicked.connect(self.toggle_show_zscore)
+        self.button_layout.addWidget(self.show_zscore_checkbox)
+
         self.button_layout.addStretch()
 
-        self.filter_rois_button = HoverButton('Filter ROIs', None, self.parent_widget.statusBar())
+        self.filter_rois_button = HoverButton('Filter ROIs', self.parent_widget, self.parent_widget.statusBar())
         self.filter_rois_button.setHoverMessage("Automatically filter ROIs with the current parameters.")
         self.filter_rois_button.setIcon(QIcon("icons/accept_icon.png"))
         self.filter_rois_button.setIconSize(QSize(16,16))
@@ -990,7 +1031,7 @@ class ROIFilteringWidget(ParamWidget):
         self.filter_rois_button.clicked.connect(self.controller.filter_rois)
         self.button_layout.addWidget(self.filter_rois_button)
 
-        self.process_videos_button = HoverButton('Save...', None, self.parent_widget.statusBar())
+        self.process_videos_button = HoverButton('Save...', self.parent_widget, self.parent_widget.statusBar())
         self.process_videos_button.setHoverMessage("Save traces, ROI centroids and other ROI data.")
         self.process_videos_button.setIcon(QIcon("icons/save_icon.png"))
         self.process_videos_button.setIconSize(QSize(16,16))
@@ -1003,6 +1044,11 @@ class ROIFilteringWidget(ParamWidget):
 
         self.parent_widget.set_show_rois(show_rois)
 
+    def toggle_show_zscore(self):
+        show_zscore = self.show_zscore_checkbox.isChecked()
+
+        self.parent_widget.set_show_zscore(show_zscore)
+
     def toggle_use_cnn(self, boolean):
         self.controller.params()['use_cnn'] = boolean
 
@@ -1011,57 +1057,54 @@ class HoverCheckBox(QCheckBox):
         QCheckBox.__init__(self, text, parent)
         self.setMouseTracking(True)
 
-        self.status_bar = status_bar
+        self.parent        = parent
+        self.status_bar    = status_bar
         self.hover_message = ""
 
     def setHoverMessage(self, message):
         self.hover_message = message
 
     def enterEvent(self, event):
-        self.previous_message = self.status_bar.currentMessage()
         self.status_bar.showMessage(self.hover_message)
 
     def leaveEvent(self, event):
-        if self.status_bar.currentMessage() != "":
-            self.status_bar.showMessage(self.previous_message)
+        self.status_bar.showMessage(self.parent.default_statusbar_message)
 
 class HoverButton(QPushButton):
     def __init__(self, text, parent=None, status_bar=None):
         QPushButton.__init__(self, text, parent)
         self.setMouseTracking(True)
 
-        self.status_bar = status_bar
+        self.parent        = parent
+        self.status_bar    = status_bar
         self.hover_message = ""
 
     def setHoverMessage(self, message):
         self.hover_message = message
 
     def enterEvent(self, event):
-        self.previous_message = self.status_bar.currentMessage()
         self.status_bar.showMessage(self.hover_message)
 
     def leaveEvent(self, event):
-        if self.status_bar.currentMessage() != "":
-            self.status_bar.showMessage(self.previous_message)
+        self.status_bar.showMessage(self.parent.default_statusbar_message)
 
 class HoverLabel(QLabel):
     def __init__(self, text, parent=None, status_bar=None):
         QLabel.__init__(self, text, parent)
         self.setMouseTracking(True)
 
-        self.status_bar = status_bar
+        self.parent        = parent
+        self.status_bar    = status_bar
         self.hover_message = ""
 
     def setHoverMessage(self, message):
         self.hover_message = message
 
     def enterEvent(self, event):
-        self.previous_message = self.status_bar.currentMessage()
         self.status_bar.showMessage(self.hover_message)
 
     def leaveEvent(self, event):
-        if self.status_bar.currentMessage() != "":
-            self.status_bar.showMessage(self.previous_message)
+        self.status_bar.showMessage(self.parent.default_statusbar_message)
 
 def HLine():
     frame = QFrame()
