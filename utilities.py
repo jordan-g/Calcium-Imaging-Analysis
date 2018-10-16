@@ -675,7 +675,7 @@ def filter_rois(video_paths, roi_spatial_footprints, roi_temporal_footprints, ro
     for z in range(final_video.shape[1]):
         idx_components, idx_components_bad, SNR_comp, r_values, cnn_preds = \
                 estimate_components_quality_auto(final_video[:, z, :, :].transpose([1, 2, 0]), roi_spatial_footprints[z], roi_temporal_footprints[z], bg_spatial_footprints[z], bg_temporal_footprints[z], 
-                                                 roi_temporal_residuals[z], params['imaging_fps'], params['decay_time'], params['half_size'], (video.shape[-2], video.shape[-1]), 
+                                                 roi_temporal_residuals[z], params['imaging_fps']/final_video.shape[1], params['decay_time'], params['half_size'], (video.shape[-2], video.shape[-1]), 
                                                  dview = None, min_SNR=params['min_snr'], 
                                                  r_values_min = params['min_spatial_corr'], use_cnn = params['use_cnn'], 
                                                  thresh_cnn_lowest = params['cnn_threshold'], gSig_range=[ (i, i) for i in range(max(1, params['half_size']-5), params['half_size']+5) ])

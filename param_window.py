@@ -141,6 +141,9 @@ class ParamWindow(QMainWindow):
 
         self.set_default_statusbar_message("To begin, open one or more video files. Only TIFF files are currently supported.")
 
+    def set_imaging_fps(self, imaging_fps):
+        self.roi_filtering_widget.update_param_slider_and_textbox('imaging_fps', imaging_fps, multiplier=1, int_values=True)
+
     def set_video_paths(self, video_paths):
         video_num = 0
 
@@ -709,6 +712,19 @@ class ParamWidget(QWidget):
         except:
             pass
 
+    def update_param_slider_and_textbox(self, param, value, multiplier=1, int_values=False):
+        try:
+            slider  = self.param_sliders[param]
+            textbox = self.param_textboxes[param]
+
+            if int_values:
+                value = int(value)
+            
+            slider.setValue(value*multiplier)
+            textbox.setText(str(value))
+        except:
+            pass
+
     def update_param(self, param, int_values=False):
         value = self.param_sliders[param].sliderPosition()/float(self.param_slider_multipliers[param])
 
@@ -938,7 +954,7 @@ class ROIFilteringWidget(ParamWidget):
 
         self.controller = controller
 
-        self.add_param_slider(label_name="Imaging FPS", name="imaging_fps", minimum=1, maximum=60, moved=self.update_param, num=0, multiplier=1, pressed=self.update_param, released=self.update_param, description="Imaging frame rate (frames per second).", int_values=True)
+        self.add_param_slider(label_name="Imaging FPS", name="imaging_fps", minimum=1, maximum=100, moved=self.update_param, num=0, multiplier=1, pressed=self.update_param, released=self.update_param, description="Imaging frame rate (frames per second).", int_values=True)
         self.add_param_slider(label_name="Decay Time", name="decay_time", minimum=1, maximum=100, moved=self.update_param, num=1, multiplier=100, pressed=self.update_param, released=self.update_param, description="Length of a typical calcium transient (seconds).", int_values=False)
         self.add_param_slider(label_name="Minimum SNR", name="min_snr", minimum=1, maximum=500, moved=self.update_param, num=2, multiplier=100, pressed=self.update_param, released=self.update_param, description="Minimum signal to noise ratio.", int_values=False)
         self.add_param_slider(label_name="Minimum Spatial Correlation", name="min_spatial_corr", minimum=1, maximum=100, moved=self.update_param, num=3, multiplier=100, pressed=self.update_param, released=self.update_param, description="Minimum spatial correlation.", int_values=False)
@@ -946,7 +962,7 @@ class ROIFilteringWidget(ParamWidget):
         self.add_param_slider(label_name="CNN Threshold", name="cnn_threshold", minimum=1, maximum=100, moved=self.update_param, num=5, multiplier=100, pressed=self.update_param, released=self.update_param, description="Minimum CNN confidence (only relevant if using CNN).", int_values=False)
         self.add_param_slider(label_name="Minimum Area", name="min_area", minimum=1, maximum=1000, moved=self.update_param, num=6, multiplier=1, pressed=self.update_param, released=self.update_param, description="Minimum area.", int_values=True)
         self.add_param_slider(label_name="Maximum Area", name="max_area", minimum=1, maximum=1000, moved=self.update_param, num=7, multiplier=1, pressed=self.update_param, released=self.update_param, description="Maximum area.", int_values=True)
-        
+
         self.main_layout.addStretch()
         
         self.main_layout.addWidget(HLine())
@@ -1068,10 +1084,12 @@ class HoverCheckBox(QCheckBox):
         self.hover_message = message
 
     def enterEvent(self, event):
-        self.status_bar.showMessage(self.hover_message)
+        if self.status_bar is not None:
+            self.status_bar.showMessage(self.hover_message)
 
     def leaveEvent(self, event):
-        self.status_bar.showMessage(self.parent.default_statusbar_message)
+        if self.status_bar is not None:
+            self.status_bar.showMessage(self.parent.default_statusbar_message)
 
 class HoverButton(QPushButton):
     def __init__(self, text, parent=None, status_bar=None):
@@ -1086,10 +1104,12 @@ class HoverButton(QPushButton):
         self.hover_message = message
 
     def enterEvent(self, event):
-        self.status_bar.showMessage(self.hover_message)
+        if self.status_bar is not None:
+            self.status_bar.showMessage(self.hover_message)
 
     def leaveEvent(self, event):
-        self.status_bar.showMessage(self.parent.default_statusbar_message)
+        if self.status_bar is not None:
+            self.status_bar.showMessage(self.parent.default_statusbar_message)
 
 class HoverLabel(QLabel):
     def __init__(self, text, parent=None, status_bar=None):
@@ -1104,10 +1124,12 @@ class HoverLabel(QLabel):
         self.hover_message = message
 
     def enterEvent(self, event):
-        self.status_bar.showMessage(self.hover_message)
+        if self.status_bar is not None:
+            self.status_bar.showMessage(self.hover_message)
 
     def leaveEvent(self, event):
-        self.status_bar.showMessage(self.parent.default_statusbar_message)
+        if self.status_bar is not None:
+            self.status_bar.showMessage(self.parent.default_statusbar_message)
 
 def HLine():
     frame = QFrame()

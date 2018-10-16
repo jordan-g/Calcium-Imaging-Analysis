@@ -147,15 +147,24 @@ class PreviewWindow(QMainWindow):
         self.timer.stop()
         self.setWindowTitle("Preview")
 
-    def plot_tail_angles(self, tail_angles, tail_data_fps, calcium_data_fps):
+    def plot_tail_angles(self, tail_angles, tail_data_fps, imaging_fps):
         self.viewbox6.clear()
 
+        imaging_fps_one_plane = imaging_fps/self.controller.video.shape[1]
+
         if tail_angles is not None:
-            one_frame    = int(np.floor((1.0/calcium_data_fps)*tail_data_fps))
+            one_frame    = int(np.floor((1.0/imaging_fps_one_plane)*tail_data_fps))
             total_frames = int(np.floor(one_frame*self.controller.video.shape[0]))
 
-            x = np.linspace(0, self.controller.video.shape[0], total_frames)
-            self.viewbox6.plot(x, tail_angles[:total_frames, -1], pen=pg.mkPen((255, 255, 0), width=2))
+            if total_frames < tail_angles.shape[0]:
+                x = np.linspace(0, self.controller.video.shape[0], total_frames)
+                self.viewbox6.plot(x, tail_angles[:total_frames, -1], pen=pg.mkPen((255, 255, 0), width=2))
+
+                return True
+            else:
+                return False
+        else:
+            return False
 
     def plot_traces(self, roi_temporal_footprints, selected_rois=[]):
         self.viewbox3.clear()
@@ -236,8 +245,8 @@ class PreviewWindow(QMainWindow):
                                 self.outline_items.append(outline_item)
                                 self.viewbox1.addItem(outline_item)
 
-                        self.left_plot.setImage(image)
-                        self.right_plot.setImage(self.discarded_rois_image)
+                        self.left_plot.setImage(image, autoLevels=False)
+                        self.right_plot.setImage(self.discarded_rois_image, autoLevels=False)
                     else:
                         image = self.discarded_rois_image.copy()
                         contours = []
@@ -255,11 +264,11 @@ class PreviewWindow(QMainWindow):
                                 self.outline_items.append(outline_item)
                                 self.viewbox2.addItem(outline_item)
 
-                        self.right_plot.setImage(image)
-                        self.left_plot.setImage(self.kept_rois_image)
+                        self.right_plot.setImage(image, autoLevels=False)
+                        self.left_plot.setImage(self.kept_rois_image, autoLevels=False)
                 else:
-                    self.left_plot.setImage(self.kept_rois_image)
-                    self.right_plot.setImage(self.discarded_rois_image)
+                    self.left_plot.setImage(self.kept_rois_image, autoLevels=False)
+                    self.right_plot.setImage(self.discarded_rois_image, autoLevels=False)
             elif event.button() == 2:
                 if self.left_plot in items:
                     selected_roi = utilities.get_roi_containing_point(self.controller.roi_spatial_footprints(), (int(y), int(x)), self.controller.selected_video_mean_image().shape)

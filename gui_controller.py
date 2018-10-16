@@ -258,7 +258,7 @@ class GUIController():
             else:
                 self.show_roi_image(update_overlay=True)
 
-            self.preview_window.plot_tail_angles(self.controller.tail_angles[self.selected_video], self.controller.params['tail_data_fps'], self.controller.params['calcium_data_fps'])
+            self.preview_window.plot_tail_angles(self.controller.tail_angles[self.selected_video], self.controller.params['tail_data_fps'], self.controller.params['imaging_fps'])
             self.update_trace_plot()
     def play_video(self):
         # calculate gamma- and contrast-adjusted video and mean images
@@ -608,7 +608,7 @@ class GUIController():
 
     def update_param(self, param, value):
         print("Setting parameter '{}' to {}.".format(param, value))
-        
+
         # update the parameter
         if param in self.controller.params.keys():
             self.controller.params[param] = value
@@ -727,14 +727,25 @@ class GUIController():
 
             self.controller.tail_angles[self.selected_video] = tail_angles
 
-            tail_data_fps, calcium_data_fps, ok = TailTraceParametersDialog.getParameters(None, self.controller.params['tail_data_fps'], self.controller.params['calcium_data_fps'])
+            tail_data_fps, imaging_fps, ok = TailTraceParametersDialog.getParameters(None, self.controller.params['tail_data_fps'], self.controller.params['imaging_fps'])
 
             if ok:
-                self.controller.params['tail_data_fps']    = tail_data_fps
-                self.controller.params['calcium_data_fps'] = calcium_data_fps
+                self.controller.params['tail_data_fps'] = tail_data_fps
+                self.controller.params['imaging_fps']   = imaging_fps
 
-                self.preview_window.plot_tail_angles(self.controller.tail_angles[self.selected_video], self.controller.params['tail_data_fps'], self.controller.params['calcium_data_fps'])
+                success = self.preview_window.plot_tail_angles(self.controller.tail_angles[self.selected_video], self.controller.params['tail_data_fps'], self.controller.params['imaging_fps'])
 
+                if success:
+                    self.param_window.set_imaging_fps(self.controller.params['imaging_fps'])
+                else:
+                    message_box = QMessageBox()
+                    message_box.setIcon(QMessageBox.Critical)
+
+                    message_box.setText("Could not load tail trace. Tail trace data must be at least as long (in seconds) as calcium imaging data.")
+                    message_box.setWindowTitle("")
+                    message_box.setStandardButtons(QMessageBox.Ok)
+
+                    return_value = message_box.exec_()
     def discard_selected_rois(self):
         for roi in self.selected_rois:
             self.controller.discard_roi(roi, self.z, self.group_num)
@@ -758,8 +769,6 @@ class GUIController():
     def keep_selected_rois(self):
         for roi in self.selected_rois:
             self.controller.keep_roi(roi, self.z, self.group_num)
-
-        rois = [ roi for roi in self.selected_rois if roi not in self.filtered_out_rois() ]
 
         self.selected_rois = []
 
@@ -928,7 +937,7 @@ class ROIFindingThread(QThread):
         self.running = False
 
 class TailTraceParametersDialog(QDialog):
-    def __init__(self, parent, tail_fps, calcium_fps):
+    def __init__(self, parent, tail_fps, imaging_fps):
         super(TailTraceParametersDialog, self).__init__(parent)
 
         param_layout = QVBoxLayout(self)
@@ -939,7 +948,8 @@ class TailTraceParametersDialog(QDialog):
         layout.setSpacing(5)
         param_layout.addWidget(widget)
 
-        label = QLabel("Tail trace FPS:")
+        label = param_window.HoverLabel("Tail trace FPS:")
+        label.setHoverMessage("Tail trace frame rate (frames per second).")
         layout.addWidget(label)
 
         self.tail_fps_textbox = QLineEdit()
@@ -957,18 +967,19 @@ class TailTraceParametersDialog(QDialog):
         layout.setSpacing(5)
         param_layout.addWidget(widget)
 
-        label = QLabel("Calcium imaging FPS:")
+        label = param_window.HoverLabel("Imaging FPS:")
+        label.setHoverMessage("Imaging frame rate (frames per second).")
         layout.addWidget(label)
 
-        self.calcium_fps_textbox = QLineEdit()
-        self.calcium_fps_textbox.setStyleSheet(param_window.rounded_stylesheet)
-        self.calcium_fps_textbox.setAlignment(Qt.AlignHCenter)
-        self.calcium_fps_textbox.setObjectName("Calcium Imaging FPS")
-        self.calcium_fps_textbox.setFixedWidth(60)
-        self.calcium_fps_textbox.setFixedHeight(20)
-        self.calcium_fps_textbox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.calcium_fps_textbox.setText("{}".format(calcium_fps))
-        layout.addWidget(self.calcium_fps_textbox)
+        self.imaging_fps_textbox = QLineEdit()
+        self.imaging_fps_textbox.setStyleSheet(param_window.rounded_stylesheet)
+        self.imaging_fps_textbox.setAlignment(Qt.AlignHCenter)
+        self.imaging_fps_textbox.setObjectName("Imaging FPS")
+        self.imaging_fps_textbox.setFixedWidth(60)
+        self.imaging_fps_textbox.setFixedHeight(20)
+        self.imaging_fps_textbox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.imaging_fps_textbox.setText("{}".format(imaging_fps))
+        layout.addWidget(self.imaging_fps_textbox)
 
         param_layout.addStretch()
 
@@ -984,14 +995,14 @@ class TailTraceParametersDialog(QDialog):
     def tail_fps(self):
         return float(self.tail_fps_textbox.text())
 
-    def calcium_fps(self):
-        return float(self.calcium_fps_textbox.text())
+    def imaging_fps(self):
+        return float(self.imaging_fps_textbox.text())
 
     @staticmethod
-    def getParameters(parent, tail_fps, calcium_fps):
-        dialog      = TailTraceParametersDialog(parent, tail_fps, calcium_fps)
+    def getParameters(parent, tail_fps, imaging_fps):
+        dialog      = TailTraceParametersDialog(parent, tail_fps, imaging_fps)
         result      = dialog.exec_()
         tail_fps    = dialog.tail_fps()
-        calcium_fps = dialog.calcium_fps()
+        imaging_fps = dialog.imaging_fps()
 
-        return (tail_fps, calcium_fps, result == QDialog.Accepted)
+        return (tail_fps, imaging_fps, result == QDialog.Accepted)

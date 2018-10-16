@@ -13,14 +13,6 @@ DEFAULT_PARAMS = {'gamma'                : 1.0,
                   'max_shift'            : 6,
                   'patch_stride'         : 48,
                   'patch_overlap'        : 24,
-                  'window_size'          : 7,
-                  'background_threshold' : 10,
-                  'invert_masks'         : False,
-                  'soma_threshold'       : 0.8,
-                  'min_area'             : 10,
-                  'max_area'             : 100,
-                  'min_circ'             : 0,
-                  'max_circ'             : 2,
                   'imaging_fps'          : 30,
                   'decay_time'           : 0.4,
                   'autoregressive_order' : 0,
@@ -33,6 +25,8 @@ DEFAULT_PARAMS = {'gamma'                : 1.0,
                   'min_spatial_corr'     : 0.8,
                   'use_cnn'              : False,
                   'cnn_threshold'        : 0.5,
+                  'min_area'             : 10,
+                  'max_area'             : 100,
                   'diameter'             : 10,
                   'sampling_rate'        : 3,
                   'connected'            : True,
@@ -40,8 +34,7 @@ DEFAULT_PARAMS = {'gamma'                : 1.0,
                   'neuropil_radius_ratio': 3,
                   'inner_neuropil_radius': 2,
                   'min_neuropil_pixels'  : 350,
-                  'tail_data_fps'        : 200,
-                  'calcium_data_fps'     : 30
+                  'tail_data_fps'        : 200
                   }
 
 # set filename for saving current parameters
@@ -285,9 +278,9 @@ class Controller():
             i = self.filtered_out_rois[group_num][z].index(roi)
             del self.filtered_out_rois[group_num][z][i]
 
-            # add to locked ROIs list
-            if roi not in self.locked_rois[group_num][z]:
-                self.locked_rois[group_num][z].append(roi)
+        # add to locked ROIs list
+        if roi not in self.locked_rois[group_num][z]:
+            self.locked_rois[group_num][z].append(roi)
 
         self.removed_rois[group_num][z] = self.filtered_out_rois[group_num][z] + self.discarded_rois[group_num][z]
 
