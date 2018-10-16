@@ -607,6 +607,8 @@ class GUIController():
             self.update_param("gamma", gamma)
 
     def update_param(self, param, value):
+        print("Setting parameter '{}' to {}.".format(param, value))
+        
         # update the parameter
         if param in self.controller.params.keys():
             self.controller.params[param] = value
@@ -634,7 +636,7 @@ class GUIController():
                 self.update_adjusted_mean_images()
 
                 # show the ROI image
-                self.show_roi_image(update_overlay=True)
+                self.show_roi_image(update_overlay=False, recreate_roi_images=True)
             elif param == "z":
                 self.z = value
 
@@ -649,7 +651,7 @@ class GUIController():
                 self.update_adjusted_mean_images()
 
                 # show the ROI image
-                self.show_roi_image(update_overlay=True)
+                self.show_roi_image(update_overlay=False, recreate_roi_images=True)
             if param == "z":
                 self.z = value
 
