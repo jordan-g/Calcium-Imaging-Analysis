@@ -622,6 +622,10 @@ class GUIController():
             elif param == "z":
                 self.z = value
 
+                self.selected_rois = []
+                self.preview_window.clear_text_and_outline_items()
+                self.update_trace_plot()
+
                 self.preview_window.timer.stop()
 
                 self.play_video()
@@ -635,6 +639,8 @@ class GUIController():
                 self.z = value
 
                 self.selected_rois = []
+                self.preview_window.clear_text_and_outline_items()
+                self.update_trace_plot()
 
                 # show the ROI image
                 self.show_roi_image(update_overlay=True)
@@ -648,6 +654,8 @@ class GUIController():
                 self.z = value
 
                 self.selected_rois = []
+                self.preview_window.clear_text_and_outline_items()
+                self.update_trace_plot()
 
                 # show the ROI image
                 self.show_roi_image(update_overlay=True)

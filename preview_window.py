@@ -162,10 +162,11 @@ class PreviewWindow(QMainWindow):
         if len(selected_rois) > 0:
             max_value = np.amax(roi_temporal_footprints)
 
+            x = np.arange(roi_temporal_footprints.shape[1]) + self.controller.z/self.controller.video.shape[1]
             for i in range(len(selected_rois)):
                 roi = selected_rois[i]
 
-                self.viewbox3.plot(roi_temporal_footprints[roi]/max_value, pen=pg.mkPen((roi_colors[roi][0], roi_colors[roi][1], roi_colors[roi][2]), width=2))
+                self.viewbox3.plot(x, roi_temporal_footprints[roi]/max_value, pen=pg.mkPen((roi_colors[roi][0], roi_colors[roi][1], roi_colors[roi][2]), width=2))
 
     def clear_text_and_outline_items(self):
         # remove all text and outline items from left and right plots
@@ -439,6 +440,9 @@ class PreviewWindow(QMainWindow):
 
                         self.heatmap_plot.setImage(heatmap)
                         self.heatmap_plot_2.setImage(heatmap2)
+
+                        self.heatmap_plot.setRect(QRectF(self.controller.z/self.controller.video.shape[1], 0, heatmap.shape[0], heatmap.shape[1]))
+                        self.heatmap_plot_2.setRect(QRectF(self.controller.z/self.controller.video.shape[1], 0, heatmap.shape[0], heatmap.shape[1]))
                     else:
                         self.heatmap_plot.setImage(None)
                         self.heatmap_plot_2.setImage(None)
