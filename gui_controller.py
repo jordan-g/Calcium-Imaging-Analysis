@@ -137,6 +137,7 @@ class GUIController():
         if len(self.controller.mc_video_paths) > 0 or len(self.controller.roi_spatial_footprints) > 0:
             message_box = QMessageBox()
             message_box.setIcon(QMessageBox.Warning)
+            message_box.setContentsMargins(5, 5, 5, 5)
 
             message_box.setText("Adding videos will throw out any motion correction or ROI finding results. Continue?")
             message_box.setWindowTitle("")
@@ -267,6 +268,7 @@ class GUIController():
 
         self.preview_window.play_video(self.adjusted_video, self.selected_video_path(), self.controller.params['fps'])
         self.preview_window.plot_mean_image(self.adjusted_mean_images[self.z], self.video_max)
+        self.preview_window.show_plot()
 
     def videos_rearranged(self, old_indices, groups):
         self.controller.video_groups  = groups
@@ -740,6 +742,7 @@ class GUIController():
                 else:
                     message_box = QMessageBox()
                     message_box.setIcon(QMessageBox.Critical)
+                    message_box.setContentsMargins(5, 5, 5, 5)
 
                     message_box.setText("Could not load tail trace. Tail trace data must be at least as long (in seconds) as calcium imaging data.")
                     message_box.setWindowTitle("")
@@ -983,10 +986,7 @@ class TailTraceParametersDialog(QDialog):
 
         param_layout.addStretch()
 
-        # OK and Cancel buttons
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
-            Qt.Horizontal, self)
+        self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal, self)
         param_layout.addWidget(self.buttons)
 
         self.buttons.accepted.connect(self.accept)

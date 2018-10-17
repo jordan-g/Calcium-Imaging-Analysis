@@ -19,6 +19,7 @@ except:
     pyqt_version = 5
 
 roi_colors = [ np.random.permutation((np.random.uniform(120, 200), np.random.uniform(50, 200), np.random.uniform(50, 200))) for i in range(10000) ]
+colormaps  = ["inferno", "plasma", "viridis", "magma", "Reds", "Greens", "Blues", "Greys", "gray", "hot"]
 
 class PreviewWindow(QMainWindow):
     def __init__(self, controller):
@@ -40,7 +41,7 @@ class PreviewWindow(QMainWindow):
         self.main_widget.setMinimumSize(QSize(800, 900))
 
         # create main layout
-        self.main_layout = QGridLayout(self.main_widget)
+        self.main_layout = QVBoxLayout(self.main_widget)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
 
@@ -49,7 +50,11 @@ class PreviewWindow(QMainWindow):
         self.image_layout.setContentsMargins(0, 0, 0, 0)
         
         bg_color = (50, 50, 50)
-        self.main_widget.setStyleSheet("background-color: rgba({}, {}, {}, 1);".format(bg_color[0], bg_color[1], bg_color[2]))
+        palette = QPalette()
+        palette.setColor(QPalette.Background, QColor(50, 50, 50, 255))
+        self.main_widget.setAutoFillBackground(True)
+        self.main_widget.setPalette(palette)
+        # self.main_widget.setStyleSheet("background-color: rgba({}, {}, {}, 1);".format(bg_color[0], bg_color[1], bg_color[2]))
         pg.setConfigOption('background', bg_color)
         if bg_color[0] < 100:
             pg.setConfigOption('foreground', (150, 150, 150))
@@ -101,7 +106,7 @@ class PreviewWindow(QMainWindow):
         self.image_plot.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.MinimumExpanding)
         self.image_plot.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         self.image_layout.addWidget(self.image_plot)
-        self.main_layout.addWidget(self.image_widget, 0, 0)
+        self.main_layout.addWidget(self.image_widget)
         self.image_plot.scene().sigMouseClicked.connect(self.plot_clicked)
         self.viewbox1.setMenuEnabled(False)
         self.viewbox2.setMenuEnabled(False)
@@ -110,6 +115,23 @@ class PreviewWindow(QMainWindow):
         self.image_plot.ci.layout.setRowStretchFactor(2, 2)
         self.image_plot.ci.layout.setRowStretchFactor(3, 2)
         self.image_plot.ci.layout.setRowStretchFactor(4, 2)
+
+        # self.main_layout.addStretch()
+
+        self.bottom_widget = QWidget()
+        self.bottom_layout = QHBoxLayout(self.bottom_widget)
+        # self.bottom_widget.setMinimumSize(800, 32)
+        self.main_layout.addWidget(self.bottom_widget)
+
+        self.bottom_layout.addStretch()
+
+        label = QLabel("Colormap:")
+        self.bottom_layout.addWidget(label)
+
+        combobox = QComboBox()
+        combobox.addItems([ colormap.title() for colormap in colormaps ])
+        combobox.currentIndexChanged.connect(self.change_colormap)
+        self.bottom_layout.addWidget(combobox)
 
         # set main widget
         self.setCentralWidget(self.main_widget)
@@ -144,8 +166,26 @@ class PreviewWindow(QMainWindow):
         self.video_name             = ""   # name of the currently showing video
 
         self.image_plot.hide()
+        self.bottom_widget.hide()
         self.timer.stop()
         self.setWindowTitle("Preview")
+
+    def show_plot(self):
+        self.image_plot.show()
+        self.bottom_widget.show()
+
+    def hide_plot(self):
+        self.image_plot.hide()
+        self.bottom_widget.hide()
+
+    def change_colormap(self, i):
+        colormap_name = colormaps[i]
+
+        colormap = cm.get_cmap(colormap_name)
+        colormap._init()
+        lut = (colormap._lut * 255).view(np.ndarray)
+        self.heatmap_plot.setLookupTable(lut)
+        self.heatmap_plot_2.setLookupTable(lut)
 
     def plot_tail_angles(self, tail_angles, tail_data_fps, imaging_fps):
         self.viewbox6.clear()
@@ -302,8 +342,10 @@ class PreviewWindow(QMainWindow):
             self.roi_overlays           = None
             self.roi_contours           = []
 
-        if self.image is None:
-            self.image_plot.show()
+        if image is None:
+            self.hide_plot()
+        else:
+            self.show_plot()
 
         # update image
         self.image = image
@@ -331,8 +373,7 @@ class PreviewWindow(QMainWindow):
     def play_video(self, video, video_path, fps):
         self.video_name = os.path.basename(video_path)
         
-        if self.frames is None:
-            self.image_plot.show()
+        self.show_plot()
 
         # set frame number to 0
         self.frame_num = 0
