@@ -15,8 +15,10 @@ import numpy as np
 # set styles of title and subtitle labels
 TITLE_STYLESHEET           = "font-size: 16px; font-weight: bold;"
 SUBTITLE_STYLESHEET        = "font-size: 14px; font-weight: bold;"
-ROUNDED_STYLESHEET_DARK    = "background-color: rgba(0, 0, 0, 0.3); border-radius: 2px; border: 1px solid rgba(0, 0, 0, 0.5); padding: 2px;"
-ROUNDED_STYLESHEET_LIGHT   = "background-color: rgba(255, 255, 255, 1); border-radius: 2px; border: 1px solid rgba(0, 0, 0, 0.2); padding: 2px;"
+ROUNDED_STYLESHEET_DARK    = "QLineEdit { background-color: rgba(0, 0, 0, 0.3); border-radius: 2px; border: 1px solid rgba(0, 0, 0, 0.5); padding: 2px };"
+ROUNDED_STYLESHEET_LIGHT   = "QLineEdit { background-color: rgba(255, 255, 255, 1); border-radius: 2px; border: 1px solid rgba(0, 0, 0, 0.2); padding: 2px; }"
+LIST_STYLESHEET_DARK       = "QListWidget { background-color: rgba(0, 0, 0, 0.3); border-radius: 2px; border: 1px solid rgba(0, 0, 0, 0.5); padding: 2px };"
+LIST_STYLESHEET_LIGHT      = "QListWidget { background-color: rgba(255, 255, 255, 1); border-radius: 2px; border: 1px solid rgba(0, 0, 0, 0.2); padding: 2px; }"
 STATUSBAR_STYLESHEET_LIGHT = "background-color: rgba(255, 255, 255, 0.3); border-top: 1px solid rgba(0, 0, 0, 0.2); font-size: 12px; font-style: italic;"
 STATUSBAR_STYLESHEET_DARK  = "background-color: rgba(255, 255, 255, 0.1); border-top: 1px solid rgba(0, 0, 0, 0.5); font-size: 12px; font-style: italic;"
 rounded_stylesheet         = ROUNDED_STYLESHEET_LIGHT
@@ -33,9 +35,11 @@ class ParamWindow(QMainWindow):
         self.bg_color = (self.palette().color(self.backgroundRole()).red(), self.palette().color(self.backgroundRole()).green(), self.palette().color(self.backgroundRole()).blue())
         if self.bg_color[0] < 100:
             rounded_stylesheet   = ROUNDED_STYLESHEET_DARK
+            list_stylesheet      = LIST_STYLESHEET_DARK
             statusbar_stylesheet = STATUSBAR_STYLESHEET_DARK
         else:
             rounded_stylesheet   = ROUNDED_STYLESHEET_LIGHT
+            list_stylesheet      = LIST_STYLESHEET_LIGHT
             statusbar_stylesheet = STATUSBAR_STYLESHEET_LIGHT
 
         # set controller
@@ -100,7 +104,7 @@ class ParamWindow(QMainWindow):
         self.videos_list_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.MinimumExpanding)
         
         self.videos_list = QListWidget(self)
-        self.videos_list.setStyleSheet(rounded_stylesheet)
+        self.videos_list.setStyleSheet(list_stylesheet)
         self.videos_list.itemSelectionChanged.connect(self.item_selected)
         self.videos_list_layout.addWidget(self.videos_list)
         self.videos_list.setDragDropMode(QAbstractItemView.InternalMove)
@@ -137,6 +141,7 @@ class ParamWindow(QMainWindow):
         self.tab_widget.setTabEnabled(2, False)
         self.tab_widget.setTabEnabled(3, False)
         self.show_rois_action.setEnabled(False)
+        self.save_rois_action.setEnabled(False)
         self.load_rois_action.setEnabled(False)
 
         self.set_default_statusbar_message("To begin, open one or more video files. Only TIFF files are currently supported.")
@@ -154,24 +159,6 @@ class ParamWindow(QMainWindow):
                 item.setText(video_paths[video_num])
 
                 video_num += 1
-
-    def rois_loaded(self):
-        # enable ROI filtering tab
-        self.tab_widget.setTabEnabled(3, True)
-
-        # enable showing and saving ROIs
-        self.show_rois_action.setEnabled(True)
-        self.save_rois_action.setEnabled(True)
-
-        # show ROIs
-        self.roi_finding_widget.show_rois_checkbox.setChecked(True)
-
-    def set_show_rois(self, show_rois):
-        self.controller.set_show_rois(show_rois)
-
-        self.show_rois_action.setChecked(show_rois)
-        self.roi_finding_widget.show_rois_checkbox.setChecked(show_rois)
-        self.roi_filtering_widget.show_rois_checkbox.setChecked(show_rois)
 
     def set_show_zscore(self, show_zscore):
         self.controller.set_show_zscore(show_zscore)
@@ -382,7 +369,7 @@ class ParamWindow(QMainWindow):
         self.show_rois_action = QAction('Show ROIs', self, checkable=True)
         self.show_rois_action.setShortcut('R')
         self.show_rois_action.setStatusTip('Toggle showing the ROIs.')
-        self.show_rois_action.triggered.connect(lambda:self.set_show_rois(self.show_rois_action.isChecked()))
+        self.show_rois_action.triggered.connect(lambda:self.controller.preview_window.set_show_rois(self.show_rois_action.isChecked()))
         self.show_rois_action.setEnabled(False)
         self.show_rois_action.setShortcutContext(Qt.ApplicationShortcut)
 
@@ -482,12 +469,7 @@ class ParamWindow(QMainWindow):
     def roi_finding_ended(self):
         self.roi_finding_widget.roi_finding_ended()
 
-        self.roi_finding_widget.show_rois_checkbox.setDisabled(False)
-        self.roi_finding_widget.show_rois_checkbox.setChecked(True)
         self.roi_finding_widget.process_video_button.setEnabled(True)
-        self.show_rois_action.setDisabled(False)
-        self.show_rois_action.setChecked(True)
-        self.save_rois_action.setDisabled(False)
         self.tab_widget.setTabEnabled(0, True)
         self.tab_widget.setTabEnabled(1, True)
         self.tab_widget.setTabEnabled(3, True)
@@ -848,13 +830,6 @@ class ROIFindingWidget(ParamWidget):
         self.button_layout.setSpacing(15)
         self.main_layout.addWidget(self.button_widget)
 
-        self.show_rois_checkbox = QCheckBox("Show ROIs")
-        self.show_rois_checkbox.setObjectName("Show ROIs")
-        self.show_rois_checkbox.setChecked(False)
-        self.show_rois_checkbox.setEnabled(False)
-        self.show_rois_checkbox.clicked.connect(self.toggle_show_rois)
-        self.button_layout.addWidget(self.show_rois_checkbox)
-
         self.show_zscore_checkbox = QCheckBox("Show Z-Score")
         self.show_zscore_checkbox.setObjectName("Show Z-Score")
         self.show_zscore_checkbox.setChecked(True)
@@ -876,11 +851,6 @@ class ROIFindingWidget(ParamWidget):
         self.process_video_button.setStyleSheet('font-weight: bold;')
         self.process_video_button.clicked.connect(self.controller.find_rois)
         self.button_layout.addWidget(self.process_video_button)
-
-    def toggle_show_rois(self):
-        show_rois = self.show_rois_checkbox.isChecked()
-
-        self.parent_widget.set_show_rois(show_rois)
 
     def toggle_show_zscore(self):
         show_zscore = self.show_zscore_checkbox.isChecked()
@@ -908,9 +878,9 @@ class ROIFindingWidget(ParamWidget):
     def tab_selected(self):
         index = self.tab_widget.currentIndex()
         if index == 0:
-            self.controller.roi_finding_mode = "cnmf"
+            self.controller.set_roi_finding_mode("cnmf")
         elif index == 1:
-            self.controller.roi_finding_mode = "suite2p"
+            self.controller.set_roi_finding_mode("suite2p")
 
 class CNMFROIFindingWidget(ParamWidget):
     def __init__(self, parent_widget, controller):
@@ -1028,12 +998,6 @@ class ROIFilteringWidget(ParamWidget):
         self.button_layout.setSpacing(15)
         self.main_layout.addWidget(self.button_widget)
 
-        self.show_rois_checkbox = QCheckBox("Show ROIs")
-        self.show_rois_checkbox.setObjectName("Show ROIs")
-        self.show_rois_checkbox.setChecked(False)
-        self.show_rois_checkbox.clicked.connect(self.toggle_show_rois)
-        self.button_layout.addWidget(self.show_rois_checkbox)
-
         self.show_zscore_checkbox = QCheckBox("Show Z-Score")
         self.show_zscore_checkbox.setObjectName("Show Z-Score")
         self.show_zscore_checkbox.setChecked(True)
@@ -1057,11 +1021,6 @@ class ROIFilteringWidget(ParamWidget):
         self.process_videos_button.setStyleSheet('font-weight: bold;')
         self.process_videos_button.clicked.connect(self.controller.process_all_videos)
         self.button_layout.addWidget(self.process_videos_button)
-
-    def toggle_show_rois(self):
-        show_rois = self.show_rois_checkbox.isChecked()
-
-        self.parent_widget.set_show_rois(show_rois)
 
     def toggle_show_zscore(self):
         show_zscore = self.show_zscore_checkbox.isChecked()

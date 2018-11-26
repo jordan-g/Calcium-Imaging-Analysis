@@ -17,8 +17,8 @@ from caiman.source_extraction.cnmf.temporal import update_temporal_components
 from caiman.source_extraction.cnmf.pre_processing import preprocess_data
 from caiman.motion_correction import MotionCorrect
 
-import suite2p
-from suite2p.run_s2p import run_s2p
+# import suite2p
+# from suite2p.run_s2p import run_s2p
 
 if sys.version_info[0] < 3:
     python_version = 2

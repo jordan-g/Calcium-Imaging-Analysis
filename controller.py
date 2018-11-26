@@ -2,6 +2,8 @@ import os
 import json
 import numpy as np
 import skimage.external.tifffile as tifffile
+import cv2
+import csv
 
 import utilities
 
@@ -69,6 +71,7 @@ class Controller():
     def reset_variables(self):
         self.use_mc_video        = False # whether to use the motion-corrected video for finding ROIs
         self.use_multiprocessing = True  # whether to use multi-processing
+        self.roi_finding_mode    = "cnmf" # which algorithm to use to find ROIs -- "cnmf" / "suite2p"
 
     def reset_motion_correction_variables(self):
         self.mc_video_paths = [] # paths of all motion-corrected videos
@@ -158,6 +161,111 @@ class Controller():
 
         # save the ROI data
         np.save(save_path, roi_data)
+    
+    def process_videos(self, save_directory):
+        # set video paths
+        if self.use_mc_video and len(self.mc_video_paths) > 0:
+            video_paths = self.mc_video_paths
+        else:
+            video_paths = self.video_paths
+            
+        for i in range(len(video_paths)):
+            video_path = self.video_paths[i]
+
+            base_name      = os.path.basename(video_path)
+            name           = os.path.splitext(base_name)[0]
+            directory      = os.path.dirname(video_path)
+            video_dir_path = os.path.join(save_directory, name)
+
+            # make a folder to hold the results
+            if not os.path.exists(video_dir_path):
+                os.makedirs(video_dir_path)
+
+            video = tifffile.imread(video_path)
+
+            if len(video.shape) == 3:
+                # add z dimension
+                video = video[:, np.newaxis, :, :]
+
+            group_num = self.video_groups[i]
+
+            roi_spatial_footprints  = self.roi_spatial_footprints[group_num]
+            roi_temporal_footprints = self.roi_temporal_footprints[group_num]
+            roi_temporal_residuals  = self.roi_temporal_residuals[group_num]
+            bg_spatial_footprints   = self.bg_spatial_footprints[group_num]
+            bg_temporal_footprints  = self.bg_temporal_footprints[group_num]
+            
+            discarded_rois = self.discarded_rois[group_num]
+            removed_rois   = self.removed_rois[group_num]
+            locked_rois    = self.locked_rois[group_num]
+
+            # save centroids & traces
+            for z in range(video.shape[1]):
+                print("Calculating ROI activities for z={}...".format(z))
+
+                centroids = np.zeros((roi_spatial_footprints[z].shape[-1], 2))
+                kept_rois = [ roi for roi in range(roi_spatial_footprints[z].shape[-1]) if (roi not in removed_rois[z]) or (roi in locked_rois[z]) ]
+
+                footprints_2d = roi_spatial_footprints[z].toarray().reshape((video.shape[2], video.shape[3], roi_spatial_footprints[z].shape[-1]))
+
+                for roi in kept_rois:
+                    footprint_2d = footprints_2d[:, :, roi]
+
+                    mask = footprint_2d > 0
+
+                    contours = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
+
+                    if len(contours) > 0:
+                        contour = contours[0]
+
+                        M = cv2.moments(contour)
+                        if M["m00"] > 0:
+                            center_x = int(M["m10"] / M["m00"])
+                            center_y = int(M["m01"] / M["m00"])
+                        else:
+                            center_x = 0
+                            center_y = 0
+
+                        centroids[roi] = [center_x, center_y]
+
+                temporal_footprints = roi_temporal_footprints[z]
+
+                group_indices = [ i for i in range(len(self.video_paths)) if self.video_groups[i] == group_num ]
+                group_paths   = [ self.video_paths[i] for i in group_indices ]
+                group_lengths = [ self.video_lengths[i] for i in group_indices ]
+                
+                index = group_paths.index(video_path)
+
+                if index == 0:
+                    temporal_footprints = temporal_footprints[:, :group_lengths[0]]
+                else:
+                    temporal_footprints = temporal_footprints[:, np.sum(group_lengths[:index]):np.sum(group_lengths[:index+1])]
+
+                traces = temporal_footprints[kept_rois]
+                centroids = centroids[kept_rois]
+
+                print("Saving CSV for z={}...".format(z))
+
+                with open(os.path.join(video_dir_path, 'z_{}_traces.csv'.format(z)), 'w') as file:
+                    writer = csv.writer(file)
+
+                    writer.writerow(['ROI #'] + [ "Frame {}".format(frame) for frame in range(traces.shape[1]) ])
+
+                    for j in range(traces.shape[0]):
+                        writer.writerow(['{}'.format(kept_rois[j])] + traces[j].tolist())
+
+                with open(os.path.join(video_dir_path, 'z_{}_centroids.csv'.format(z)), 'w') as file:
+                    writer = csv.writer(file)
+
+                    writer.writerow(['Label', 'X', 'Y'])
+
+                    for j in range(centroids.shape[0]):
+                        writer.writerow(["ROI #{}".format(kept_rois[j]+1)] + centroids[j].tolist())
+
+                # save ROIs
+                self.save_rois(os.path.join(video_dir_path, 'roi_data.npy'), group_num=group_num, video_path=video_path)
+
+                print("Done.")
 
     def load_rois(self, load_path, group_num=None, video_path=None):
         # load the saved ROIs
@@ -240,6 +348,45 @@ class Controller():
 
     def video_paths_in_group(self, video_paths, group_num):
         return [ video_paths[i] for i in range(len(video_paths)) if self.video_groups[i] == group_num ]
+
+    def motion_correct(self):
+        mc_videos, mc_borders = utilities.motion_correct_multiple_videos(self.video_paths, self.video_groups, self.params['max_shift'], self.params['patch_stride'], self.params['patch_overlap'], use_multiprocessing=self.use_multiprocessing)
+
+        mc_video_paths = []
+        for i in range(len(mc_videos)):
+            video_path    = self.video_paths[i]
+            directory     = os.path.dirname(video_path)
+            filename      = os.path.basename(video_path)
+            mc_video_path = os.path.join(directory, os.path.splitext(filename)[0] + "_mc.tif")
+            
+            # save the motion-corrected video
+            tifffile.imsave(mc_video_path, mc_videos[i])
+            
+            mc_video_paths.append(mc_video_path)
+
+        self.mc_video_paths = mc_video_paths
+        self.mc_borders     = mc_borders
+
+        self.use_mc_video = True
+
+    def find_rois(self):
+        # set video paths
+        if self.use_mc_video and len(self.mc_video_paths) > 0:
+            video_paths = self.mc_video_paths
+        else:
+            video_paths = self.video_paths
+
+        roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = utilities.find_rois_multiple_videos(video_paths, self.video_groups, self.params, mc_borders=self.mc_borders, use_multiprocessing=self.use_multiprocessing, method=self.roi_finding_mode)
+
+        self.roi_spatial_footprints  = roi_spatial_footprints
+        self.roi_temporal_footprints = roi_temporal_footprints
+        self.roi_temporal_residuals  = roi_temporal_residuals
+        self.bg_spatial_footprints   = bg_spatial_footprints
+        self.bg_temporal_footprints  = bg_temporal_footprints
+        self.filtered_out_rois       = { group_num: [ [] for z in range(len(roi_spatial_footprints[0])) ] for group_num in np.unique(self.video_groups) }
+        self.discarded_rois          = { group_num: [ [] for z in range(len(roi_spatial_footprints[0])) ] for group_num in np.unique(self.video_groups) }
+        self.removed_rois            = { group_num: [ [] for z in range(len(roi_spatial_footprints[0])) ] for group_num in np.unique(self.video_groups) }
+        self.locked_rois             = { group_num: [ [] for z in range(len(roi_spatial_footprints[0])) ] for group_num in np.unique(self.video_groups) }
 
     def filter_rois(self, group_num):
         # set video paths

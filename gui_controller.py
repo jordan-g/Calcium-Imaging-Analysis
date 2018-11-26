@@ -31,8 +31,6 @@ class GUIController():
         # initialize variables
         self.reset_variables()
 
-        self.roi_finding_mode     = "cnmf" # which algorithm to use to find ROIs -- "cnmf" / "suite2p"
-
         # initialize state variables
         self.closing            = False # whether the user has requested to close the application
         self.roi_finding_queued = False
@@ -295,8 +293,14 @@ class GUIController():
         if load_path is not None and len(load_path) > 0:
             self.controller.load_rois(load_path, group_num=self.group_num, video_path=self.selected_video_path())
 
-            self.param_window.rois_loaded()
+            self.param_window.tab_widget.setTabEnabled(3, True)
+
             self.show_rois = True
+            self.param_window.show_rois_action.setEnabled(True)
+            self.param_window.show_rois_action.setChecked(True)
+            self.preview_window.show_rois_checkbox.setEnabled(True)
+            self.preview_window.show_rois_checkbox.setChecked(True)
+            self.param_window.save_rois_action.setEnabled(True)
 
             self.preview_window.timer.stop()
 
@@ -482,6 +486,9 @@ class GUIController():
 
         self.param_window.set_video_paths(self.video_paths())
 
+    def set_roi_finding_mode(self, mode):
+        self.controller.roi_finding_mode = mode
+
     def find_rois(self):
         video_paths = self.video_paths()
 
@@ -489,7 +496,7 @@ class GUIController():
         self.roi_finding_thread = ROIFindingThread(self.param_window)
 
         # set the parameters of the ROI finding thread
-        self.roi_finding_thread.set_parameters(video_paths, self.controller.video_groups, self.controller.params, self.controller.mc_borders, self.controller.use_multiprocessing, method=self.roi_finding_mode)
+        self.roi_finding_thread.set_parameters(video_paths, self.controller.video_groups, self.controller.params, self.controller.mc_borders, self.controller.use_multiprocessing, method=self.controller.roi_finding_mode)
 
         self.roi_finding_thread.progress.connect(self.roi_finding_progress)
         self.roi_finding_thread.finished.connect(self.roi_finding_ended)
@@ -521,6 +528,11 @@ class GUIController():
         self.param_window.roi_finding_ended()
 
         self.show_rois = True
+        self.param_window.show_rois_action.setEnabled(True)
+        self.param_window.show_rois_action.setChecked(True)
+        self.preview_window.show_rois_checkbox.setEnabled(True)
+        self.preview_window.show_rois_checkbox.setChecked(True)
+        self.param_window.save_rois_action.setEnabled(True)
 
         self.show_roi_image(update_overlay=True)
 
@@ -628,6 +640,10 @@ class GUIController():
 
                 self.selected_rois = []
                 self.preview_window.clear_text_and_outline_items()
+                roi_spatial_footprints = self.roi_spatial_footprints().toarray().reshape((self.video.shape[2], self.video.shape[3], self.roi_spatial_footprints().shape[-1])).transpose((1, 0, 2))
+                self.preview_window.compute_contours_and_overlays(self.mean_images[0].shape, roi_spatial_footprints)
+                self.preview_window.compute_kept_rois_overlay(roi_spatial_footprints, self.removed_rois())
+                self.preview_window.compute_discarded_rois_overlay(roi_spatial_footprints, self.removed_rois())
                 self.update_trace_plot()
 
                 self.preview_window.timer.stop()
@@ -670,9 +686,14 @@ class GUIController():
         self.controller.use_multiprocessing = use_multiprocessing
 
     def set_show_rois(self, show_rois):
+        print("Setting show ROIs from {} to {}.".format(self.show_rois, show_rois))
         self.show_rois = show_rois
 
-        self.show_roi_image(update_overlay=False, recreate_roi_images=False)
+        self.param_window.show_rois_action.setChecked(show_rois)
+        self.preview_window.show_rois_checkbox.setChecked(show_rois)
+
+        if self.mode not in ["loading", "motion_correcting"]:
+            self.show_roi_image(update_overlay=False, recreate_roi_images=False)
 
     def set_show_zscore(self, show_zscore):
         self.show_zscore = show_zscore
@@ -868,18 +889,19 @@ class GUIController():
     def update_trace_plot(self):
         temporal_footprints = self.roi_temporal_footprints()
 
-        group_indices = [ i for i in range(len(self.controller.video_paths)) if self.controller.video_groups[i] == self.group_num ]
-        group_paths   = [ self.controller.video_paths[i] for i in group_indices ]
-        group_lengths = [ self.controller.video_lengths[i] for i in group_indices ]
-        
-        index = group_paths.index(self.selected_video_path())
+        if temporal_footprints is not None:
+            group_indices = [ i for i in range(len(self.controller.video_paths)) if self.controller.video_groups[i] == self.group_num ]
+            group_paths   = [ self.controller.video_paths[i] for i in group_indices ]
+            group_lengths = [ self.controller.video_lengths[i] for i in group_indices ]
+            
+            index = group_paths.index(self.selected_video_path())
 
-        if index == 0:
-            temporal_footprints = temporal_footprints[:, :group_lengths[0]]
-        else:
-            temporal_footprints = temporal_footprints[:, np.sum(group_lengths[:index]):np.sum(group_lengths[:index+1])]
+            if index == 0:
+                temporal_footprints = temporal_footprints[:, :group_lengths[0]]
+            else:
+                temporal_footprints = temporal_footprints[:, np.sum(group_lengths[:index]):np.sum(group_lengths[:index+1])]
 
-        self.preview_window.plot_traces(temporal_footprints, self.selected_rois)
+            self.preview_window.plot_traces(temporal_footprints, self.selected_rois)
 
     def save_params(self):
         self.controller.save_params()

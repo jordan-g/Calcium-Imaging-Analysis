@@ -49,9 +49,9 @@ class PreviewWindow(QMainWindow):
         self.image_layout = QHBoxLayout(self.image_widget)
         self.image_layout.setContentsMargins(0, 0, 0, 0)
         
-        bg_color = (50, 50, 50)
+        bg_color = (20, 20, 20)
         palette = QPalette()
-        palette.setColor(QPalette.Background, QColor(50, 50, 50, 255))
+        palette.setColor(QPalette.Background, QColor(20, 20, 20, 255))
         self.main_widget.setAutoFillBackground(True)
         self.main_widget.setPalette(palette)
         # self.main_widget.setStyleSheet("background-color: rgba({}, {}, {}, 1);".format(bg_color[0], bg_color[1], bg_color[2]))
@@ -59,7 +59,7 @@ class PreviewWindow(QMainWindow):
         if bg_color[0] < 100:
             pg.setConfigOption('foreground', (150, 150, 150))
         else:
-            pg.setConfigOption('foreground', (50, 50, 50))
+            pg.setConfigOption('foreground', (20, 20, 20))
         self.image_plot = pg.GraphicsLayoutWidget()
         self.viewbox1 = self.image_plot.addViewBox(lockAspect=True,name='left_plot',border=None, row=0,col=0, invertY=True)
         self.viewbox2 = self.image_plot.addViewBox(lockAspect=True,name='right_plot',border=None, row=0,col=1, invertY=True)
@@ -123,9 +123,17 @@ class PreviewWindow(QMainWindow):
         # self.bottom_widget.setMinimumSize(800, 32)
         self.main_layout.addWidget(self.bottom_widget)
 
+        self.show_rois_checkbox = QCheckBox("Show ROIs")
+        self.show_rois_checkbox.setObjectName("Show ROIs")
+        self.show_rois_checkbox.setChecked(False)
+        self.show_rois_checkbox.setEnabled(False)
+        self.show_rois_checkbox.clicked.connect(self.toggle_show_rois)
+        self.bottom_layout.addWidget(self.show_rois_checkbox)
+
         self.bottom_layout.addStretch()
 
         label = QLabel("Colormap:")
+        label.setStyleSheet("color: rgba(150, 150, 150, 1);")
         self.bottom_layout.addWidget(label)
 
         combobox = QComboBox()
@@ -165,10 +173,20 @@ class PreviewWindow(QMainWindow):
         self.n_frames               = 1    # total number of frames
         self.video_name             = ""   # name of the currently showing video
 
+        self.show_rois_checkbox.setEnabled(False)
         self.image_plot.hide()
         self.bottom_widget.hide()
         self.timer.stop()
         self.setWindowTitle("Preview")
+
+    def toggle_show_rois(self):
+        show_rois = self.show_rois_checkbox.isChecked()
+
+        self.set_show_rois(show_rois)
+
+    def set_show_rois(self, show_rois):
+        print("Setting show ROIs to {}.".format(show_rois))
+        self.controller.set_show_rois(show_rois)
 
     def show_plot(self):
         self.image_plot.show()
@@ -350,8 +368,11 @@ class PreviewWindow(QMainWindow):
         # update image
         self.image = image
 
+        print(show_rois)
+
         # update image plot
         if recreate_roi_images:
+            print("Recreating ROI images.")
             self.update_left_image_plot(self.image, roi_spatial_footprints=self.controller.roi_spatial_footprints(), video_dimensions=self.controller.video.shape, removed_rois=self.controller.removed_rois(), selected_rois=self.controller.selected_rois, show_rois=show_rois, use_existing_roi_overlay=(not update_overlay))
             self.update_right_image_plot(self.image, roi_spatial_footprints=self.controller.roi_spatial_footprints(), video_dimensions=self.controller.video.shape, removed_rois=self.controller.removed_rois(), selected_rois=self.controller.selected_rois, show_rois=show_rois, use_existing_roi_overlay=(not update_overlay))
         else:
@@ -395,18 +416,16 @@ class PreviewWindow(QMainWindow):
         self.timer.start(int(1000.0/fps))
 
     def show_frame(self, frame):
-        self.update_left_image_plot(frame, show_rois=self.controller.show_rois)
+        self.update_left_image_plot(frame, roi_spatial_footprints=self.controller.roi_spatial_footprints(), video_dimensions=self.controller.video.shape, removed_rois=self.controller.removed_rois(), selected_rois=self.controller.selected_rois, show_rois=self.controller.show_rois, use_existing_roi_overlay=True)
 
     def update_frame(self):
         if self.frames is not None:
             # convert the current frame to RGB
             frame = cv2.cvtColor(self.frames[self.frame_num], cv2.COLOR_GRAY2RGB)
 
-            spatial_footprints = self.controller.roi_spatial_footprints()
-            removed_rois       = self.controller.removed_rois()
-
-            self.update_left_image_plot(frame, roi_spatial_footprints=spatial_footprints, video_dimensions=self.controller.video.shape, removed_rois=removed_rois, selected_rois=self.controller.selected_rois, show_rois=self.controller.show_rois, use_existing_roi_overlay=True)
-
+            # self.show_frame(frame)
+            self.update_left_image_plot(frame, roi_spatial_footprints=self.controller.roi_spatial_footprints(), video_dimensions=self.controller.video.shape, removed_rois=self.controller.removed_rois(), selected_rois=self.controller.selected_rois, show_rois=self.controller.show_rois, use_existing_roi_overlay=True)
+            
             # increment frame number (keeping it between 0 and n_frames)
             self.frame_num += 1
             self.frame_num = self.frame_num % self.n_frames
@@ -416,8 +435,48 @@ class PreviewWindow(QMainWindow):
 
     def update_left_image_plot(self, image, roi_spatial_footprints=None, video_dimensions=None, removed_rois=None, selected_rois=None, show_rois=False, use_existing_roi_overlay=False):
         self.kept_rois_image = self.create_kept_rois_image(image, self.controller.video_max, roi_spatial_footprints=roi_spatial_footprints, video_dimensions=video_dimensions, removed_rois=removed_rois, selected_rois=selected_rois, show_rois=show_rois, use_existing_roi_overlay=use_existing_roi_overlay)
-            
+
         self.left_plot.setImage(self.kept_rois_image, autoLevels=False)
+
+    def compute_contours_and_overlays(self, shape, roi_spatial_footprints):
+        print("Computing new contours.....")
+        self.roi_contours  = [ None for i in range(roi_spatial_footprints.shape[-1]) ]
+        self.flat_contours = []
+        
+        self.kept_rois_overlay  = np.zeros((shape[0], shape[1], 4)).astype(np.uint8)
+        self.roi_overlays = np.zeros((roi_spatial_footprints.shape[-1], shape[0], shape[1], 4)).astype(np.uint8)
+
+        for i in range(roi_spatial_footprints.shape[-1]):
+            maximum = np.amax(roi_spatial_footprints[:, :, i])
+            mask = (roi_spatial_footprints[:, :, i] > 0.1*maximum).copy()
+            
+            contours = cv2.findContours(mask.astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[-2]
+
+            color = roi_colors[i]
+
+            overlay = np.zeros((shape[0], shape[1], 4)).astype(np.uint8)
+            overlay[mask, :-1] = color
+            overlay[mask, -1] = 255.0*roi_spatial_footprints[mask, i]/maximum
+            self.roi_overlays[i] = overlay
+
+            self.roi_contours[i] = contours
+            self.flat_contours += contours
+
+    def compute_kept_rois_overlay(self, roi_spatial_footprints, removed_rois):
+        print("Computing kept ROIs overlay.")
+
+        kept_rois = [ roi for roi in range(roi_spatial_footprints.shape[-1]) if roi not in removed_rois ]
+
+        denominator = np.count_nonzero(self.roi_overlays[kept_rois], axis=0)
+        denominator[denominator == 0] = 1
+
+        self.kept_rois_overlay = (np.sum(self.roi_overlays[kept_rois], axis=0)/denominator).astype(np.uint8)
+
+    def compute_discarded_rois_overlay(self, roi_spatial_footprints, removed_rois):
+        denominator = np.count_nonzero(self.roi_overlays[removed_rois], axis=0)
+        denominator[denominator == 0] = 1
+
+        self.discarded_rois_overlay = (np.sum(self.roi_overlays[removed_rois], axis=0)/denominator).astype(np.uint8)
 
     def create_kept_rois_image(self, image, video_max, roi_spatial_footprints=None, video_dimensions=None, removed_rois=None, selected_rois=None, show_rois=False, use_existing_roi_overlay=False):
         image = 255.0*image/video_max
@@ -428,77 +487,72 @@ class PreviewWindow(QMainWindow):
         else:
             image = image.astype(np.uint8)
 
-        if show_rois:
-            if roi_spatial_footprints is not None:
-                roi_spatial_footprints = roi_spatial_footprints.toarray().reshape((video_dimensions[2], video_dimensions[3], roi_spatial_footprints.shape[-1])).transpose((1, 0, 2))
+        if roi_spatial_footprints is not None:
+            roi_spatial_footprints = roi_spatial_footprints.toarray().reshape((video_dimensions[2], video_dimensions[3], roi_spatial_footprints.shape[-1])).transpose((1, 0, 2))
 
-            if video_dimensions is not None:
-                if len(self.roi_contours) == 0 and roi_spatial_footprints is not None:
-                    print("Computing new contours.....")
-                    self.roi_contours  = [ None for i in range(roi_spatial_footprints.shape[-1]) ]
-                    self.flat_contours = []
+        if show_rois and self.kept_rois_overlay is None:
+            if not use_existing_roi_overlay or len(self.roi_contours) == 0:
+                self.compute_contours_and_overlays(image.shape, roi_spatial_footprints)
+                self.compute_kept_rois_overlay(roi_spatial_footprints, removed_rois)
+
+        if self.kept_rois_overlay is not None and roi_spatial_footprints is not None:
+            if show_rois:
+                image = utilities.blend_transparent(image, self.kept_rois_overlay)
+
+            kept_rois = [ roi for roi in range(roi_spatial_footprints.shape[-1]) if roi not in removed_rois ]
+
+            heatmap = self.controller.roi_temporal_footprints()[kept_rois]
+            
+            video_lengths = self.controller.selected_group_video_lengths()
+
+            index = self.controller.selected_group_video_paths().index(self.controller.selected_video_path())
+
+            if index == 0:
+                heatmap = heatmap[:, :video_lengths[0]]
+            else:
+                heatmap = heatmap[:, np.sum(video_lengths[:index]):np.sum(video_lengths[:index+1])]
+
+            if heatmap.shape[0] > 0:
+                # heatmap = scipy.ndimage.interpolation.shift(heatmap, (self.controller.z, 0), cval=0)
+                if self.controller.show_zscore:
+                    heatmap = (heatmap - np.mean(heatmap, axis=1)[:, np.newaxis])/np.std(heatmap, axis=1)[:, np.newaxis]
+
+                    if heatmap.shape[0] > 2:
+                        correlations = np.corrcoef(heatmap)
+                        i, j = np.unravel_index(correlations.argmin(), correlations.shape)
                     
-                    self.roi_overlay  = np.zeros((image.shape[0], image.shape[1], 4)).astype(np.uint8)
-                    self.roi_overlays = np.zeros((roi_spatial_footprints.shape[-1], image.shape[0], image.shape[1], 4)).astype(np.uint8)
-
-                    for i in range(roi_spatial_footprints.shape[-1]):
-                        maximum = np.amax(roi_spatial_footprints[:, :, i])
-                        mask = (roi_spatial_footprints[:, :, i] > 0.1*maximum).copy()
+                        heatmap_sorted = heatmap.copy()
+                        heatmap_sorted[0]  = heatmap[i]
+                        heatmap_sorted[-1] = heatmap[j]
                         
-                        contours = cv2.findContours(mask.astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[-2]
+                        remaining_indices = [ index for index in range(heatmap.shape[0]) if index not in (i, j) ]
+                        for k in range(1, heatmap.shape[0]-1):
+                            corrs_1 = [ correlations[i, index] for index in remaining_indices ]
+                            corrs_2 = [ correlations[j, index] for index in remaining_indices ]
+                            
+                            difference = [ corrs_1[l] - corrs_2[l] for l in range(len(remaining_indices)) ]
+                            l = np.argmax(difference)
+                            index = remaining_indices[l]
+                            
+                            heatmap_sorted[k] = heatmap[index]
+                            
+                            del remaining_indices[l]
 
-                        color = roi_colors[i]
+                        heatmap = heatmap_sorted
 
-                        overlay = np.zeros((image.shape[0], image.shape[1], 4)).astype(np.uint8)
-                        overlay[mask, :-1] = color
-                        overlay[mask, -1] = 255.0*roi_spatial_footprints[mask, i]/maximum
-                        self.roi_overlays[i] = overlay
+                heatmap2 = np.sort(heatmap, axis=0)
 
-                        self.roi_contours[i] = contours
-                        self.flat_contours += contours
+                self.heatmap_plot.setImage(heatmap.T, levels=(-2, 3))
+                self.heatmap_plot_2.setImage(heatmap2.T, levels=(-2, 3))
 
-                if roi_spatial_footprints is not None:
-                    kept_rois = [ roi for roi in range(roi_spatial_footprints.shape[-1]) if roi not in removed_rois ]
-
-                    denominator = np.count_nonzero(self.roi_overlays[kept_rois], axis=0)
-                    denominator[denominator == 0] = 1
-
-                    self.roi_overlay = (np.sum(self.roi_overlays[kept_rois], axis=0)/denominator).astype(np.uint8)
-
-                if len(self.roi_overlay.shape) > 0 and roi_spatial_footprints is not None:
-                    image = utilities.blend_transparent(image, self.roi_overlay)
-
-                    kept_rois = [ roi for roi in range(roi_spatial_footprints.shape[-1]) if roi not in removed_rois ]
-
-                    heatmap = self.controller.roi_temporal_footprints()[kept_rois].T
-                    
-                    video_lengths = self.controller.selected_group_video_lengths()
-
-                    index = self.controller.selected_group_video_paths().index(self.controller.selected_video_path())
-
-                    if index == 0:
-                        heatmap = heatmap[:video_lengths[0]]
-                    else:
-                        heatmap = heatmap[np.sum(video_lengths[:index]):np.sum(video_lengths[:index+1])]
-
-                    if heatmap.shape[1] > 0:
-                        # heatmap = scipy.ndimage.interpolation.shift(heatmap, (self.controller.z, 0), cval=0)
-                        if self.controller.show_zscore:
-                            heatmap = (heatmap - np.mean(heatmap, axis=0)[np.newaxis, :])/np.std(heatmap, axis=0)[np.newaxis, :]
-
-                        heatmap2 = np.sort(heatmap, axis=1)
-
-                        self.heatmap_plot.setImage(heatmap)
-                        self.heatmap_plot_2.setImage(heatmap2)
-
-                        self.heatmap_plot.setRect(QRectF(self.controller.z/self.controller.video.shape[1], 0, heatmap.shape[0], heatmap.shape[1]))
-                        self.heatmap_plot_2.setRect(QRectF(self.controller.z/self.controller.video.shape[1], 0, heatmap.shape[0], heatmap.shape[1]))
-                    else:
-                        self.heatmap_plot.setImage(None)
-                        self.heatmap_plot_2.setImage(None)
-                else:
-                    self.heatmap_plot.setImage(None)
-                    self.heatmap_plot_2.setImage(None)
+                self.heatmap_plot.setRect(QRectF(1 + self.controller.z/self.controller.video.shape[1], 0, heatmap.shape[1], heatmap.shape[0]))
+                self.heatmap_plot_2.setRect(QRectF(1 + self.controller.z/self.controller.video.shape[1], 0, heatmap.shape[1], heatmap.shape[0]))
+            else:
+                self.heatmap_plot.setImage(None)
+                self.heatmap_plot_2.setImage(None)
+        else:
+            self.heatmap_plot.setImage(None)
+            self.heatmap_plot_2.setImage(None)
 
         return image
 
@@ -511,20 +565,15 @@ class PreviewWindow(QMainWindow):
         else:
             image = image.astype(np.uint8)
 
-        if show_rois:
-            if roi_spatial_footprints is not None:
-                roi_spatial_footprints = roi_spatial_footprints.toarray().reshape((video_dimensions[2], video_dimensions[3], roi_spatial_footprints.shape[-1])).transpose((1, 0, 2))
+        if roi_spatial_footprints is not None:
+            roi_spatial_footprints = roi_spatial_footprints.toarray().reshape((video_dimensions[2], video_dimensions[3], roi_spatial_footprints.shape[-1])).transpose((1, 0, 2))
 
-            if video_dimensions is not None:
-                if roi_spatial_footprints is not None:
+        if show_rois and self.discarded_rois_overlay is None:
+            if not use_existing_roi_overlay or len(self.roi_contours) == 0:
+                self.compute_discarded_rois_overlay(roi_spatial_footprints, removed_rois)
 
-                    denominator = np.count_nonzero(self.roi_overlays[removed_rois], axis=0)
-                    denominator[denominator == 0] = 1
-
-                    self.discarded_rois_overlay = (np.sum(self.roi_overlays[removed_rois], axis=0)/denominator).astype(np.uint8)
-
-                if len(self.discarded_rois_overlay.shape) > 0 and roi_spatial_footprints is not None:
-                    image = utilities.blend_transparent(image, self.discarded_rois_overlay)
+        if show_rois and self.discarded_rois_overlay is not None and roi_spatial_footprints is not None:
+            image = utilities.blend_transparent(image, self.discarded_rois_overlay)
 
         return image
 
