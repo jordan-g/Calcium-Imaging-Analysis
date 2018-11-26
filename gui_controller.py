@@ -896,10 +896,19 @@ class GUIController():
             
             index = group_paths.index(self.selected_video_path())
 
+<<<<<<< HEAD
+=======
+        if len(self.controller.roi_temporal_footprints.keys()) > 0:
+>>>>>>> b26d2e4fbcf639cb3c3224c7598ca57169c5bb14
             if index == 0:
                 temporal_footprints = temporal_footprints[:, :group_lengths[0]]
             else:
                 temporal_footprints = temporal_footprints[:, np.sum(group_lengths[:index]):np.sum(group_lengths[:index+1])]
+<<<<<<< HEAD
+=======
+        else:
+            temporal_footprints = None
+>>>>>>> b26d2e4fbcf639cb3c3224c7598ca57169c5bb14
 
             self.preview_window.plot_traces(temporal_footprints, self.selected_rois)
 

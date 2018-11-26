@@ -226,7 +226,7 @@ class PreviewWindow(QMainWindow):
 
     def plot_traces(self, roi_temporal_footprints, selected_rois=[]):
         self.viewbox3.clear()
-        if len(selected_rois) > 0:
+        if roi_temporal_footprints is not None and len(selected_rois) > 0:
             max_value = np.amax(roi_temporal_footprints)
 
             x = np.arange(roi_temporal_footprints.shape[1]) + self.controller.z/self.controller.video.shape[1]
