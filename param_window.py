@@ -820,7 +820,7 @@ class ROIFindingWidget(ParamWidget):
         self.tab_widget.currentChanged.connect(self.tab_selected)
 
         # disable suite2p for now
-        self.tab_widget.setTabEnabled(1, False)
+        # self.tab_widget.setTabEnabled(1, False)
 
         self.main_layout.addStretch()
 
