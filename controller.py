@@ -403,6 +403,7 @@ class Controller():
         
         # keep locked ROIs
         for z in range(len(self.filtered_out_rois[group_num])):
+            self.discarded_rois[group_num][z] = []
             self.filtered_out_rois[group_num][z] = [ roi for roi in self.filtered_out_rois[group_num][z] if roi not in self.locked_rois[group_num][z] ]
             self.removed_rois[group_num][z]      = self.filtered_out_rois[group_num][z] + self.discarded_rois[group_num][z]
 

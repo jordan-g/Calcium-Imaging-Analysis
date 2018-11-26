@@ -482,7 +482,7 @@ class GUIController():
         if self.mode in ("loading", "motion_correcting"):
             self.play_video()
         else:
-            self.show_roi_image(update_overlay=True)
+            self.show_roi_image(recreate_roi_images=True)
 
         self.param_window.set_video_paths(self.video_paths())
 
@@ -567,7 +567,7 @@ class GUIController():
 
         self.preview_window.timer.stop()
 
-        self.show_roi_image(update_overlay=False)
+        self.show_roi_image()
 
         self.preview_window.setWindowTitle(os.path.basename(self.selected_video_path()))
 
@@ -655,7 +655,7 @@ class GUIController():
                 self.update_adjusted_mean_images()
 
                 # show the ROI image
-                self.show_roi_image(update_overlay=False, recreate_roi_images=True)
+                self.show_roi_image()
             elif param == "z":
                 self.z = value
 
@@ -670,7 +670,7 @@ class GUIController():
                 self.update_adjusted_mean_images()
 
                 # show the ROI image
-                self.show_roi_image(update_overlay=False, recreate_roi_images=True)
+                self.show_roi_image()
             if param == "z":
                 self.z = value
 
@@ -694,22 +694,22 @@ class GUIController():
         self.preview_window.show_rois_checkbox.setChecked(show_rois)
 
         if self.mode not in ["loading", "motion_correcting"]:
-            self.show_roi_image(update_overlay=False, recreate_roi_images=False)
+            self.show_roi_image()
 
     def set_show_zscore(self, show_zscore):
         self.show_zscore = show_zscore
 
-        self.show_roi_image(update_overlay=False)
+        self.show_roi_image()
 
-    def show_roi_image(self, update_overlay=False, recreate_roi_images=True):
-        self.preview_window.plot_image(self.adjusted_mean_images[self.z], video_max=255.0, show_rois=self.show_rois, update_overlay=update_overlay, recreate_roi_images=recreate_roi_images)
+    def show_roi_image(self, update_overlay=False, recreate_overlays=False, recreate_roi_images=True):
+        self.preview_window.plot_image(self.adjusted_mean_images[self.z], video_max=255.0, show_rois=self.show_rois, update_overlay=update_overlay, recreate_overlays=recreate_overlays, recreate_roi_images=recreate_roi_images)
 
     def filter_rois(self):
         self.controller.filter_rois(group_num=self.group_num)
 
         self.selected_rois = []
 
-        self.show_roi_image(update_overlay=True)
+        self.show_roi_image(recreate_overlays=True)
 
     def select_roi(self, roi_point, ctrl_held=False):
         if self.mode == "loading" or self.mode == "motion_correcting":
@@ -779,7 +779,10 @@ class GUIController():
 
         self.param_window.no_rois_selected()
 
-        self.show_roi_image()
+        self.preview_window.compute_kept_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
+        self.preview_window.compute_discarded_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
+
+        self.show_roi_image(recreate_overlays=True)
 
     def discard_all_rois(self):
         self.controller.discarded_rois[self.group_num][self.z] = np.arange(self.controller.roi_spatial_footprints[self.group_num][self.z].shape[1]).tolist()
@@ -789,7 +792,10 @@ class GUIController():
 
         self.param_window.no_rois_selected()
 
-        self.show_roi_image()
+        self.preview_window.compute_kept_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
+        self.preview_window.compute_discarded_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
+
+        self.show_roi_image(recreate_overlays=True)
 
     def keep_selected_rois(self):
         for roi in self.selected_rois:
@@ -799,7 +805,10 @@ class GUIController():
 
         self.param_window.no_rois_selected()
 
-        self.show_roi_image()
+        self.preview_window.compute_kept_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
+        self.preview_window.compute_discarded_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
+
+        self.show_roi_image(recreate_overlays=True)
 
     def merge_selected_rois(self):
         if len(self.selected_rois) > 1:
@@ -905,7 +914,7 @@ class GUIController():
         else:
             temporal_footprints = None
 
-            self.preview_window.plot_traces(temporal_footprints, self.selected_rois)
+        self.preview_window.plot_traces(temporal_footprints, self.selected_rois)
 
     def save_params(self):
         self.controller.save_params()
