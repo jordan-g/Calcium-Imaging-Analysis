@@ -699,7 +699,16 @@ class GUIController():
     def set_show_zscore(self, show_zscore):
         self.show_zscore = show_zscore
 
+        if self.show_zscore:
+            self.preview_window.viewbox3.setYRange(-2, 3)
+            self.preview_window.viewbox3.setLabel('left', "Z-Score")
+        else:
+            self.preview_window.viewbox3.setYRange(0, 1)
+            self.preview_window.viewbox3.setLabel('left', "Fluorescence")
+
         self.show_roi_image()
+
+        self.update_trace_plot()
 
     def show_roi_image(self, update_overlay=False, recreate_overlays=False, recreate_roi_images=True):
         self.preview_window.plot_image(self.adjusted_mean_images[self.z], video_max=255.0, show_rois=self.show_rois, update_overlay=update_overlay, recreate_overlays=recreate_overlays, recreate_roi_images=recreate_roi_images)
@@ -913,6 +922,10 @@ class GUIController():
                 temporal_footprints = temporal_footprints[:, np.sum(group_lengths[:index]):np.sum(group_lengths[:index+1])]
         else:
             temporal_footprints = None
+
+        if self.show_zscore:
+            print(temporal_footprints.shape)
+            temporal_footprints = (temporal_footprints - np.mean(temporal_footprints, axis=1)[:, np.newaxis])/np.std(temporal_footprints, axis=1)[:, np.newaxis]
 
         self.preview_window.plot_traces(temporal_footprints, self.selected_rois)
 

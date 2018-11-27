@@ -65,11 +65,16 @@ class PreviewWindow(QMainWindow):
         self.viewbox2 = self.image_plot.addViewBox(lockAspect=True,name='right_plot',border=None, row=0,col=1, invertY=True)
         self.viewbox1.setLimits(minXRange=10, minYRange=10, maxXRange=2000, maxYRange=2000)
         self.viewbox3 = self.image_plot.addPlot(name='trace_plot', row=1,col=0,colspan=2)
-        self.viewbox3.setLabel('left', "Fluorescence")
+        
         self.viewbox3.setLabel('bottom', "Frame #")
         self.viewbox3.showButtons()
         self.viewbox3.setMouseEnabled(x=True,y=False)
-        self.viewbox3.setYRange(0, 1)
+        if self.controller.show_zscore:
+            self.viewbox3.setYRange(-2, 3)
+            self.viewbox3.setLabel('left', "Z-Score")
+        else:
+            self.viewbox3.setYRange(0, 1)
+            self.viewbox3.setLabel('left', "Fluorescence")
         self.viewbox4 = self.image_plot.addPlot(name='heatmap_plot', row=2,col=0, colspan=2)
         self.viewbox4.setLabel('left', "ROI #")
         self.viewbox4.setMouseEnabled(x=True,y=False)
@@ -227,7 +232,10 @@ class PreviewWindow(QMainWindow):
     def plot_traces(self, roi_temporal_footprints, selected_rois=[]):
         self.viewbox3.clear()
         if roi_temporal_footprints is not None and len(selected_rois) > 0:
-            max_value = np.amax(roi_temporal_footprints)
+            if self.controller.show_zscore:
+                max_value = 1
+            else:
+                max_value = np.amax(roi_temporal_footprints)
 
             x = np.arange(roi_temporal_footprints.shape[1]) + self.controller.z/self.controller.video.shape[1]
             for i in range(len(selected_rois)):
@@ -544,8 +552,12 @@ class PreviewWindow(QMainWindow):
 
                 heatmap2 = np.sort(heatmap, axis=0)
 
-                self.heatmap_plot.setImage(heatmap.T, levels=(-2, 3))
-                self.heatmap_plot_2.setImage(heatmap2.T, levels=(-2, 3))
+                if self.controller.show_zscore:
+                    self.heatmap_plot.setImage(heatmap.T, levels=(-2, 3))
+                    self.heatmap_plot_2.setImage(heatmap2.T, levels=(-2, 3))
+                else:
+                    self.heatmap_plot.setImage(heatmap.T)
+                    self.heatmap_plot_2.setImage(heatmap2.T)
 
                 self.heatmap_plot.setRect(QRectF(1 + self.controller.z/self.controller.video.shape[1], 0, heatmap.shape[1], heatmap.shape[0]))
                 self.heatmap_plot_2.setRect(QRectF(1 + self.controller.z/self.controller.video.shape[1], 0, heatmap.shape[1], heatmap.shape[0]))
