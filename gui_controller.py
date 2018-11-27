@@ -23,6 +23,7 @@ except:
 class GUIController():
     def __init__(self, controller):
         self.controller = controller
+        self.show_zscore = True
         
         # create windows
         self.param_window   = param_window.ParamWindow(self)
@@ -924,7 +925,6 @@ class GUIController():
             temporal_footprints = None
 
         if self.show_zscore:
-            print(temporal_footprints.shape)
             temporal_footprints = (temporal_footprints - np.mean(temporal_footprints, axis=1)[:, np.newaxis])/np.std(temporal_footprints, axis=1)[:, np.newaxis]
 
         self.preview_window.plot_traces(temporal_footprints, self.selected_rois)
