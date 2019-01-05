@@ -4,7 +4,7 @@ import skimage
 import sys
 import os
 import glob
-import skimage.external.tifffile as tifffile
+import tifffile
 import time
 import shutil
 import h5py
@@ -412,43 +412,49 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
         group_num = group_nums[n]
         paths = [ video_paths[i] for i in range(len(video_paths)) if video_groups[i] == group_num ]
 
-        for i in range(len(paths)):
-            video_path = paths[i]
-
-            video = tifffile.imread(video_path)
-
-            if len(video.shape) == 3:
-                # add a z dimension
-                video = video[:, np.newaxis, :, :]
-
-            video = video.transpose((0, 1, 3, 2))
-
-            if len(mask_points) > 0 and n in mask_points.keys():
-                mask = np.zeros(video.shape[1:]).astype(np.uint8)
-                for z in range(video.shape[1]):
-                    if len(mask_points[n][z]) > 0:
-                        for p in mask_points[n][z]:
-                            # create mask image
-                            p = np.array(p + [p[0]]).astype(int)
-
-                            cv2.fillConvexPoly(mask[z, :, :], p, 1)
-
-                mask = mask.astype(bool)
-
-                if not params['invert_masks']:
-                    mask = mask == False
-
-                mask = np.repeat(mask[np.newaxis, :, :, :], video.shape[0], axis=0)
-
-                video[mask] = 0
-
-            if i == 0:
-                final_video = video.copy()
-                video = None
-            else:
-                final_video = np.concatenate([final_video, video], axis=0)
-
         final_video_path = "video_temp.tif"
+
+        with tifffile.TiffWriter(final_video_path, bigtiff=True) as tif:
+            for i in range(len(paths)):
+                video_path = paths[i]
+
+                video = tifffile.imread(video_path)
+
+                if len(video.shape) == 3:
+                    # add a z dimension
+                    video = video[:, np.newaxis, :, :]
+
+                video = video.transpose((0, 1, 3, 2))
+
+                if len(mask_points) > 0 and n in mask_points.keys():
+                    mask = np.zeros(video.shape[1:]).astype(np.uint8)
+                    for z in range(video.shape[1]):
+                        if len(mask_points[n][z]) > 0:
+                            for p in mask_points[n][z]:
+                                # create mask image
+                                p = np.fliplr(np.array(p + [p[0]])).astype(int)
+
+                                # print(p.shape)
+
+                                cv2.fillConvexPoly(mask[z, :, :], p, 1)
+
+                    mask = mask.astype(bool)
+
+                    if not params['invert_masks']:
+                        mask = mask == False
+
+                    mask = np.repeat(mask[np.newaxis, :, :, :], video.shape[0], axis=0)
+
+                    video[mask] = 0
+
+                tif.save(video)
+
+                # if i == 0:
+                #     final_video = video.copy()
+                #     video = None
+                # else:
+                #     final_video = np.concatenate([final_video, video], axis=0)
+
 
         if len(mc_borders.keys()) > 0:
             borders = mc_borders[group_num]
@@ -456,9 +462,9 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
             borders = None
 
         if method == "cnmf":
-            roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = find_rois_cnmf(final_video, final_video_path, params, mc_borders=borders, use_multiprocessing=use_multiprocessing)
+            roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = find_rois_cnmf(final_video_path, params, mc_borders=borders, use_multiprocessing=use_multiprocessing)
         else:
-            roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = find_rois_suite2p(final_video, final_video_path, params, mc_borders=borders, use_multiprocessing=use_multiprocessing)
+            roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = find_rois_suite2p(final_video_path, params, mc_borders=borders, use_multiprocessing=use_multiprocessing)
 
         new_roi_spatial_footprints[group_num]  = roi_spatial_footprints
         new_roi_temporal_footprints[group_num] = roi_temporal_footprints
@@ -475,17 +481,25 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
 
     return new_roi_spatial_footprints, new_roi_temporal_footprints, new_roi_temporal_residuals, new_bg_spatial_footprints, new_bg_temporal_footprints
 
-def find_rois_cnmf(video, video_path, params, mc_borders=None, use_multiprocessing=True):
+def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True):
     full_video_path = video_path
 
     directory = os.path.dirname(full_video_path)
     filename  = os.path.basename(full_video_path)
 
-    roi_spatial_footprints  = [ None for i in range(video.shape[1]) ]
-    roi_temporal_footprints = [ None for i in range(video.shape[1]) ]
-    roi_temporal_residuals  = [ None for i in range(video.shape[1]) ]
-    bg_spatial_footprints   = [ None for i in range(video.shape[1]) ]
-    bg_temporal_footprints  = [ None for i in range(video.shape[1]) ]
+    memmap_video = tifffile.memmap(video_path)
+    print(memmap_video.shape)
+
+    if len(memmap_video.shape) == 5:
+        num_z = memmap_video.shape[2]
+    else:
+        num_z = memmap_video.shape[1]
+
+    roi_spatial_footprints  = [ None for i in range(num_z) ]
+    roi_temporal_footprints = [ None for i in range(num_z) ]
+    roi_temporal_residuals  = [ None for i in range(num_z) ]
+    bg_spatial_footprints   = [ None for i in range(num_z) ]
+    bg_temporal_footprints  = [ None for i in range(num_z) ]
 
     # Create the cluster
     if use_multiprocessing:
@@ -499,11 +513,15 @@ def find_rois_cnmf(video, video_path, params, mc_borders=None, use_multiprocessi
     else:
         dview = None
 
-    for z in range(video.shape[1]):
+    for z in range(num_z):
         fname = os.path.splitext(filename)[0] + "_masked_z_{}.tif".format(z)
 
         video_path = os.path.join(directory, fname)
-        tifffile.imsave(video_path, video[:, z, :, :])
+
+        if len(memmap_video.shape) == 5:
+            tifffile.imsave(video_path, memmap_video[:, :, z, :, :].reshape((-1, memmap_video.shape[3], memmap_video.shape[4])))
+        else:
+            tifffile.imsave(video_path, memmap_video[:, z, :, :])
 
         # dataset dependent parameters
         fnames         = [video_path]          # filename to be processed
@@ -575,6 +593,8 @@ def find_rois_cnmf(video, video_path, params, mc_borders=None, use_multiprocessi
 
         if os.path.exists(fname):
             os.remove(fname)
+
+    del memmap_video
 
     if use_multiprocessing:
         if backend == 'multiprocessing':
