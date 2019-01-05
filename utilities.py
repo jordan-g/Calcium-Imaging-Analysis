@@ -443,12 +443,16 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
 
                                 cv2.fillConvexPoly(mask[z, :, :], p, 1)
 
+                        if np.sum(mask[z]) == 0:
+                            mask[z] = 1
+
                     mask = mask.astype(bool)
 
                     if not params['invert_masks']:
                         mask = mask == False
 
                     mask = np.repeat(mask[np.newaxis, :, :, :], video.shape[0], axis=0)
+
 
                     video[mask] = 0
 

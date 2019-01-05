@@ -474,10 +474,13 @@ class ParamWindow(QMainWindow):
     def roi_finding_started(self):
         self.roi_finding_widget.roi_finding_started()
 
+        self.tab_widget.setTabEnabled(0, False)
+        self.tab_widget.setTabEnabled(1, False)
+        self.tab_widget.setTabEnabled(3, False)
+
     def roi_finding_ended(self):
         self.roi_finding_widget.roi_finding_ended()
 
-        self.roi_finding_widget.find_rois_button.setEnabled(True)
         self.tab_widget.setTabEnabled(0, True)
         self.tab_widget.setTabEnabled(1, True)
         self.tab_widget.setTabEnabled(3, True)
@@ -902,12 +905,10 @@ class ROIFindingWidget(ParamWidget):
     def roi_finding_started(self):
         n_groups = len(np.unique(self.controller.video_groups()))
 
-        self.parent_widget.set_default_statusbar_message("Finding ROIs for group {}/{}...".format(1, n_groups))
         self.find_rois_button.setEnabled(False)
         self.draw_mask_button.setEnabled(False)
-        self.parent_widget.tab_widget.setTabEnabled(0, False)
-        self.parent_widget.tab_widget.setTabEnabled(1, False)
-        self.parent_widget.tab_widget.setTabEnabled(3, False)
+        
+        self.parent_widget.set_default_statusbar_message("Finding ROIs for group {}/{}...".format(1, n_groups))
 
     def update_roi_finding_progress(self, group_num):
         n_groups = len(np.unique(self.controller.video_groups()))
@@ -916,6 +917,9 @@ class ROIFindingWidget(ParamWidget):
              self.parent_widget.set_default_statusbar_message("Finding ROIs for group {}/{}...".format(group_num+2, n_groups))
 
     def roi_finding_ended(self):
+        self.find_rois_button.setEnabled(True)
+        self.draw_mask_button.setEnabled(True)
+
         self.parent_widget.set_default_statusbar_message("")
 
     def tab_selected(self):

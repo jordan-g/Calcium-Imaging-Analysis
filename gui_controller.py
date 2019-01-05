@@ -557,7 +557,6 @@ class GUIController():
         self.preview_window.show_rois_checkbox.setEnabled(True)
         self.preview_window.show_rois_checkbox.setChecked(True)
         self.param_window.save_rois_action.setEnabled(True)
-        self.param_window.draw_mask_button.setEnabled(False)
 
         self.show_roi_image(update_overlay=True)
 

@@ -640,9 +640,15 @@ class PreviewWindow(QMainWindow):
 
                 heatmap2 = np.sort(heatmap, axis=0)
 
+                heatmap[heatmap > 3] = 3
+                heatmap[heatmap < -2] = -2
+
+                heatmap2[heatmap2 > 3] = 3
+                heatmap2[heatmap2 < -2] = -2
+
                 if self.controller.show_zscore:
-                    self.heatmap_plot.setImage(heatmap.T, levels=(-2, 3))
-                    self.heatmap_plot_2.setImage(heatmap2.T, levels=(-2, 3))
+                    self.heatmap_plot.setImage(heatmap.T, levels=(-2.01, 3.01))
+                    self.heatmap_plot_2.setImage(heatmap2.T, levels=(-2.01, 3.01))
                 else:
                     self.heatmap_plot.setImage(heatmap.T)
                     self.heatmap_plot_2.setImage(heatmap2.T)
