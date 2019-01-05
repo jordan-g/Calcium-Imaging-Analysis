@@ -1,6 +1,6 @@
 import os
 import numpy as np
-import skimage.external.tifffile as tifffile
+import tifffile
 import cv2
 import csv
 import scipy
@@ -188,13 +188,15 @@ class GUIController():
         # open the video
         base_name = os.path.basename(video_path)
         if base_name.endswith('.tif') or base_name.endswith('.tiff'):
-            self.video = tifffile.imread(video_path)
+            self.video = tifffile.memmap(video_path)
         else:
             return
 
         if len(self.video.shape) < 3:
             print("Error: Opened file is not a video -- not enough dimensions.")
             return
+
+        print(type(self.video))
 
         # figure out the dynamic range of the video
         max_value = np.amax(self.video)
@@ -223,8 +225,10 @@ class GUIController():
         # flip video 90 degrees to match what is shown in Fiji
         self.video = self.video.transpose((0, 1, 3, 2))
 
+        print(type(self.video))
+
         # remove NaNs
-        self.video = np.nan_to_num(self.video).astype(np.float32)
+        # self.video = np.nan_to_num(self.video)
 
         print("Opened video with shape {}.".format(self.video.shape))
 
@@ -260,7 +264,7 @@ class GUIController():
         if index is not None and (index != self.selected_video or force):
             print("Video #{} selected.".format(index+1))
 
-            group_changed =  self.group_num != self.controller.video_groups[self.selected_video]
+            group_changed = self.group_num != self.controller.video_groups[index]
 
             self.selected_video = index
             self.group_num      = self.controller.video_groups[self.selected_video]
@@ -298,8 +302,7 @@ class GUIController():
         self.group_num      = self.controller.video_groups[self.selected_video]
 
     def save_rois(self):
-        self.process_all_videos()
-        self.process_all_videos()
+        self.save_all_rois()
 
     def load_rois(self):
         # let the user pick saved ROIs
@@ -341,7 +344,10 @@ class GUIController():
             # open the newest video at index 0
             self.video_selected(0, force=True)
 
-    def process_all_videos(self):
+    def remove_group(self, group):
+        self.controller.remove_group(group)
+
+    def save_all_rois(self):
         save_directory = str(QFileDialog.getExistingDirectory(self.param_window, "Select Directory"))
 
         video_paths = self.video_paths()
@@ -358,7 +364,7 @@ class GUIController():
             if not os.path.exists(video_dir_path):
                 os.makedirs(video_dir_path)
 
-            video = tifffile.imread(video_path)
+            video = tifffile.memmap(video_path)
 
             if len(video.shape) == 3:
                 # add z dimension
@@ -551,6 +557,7 @@ class GUIController():
         self.preview_window.show_rois_checkbox.setEnabled(True)
         self.preview_window.show_rois_checkbox.setChecked(True)
         self.param_window.save_rois_action.setEnabled(True)
+        self.param_window.draw_mask_button.setEnabled(False)
 
         self.show_roi_image(update_overlay=True)
 
@@ -872,7 +879,7 @@ class GUIController():
             for i in range(len(video_paths)):
                 video_path = video_paths[i]
 
-                video = tifffile.imread(video_path)
+                video = tifffile.memmap(video_path)
                     
                 if len(video.shape) == 3:
                     # add a z dimension

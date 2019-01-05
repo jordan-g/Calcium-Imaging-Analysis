@@ -320,6 +320,8 @@ class ParamWindow(QMainWindow):
         if len(items_to_remove) > 0:
             self.remove_items(items_to_remove)
 
+        self.controller.remove_group(group_num)
+
     def item_selected(self):
         tab_index = self.tab_widget.currentIndex()
         
@@ -475,7 +477,7 @@ class ParamWindow(QMainWindow):
     def roi_finding_ended(self):
         self.roi_finding_widget.roi_finding_ended()
 
-        self.roi_finding_widget.process_video_button.setEnabled(True)
+        self.roi_finding_widget.find_rois_button.setEnabled(True)
         self.tab_widget.setTabEnabled(0, True)
         self.tab_widget.setTabEnabled(1, True)
         self.tab_widget.setTabEnabled(3, True)
@@ -485,7 +487,7 @@ class ParamWindow(QMainWindow):
         self.tab_widget.setTabEnabled(1, False)
         self.tab_widget.setTabEnabled(3, False)
         self.roi_finding_widget.param_widget.setEnabled(False)
-        self.roi_finding_widget.process_video_button.setEnabled(False)
+        self.roi_finding_widget.find_rois_button.setEnabled(False)
         self.roi_finding_widget.show_zscore_checkbox.setEnabled(False)
         self.roi_finding_widget.use_multiprocessing_checkbox.setEnabled(False)
         self.main_param_widget.setEnabled(False)
@@ -498,7 +500,7 @@ class ParamWindow(QMainWindow):
         self.tab_widget.setTabEnabled(1, True)
         self.tab_widget.setTabEnabled(3, True)
         self.roi_finding_widget.param_widget.setEnabled(True)
-        self.roi_finding_widget.process_video_button.setEnabled(True)
+        self.roi_finding_widget.find_rois_button.setEnabled(True)
         self.roi_finding_widget.show_zscore_checkbox.setEnabled(True)
         self.roi_finding_widget.use_multiprocessing_checkbox.setEnabled(True)
         self.main_param_widget.setEnabled(True)
@@ -591,13 +593,13 @@ class VideoLoadingWidget(QWidget):
         self.use_multiprocessing_checkbox.clicked.connect(lambda:self.controller.set_use_multiprocessing(self.use_multiprocessing_checkbox.isChecked()))
         self.button_layout_2.addWidget(self.use_multiprocessing_checkbox)
 
-        self.process_all_button = HoverButton('Motion Correct && Find ROIs...', self.parent_widget, self.parent_widget.statusBar())
-        self.process_all_button.setHoverMessage("Motion correct and find ROIs for all videos using the current parameters.")
-        self.process_all_button.setStyleSheet('font-weight: bold;')
-        self.process_all_button.setIcon(QIcon("icons/fast_forward_icon.png"))
-        self.process_all_button.setIconSize(QSize(18,16))
-        self.process_all_button.clicked.connect(self.controller.motion_correct_and_find_rois)
-        self.button_layout_2.addWidget(self.process_all_button)
+        self.mc_and_find_rois_button = HoverButton('Motion Correct && Find ROIs...', self.parent_widget, self.parent_widget.statusBar())
+        self.mc_and_find_rois_button.setHoverMessage("Motion correct and find ROIs for all videos using the current parameters.")
+        self.mc_and_find_rois_button.setStyleSheet('font-weight: bold;')
+        self.mc_and_find_rois_button.setIcon(QIcon("icons/fast_forward_icon.png"))
+        self.mc_and_find_rois_button.setIconSize(QSize(18,16))
+        self.mc_and_find_rois_button.clicked.connect(self.controller.motion_correct_and_find_rois)
+        self.button_layout_2.addWidget(self.mc_and_find_rois_button)
 
 class ParamWidget(QWidget):
     def __init__(self, parent_widget, controller, title, stylesheet=TITLE_STYLESHEET):
@@ -884,13 +886,13 @@ class ROIFindingWidget(ParamWidget):
         self.draw_mask_button.clicked.connect(self.controller.toggle_mask_mode)
         self.button_layout.addWidget(self.draw_mask_button)
 
-        self.process_video_button = HoverButton('Find ROIs', self.parent_widget, self.parent_widget.statusBar())
-        self.process_video_button.setHoverMessage("Find ROIs using the watershed algorithm.")
-        self.process_video_button.setIcon(QIcon("icons/action_icon.png"))
-        self.process_video_button.setIconSize(QSize(13,16))
-        self.process_video_button.setStyleSheet('font-weight: bold;')
-        self.process_video_button.clicked.connect(self.controller.find_rois)
-        self.button_layout.addWidget(self.process_video_button)
+        self.find_rois_button = HoverButton('Find ROIs', self.parent_widget, self.parent_widget.statusBar())
+        self.find_rois_button.setHoverMessage("Find ROIs using the watershed algorithm.")
+        self.find_rois_button.setIcon(QIcon("icons/action_icon.png"))
+        self.find_rois_button.setIconSize(QSize(13,16))
+        self.find_rois_button.setStyleSheet('font-weight: bold;')
+        self.find_rois_button.clicked.connect(self.controller.find_rois)
+        self.button_layout.addWidget(self.find_rois_button)
 
     def toggle_show_zscore(self):
         show_zscore = self.show_zscore_checkbox.isChecked()
@@ -901,7 +903,8 @@ class ROIFindingWidget(ParamWidget):
         n_groups = len(np.unique(self.controller.video_groups()))
 
         self.parent_widget.set_default_statusbar_message("Finding ROIs for group {}/{}...".format(1, n_groups))
-        self.process_video_button.setEnabled(False)
+        self.find_rois_button.setEnabled(False)
+        self.draw_mask_button.setEnabled(False)
         self.parent_widget.tab_widget.setTabEnabled(0, False)
         self.parent_widget.tab_widget.setTabEnabled(1, False)
         self.parent_widget.tab_widget.setTabEnabled(3, False)
@@ -1054,13 +1057,13 @@ class ROIFilteringWidget(ParamWidget):
         self.filter_rois_button.clicked.connect(self.controller.filter_rois)
         self.button_layout.addWidget(self.filter_rois_button)
 
-        self.process_videos_button = HoverButton('Save...', self.parent_widget, self.parent_widget.statusBar())
-        self.process_videos_button.setHoverMessage("Save traces, ROI centroids and other ROI data.")
-        self.process_videos_button.setIcon(QIcon("icons/save_icon.png"))
-        self.process_videos_button.setIconSize(QSize(16,16))
-        self.process_videos_button.setStyleSheet('font-weight: bold;')
-        self.process_videos_button.clicked.connect(self.controller.process_all_videos)
-        self.button_layout.addWidget(self.process_videos_button)
+        self.save_rois_button = HoverButton('Save...', self.parent_widget, self.parent_widget.statusBar())
+        self.save_rois_button.setHoverMessage("Save traces, ROI centroids and other ROI data.")
+        self.save_rois_button.setIcon(QIcon("icons/save_icon.png"))
+        self.save_rois_button.setIconSize(QSize(16,16))
+        self.save_rois_button.setStyleSheet('font-weight: bold;')
+        self.save_rois_button.clicked.connect(self.controller.save_all_rois)
+        self.button_layout.addWidget(self.save_rois_button)
 
     def toggle_show_zscore(self):
         show_zscore = self.show_zscore_checkbox.isChecked()

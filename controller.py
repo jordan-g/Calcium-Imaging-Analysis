@@ -1,7 +1,7 @@
 import os
 import json
 import numpy as np
-import skimage.external.tifffile as tifffile
+import tifffile
 import cv2
 import csv
 
@@ -102,12 +102,20 @@ class Controller():
         else:
             group_num = 0
 
+
         # store video lengths and group numbers
         for video_path in video_paths:
-            video = tifffile.imread(video_path)
+            video = tifffile.memmap(video_path)
             self.video_lengths.append(video.shape[0])
             self.video_groups.append(group_num)
             self.tail_angles.append(None)
+
+            if len(video.shape) > 3:
+                num_z = video.shape[1]
+            else:
+                num_z = 1
+
+        self.mask_points[group_num] = [ [] for z in range(num_z) ]
 
     def save_rois(self, save_path, group_num=None, video_path=None):
         if group_num is None:
@@ -167,7 +175,7 @@ class Controller():
         # save the ROI data
         np.save(save_path, roi_data)
     
-    def process_videos(self, save_directory):
+    def save_all_rois(self, save_directory):
         # set video paths
         if self.use_mc_video and len(self.mc_video_paths) > 0:
             video_paths = self.mc_video_paths
@@ -186,7 +194,7 @@ class Controller():
             if not os.path.exists(video_dir_path):
                 os.makedirs(video_dir_path)
 
-            video = tifffile.imread(video_path)
+            video = tifffile.memmap(video_path)
 
             if len(video.shape) == 3:
                 # add z dimension
@@ -353,6 +361,30 @@ class Controller():
         if len(self.video_paths) == 0:
             # reset variables
             self.reset_variables()
+
+    def remove_group(self, group):
+        if group in self.mc_borders.keys():
+            del self.mc_borders[group]
+        if group in self.roi_spatial_footprints.keys():
+            del self.roi_spatial_footprints[group]
+        if group in self.roi_temporal_footprints.keys():
+            del self.roi_temporal_footprints[group]
+        if group in self.roi_temporal_residuals.keys():
+            del self.roi_temporal_residuals[group]
+        if group in self.bg_spatial_footprints.keys():
+            del self.bg_spatial_footprints[group]
+        if group in self.bg_temporal_footprints.keys():
+            del self.bg_temporal_footprints[group]
+        if group in self.filtered_out_rois.keys():
+            del self.filtered_out_rois[group]
+        if group in self.mask_points.keys():
+            del self.mask_points[group]
+        if group in self.discarded_rois.keys():
+            del self.discarded_rois[group]
+        if group in self.removed_rois.keys():
+            del self.removed_rois[group]
+        if group in self.locked_rois.keys():
+            del self.locked_rois[group]
 
     def video_paths_in_group(self, video_paths, group_num):
         return [ video_paths[i] for i in range(len(video_paths)) if self.video_groups[i] == group_num ]

@@ -511,7 +511,8 @@ class PreviewWindow(QMainWindow):
     def update_frame(self):
         if self.frames is not None:
             # convert the current frame to RGB
-            frame = cv2.cvtColor(self.frames[self.frame_num], cv2.COLOR_GRAY2RGB)
+            # frame = cv2.cvtColor(self.frames[self.frame_num].astype(np.float32), cv2.COLOR_GRAY2RGB)
+            frame = self.frames[self.frame_num]
 
             # self.show_frame(frame)
             self.update_left_image_plot(frame, roi_spatial_footprints=self.controller.roi_spatial_footprints(), video_dimensions=self.controller.video.shape, removed_rois=self.controller.removed_rois(), selected_rois=self.controller.selected_rois, show_rois=self.controller.show_rois)

@@ -412,13 +412,18 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
         group_num = group_nums[n]
         paths = [ video_paths[i] for i in range(len(video_paths)) if video_groups[i] == group_num ]
 
-        final_video_path = "video_temp.tif"
+        final_video_path = "final_video_temp.tif"
 
         with tifffile.TiffWriter(final_video_path, bigtiff=True) as tif:
             for i in range(len(paths)):
                 video_path = paths[i]
+                new_video_path = "video_temp.tif"
 
-                video = tifffile.imread(video_path)
+                shutil.copyfile(video_path, new_video_path)
+
+                video = tifffile.memmap(new_video_path)
+
+                print("memmap shape", video.shape)
 
                 if len(video.shape) == 3:
                     # add a z dimension
@@ -449,12 +454,10 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
 
                 tif.save(video)
 
-                # if i == 0:
-                #     final_video = video.copy()
-                #     video = None
-                # else:
-                #     final_video = np.concatenate([final_video, video], axis=0)
+                del video
 
+                if os.path.exists(new_video_path):
+                    os.remove(new_video_path)
 
         if len(mc_borders.keys()) > 0:
             borders = mc_borders[group_num]
