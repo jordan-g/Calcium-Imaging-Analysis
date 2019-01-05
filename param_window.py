@@ -12,6 +12,12 @@ except:
 import os
 import numpy as np
 
+try:
+    import suite2p
+    suite2p_enabled = True
+except:
+    suite2p_enabled = False
+
 # set styles of title and subtitle labels
 TITLE_STYLESHEET           = "font-size: 16px; font-weight: bold;"
 SUBTITLE_STYLESHEET        = "font-size: 14px; font-weight: bold;"
@@ -474,6 +480,32 @@ class ParamWindow(QMainWindow):
         self.tab_widget.setTabEnabled(1, True)
         self.tab_widget.setTabEnabled(3, True)
 
+    def mask_drawing_started(self):
+        self.tab_widget.setTabEnabled(0, False)
+        self.tab_widget.setTabEnabled(1, False)
+        self.tab_widget.setTabEnabled(3, False)
+        self.roi_finding_widget.param_widget.setEnabled(False)
+        self.roi_finding_widget.process_video_button.setEnabled(False)
+        self.roi_finding_widget.show_zscore_checkbox.setEnabled(False)
+        self.roi_finding_widget.use_multiprocessing_checkbox.setEnabled(False)
+        self.main_param_widget.setEnabled(False)
+        self.videos_list_widget.setEnabled(False)
+        self.roi_finding_widget.draw_mask_button.setStyleSheet('font-weight: bold;')
+        self.roi_finding_widget.draw_mask_button.setText("Done")
+
+    def mask_drawing_ended(self):
+        self.tab_widget.setTabEnabled(0, True)
+        self.tab_widget.setTabEnabled(1, True)
+        self.tab_widget.setTabEnabled(3, True)
+        self.roi_finding_widget.param_widget.setEnabled(True)
+        self.roi_finding_widget.process_video_button.setEnabled(True)
+        self.roi_finding_widget.show_zscore_checkbox.setEnabled(True)
+        self.roi_finding_widget.use_multiprocessing_checkbox.setEnabled(True)
+        self.main_param_widget.setEnabled(True)
+        self.videos_list_widget.setEnabled(True)
+        self.roi_finding_widget.draw_mask_button.setStyleSheet('font-weight: normal;')
+        self.roi_finding_widget.draw_mask_button.setText("Edit Masks...")
+
     def update_motion_correction_progress(self, group_num):
         self.motion_correction_widget.update_motion_correction_progress(group_num)
 
@@ -819,8 +851,9 @@ class ROIFindingWidget(ParamWidget):
         self.tab_widget.addTab(self.suite2p_roi_finding_widget, "Suite2p")
         self.tab_widget.currentChanged.connect(self.tab_selected)
 
-        # disable suite2p for now
-        # self.tab_widget.setTabEnabled(1, False)
+        # disable suite2p if the module hasn't been installed
+        if not suite2p_enabled:
+            self.tab_widget.setTabEnabled(1, False)
 
         self.main_layout.addStretch()
 
@@ -843,6 +876,13 @@ class ROIFindingWidget(ParamWidget):
         self.use_multiprocessing_checkbox.setChecked(True)
         self.use_multiprocessing_checkbox.clicked.connect(lambda:self.controller.set_use_multiprocessing(self.use_multiprocessing_checkbox.isChecked()))
         self.button_layout.addWidget(self.use_multiprocessing_checkbox)
+
+        self.draw_mask_button = HoverButton('Edit Masks...', self.parent_widget, self.parent_widget.statusBar())
+        self.draw_mask_button.setHoverMessage("Draw masks to constrain where ROIs are found (or remove existing masks).")
+        self.draw_mask_button.setIcon(QIcon("icons/action_icon.png"))
+        self.draw_mask_button.setIconSize(QSize(13,16))
+        self.draw_mask_button.clicked.connect(self.controller.toggle_mask_mode)
+        self.button_layout.addWidget(self.draw_mask_button)
 
         self.process_video_button = HoverButton('Find ROIs', self.parent_widget, self.parent_widget.statusBar())
         self.process_video_button.setHoverMessage("Find ROIs using the watershed algorithm.")

@@ -36,7 +36,8 @@ DEFAULT_PARAMS = {'gamma'                : 1.0,
                   'neuropil_radius_ratio': 3,
                   'inner_neuropil_radius': 2,
                   'min_neuropil_pixels'  : 350,
-                  'tail_data_fps'        : 200
+                  'tail_data_fps'        : 200,
+                  'invert_masks'         : False
                   }
 
 # set filename for saving current parameters
@@ -84,6 +85,7 @@ class Controller():
         self.bg_spatial_footprints   = {}
         self.bg_temporal_footprints  = {}
         self.filtered_out_rois       = {}
+        self.mask_points             = {}
 
     def reset_roi_filtering_variables(self):
         self.discarded_rois = {}
@@ -125,7 +127,8 @@ class Controller():
                         'discarded_rois'         : self.discarded_rois,
                         'removed_rois'           : self.removed_rois,
                         'locked_rois'            : self.locked_rois,
-                        'video_paths'            : video_paths}
+                        'video_paths'            : video_paths,
+                        'masks'                  : self.mask_points}
         else:
             group_indices = [ i for i in range(len(self.video_paths)) if self.video_groups[i] == group_num ]
             group_lengths = [ self.video_lengths[i] for i in group_indices ]
@@ -139,6 +142,7 @@ class Controller():
             discarded_rois         = self.discarded_rois[group_num]
             removed_rois           = self.removed_rois[group_num]
             locked_rois            = self.locked_rois[group_num]
+            masks                  = self.mask_points[group_num]
             if index == 0:
                 roi_temporal_footprints = [ self.roi_temporal_footprints[group_num][z][:, :group_lengths[0]] for z in range(len(roi_spatial_footprints)) ]
                 roi_temporal_residuals  = [ self.roi_temporal_residuals[group_num][z][:, :group_lengths[0]] for z in range(len(roi_spatial_footprints)) ]
@@ -157,7 +161,8 @@ class Controller():
                         'discarded_rois'         : discarded_rois,
                         'removed_rois'           : removed_rois,
                         'locked_rois'            : locked_rois,
-                        'video_paths'            : [video_path]}
+                        'video_paths'            : [video_path],
+                        'masks'                  : masks}
 
         # save the ROI data
         np.save(save_path, roi_data)
@@ -285,6 +290,7 @@ class Controller():
             self.discarded_rois          = roi_data['discarded_rois']
             self.removed_rois            = roi_data['removed_rois']
             self.locked_rois             = roi_data['locked_rois']
+            self.mask_points                   = roi_data['masks']
         else:
             roi_spatial_footprints  = roi_data['roi_spatial_footprints']
             roi_temporal_footprints = roi_data['roi_temporal_footprints']
@@ -295,6 +301,7 @@ class Controller():
             discarded_rois          = roi_data['discarded_rois']
             removed_rois            = roi_data['removed_rois']
             locked_rois             = roi_data['locked_rois']
+            masks                   = roi_data['masks']
 
             self.roi_spatial_footprints[group_num] = roi_spatial_footprints
             self.bg_spatial_footprints[group_num]  = bg_spatial_footprints
@@ -302,6 +309,7 @@ class Controller():
             self.discarded_rois[group_num]         = discarded_rois
             self.removed_rois[group_num]           = removed_rois
             self.locked_rois[group_num]            = locked_rois
+            self.mask_points[group_num]                  = masks
 
             group_indices = [ i for i in range(len(self.video_paths)) if self.video_groups[i] == group_num ]
             group_lengths = [ self.video_lengths[i] for i in group_indices ]
@@ -431,6 +439,17 @@ class Controller():
             self.locked_rois[group_num][z].append(roi)
 
         self.removed_rois[group_num][z] = self.filtered_out_rois[group_num][z] + self.discarded_rois[group_num][z]
+
+    def add_mask(self, mask_points, z, num_z, group_num):
+        if len(mask_points) >= 3:
+            if group_num not in self.mask_points.keys():
+                self.mask_points[group_num] = [ [] for z in range(num_z) ]
+                
+            self.mask_points[group_num][z].append(mask_points)
+
+    def delete_mask(self, mask_num, z, group_num):
+        if mask_num < len(self.mask_points[group_num][z]):
+            del self.mask_points[group_num][z][mask_num]
 
     def save_params(self):
         json.dump(self.params, open(PARAMS_FILENAME, "w"))

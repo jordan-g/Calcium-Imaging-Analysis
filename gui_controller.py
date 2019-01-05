@@ -35,6 +35,7 @@ class GUIController():
         # initialize state variables
         self.closing            = False # whether the user has requested to close the application
         self.roi_finding_queued = False
+        self.drawing_mask       = False
 
         # initialize thread variables
         self.motion_correction_thread = None
@@ -58,6 +59,8 @@ class GUIController():
         self.selected_video       = 0      # which video is selected
         self.group_num            = 0      # group number of currently loaded video
         self.video_max            = 1      # dynamic range of currently loaded video
+        self.mask_images          = None
+        self.selected_mask        = 0
 
     def roi_spatial_footprints(self):
         if len(self.controller.roi_spatial_footprints.keys()) > 0:
@@ -237,6 +240,16 @@ class GUIController():
     def update_adjusted_mean_images(self):
         self.adjusted_mean_images = [ utilities.adjust_gamma(utilities.adjust_contrast(mean_image, self.controller.params['contrast']), self.controller.params['gamma']) for mean_image in self.mean_images ]
 
+    def update_mask_images(self):
+        self.mask_images = [ [] for z in range(self.video.shape[1]) ]
+
+        for z in range(self.video.shape[1]):
+            mask_points_list = self.controller.mask_points[self.group_num][z]
+
+            for mask_points in mask_points_list:
+                mask = self.create_mask_image(z, mask_points)
+                self.mask_images[z].append(mask)
+
     def update_adjusted_video(self):
         self.adjusted_video = utilities.adjust_gamma(utilities.adjust_contrast(self.video[:, self.z, :, :], self.controller.params['contrast']), self.controller.params['gamma'])
 
@@ -247,11 +260,15 @@ class GUIController():
         if index is not None and (index != self.selected_video or force):
             print("Video #{} selected.".format(index+1))
 
+            group_changed =  self.group_num != self.controller.video_groups[self.selected_video]
+
             self.selected_video = index
             self.group_num      = self.controller.video_groups[self.selected_video]
 
             self.open_video(self.selected_video_path())
             self.update_adjusted_mean_images()
+            if group_changed:
+                self.update_mask_images()
 
             if self.mode in ("loading", "motion_correcting"):
                 self.play_video()
@@ -497,7 +514,7 @@ class GUIController():
         self.roi_finding_thread = ROIFindingThread(self.param_window)
 
         # set the parameters of the ROI finding thread
-        self.roi_finding_thread.set_parameters(video_paths, self.controller.video_groups, self.controller.params, self.controller.mc_borders, self.controller.use_multiprocessing, method=self.controller.roi_finding_mode)
+        self.roi_finding_thread.set_parameters(video_paths, self.controller.video_groups, self.controller.params, self.controller.mc_borders, self.controller.use_multiprocessing, method=self.controller.roi_finding_mode, mask_points=self.controller.mask_points)
 
         self.roi_finding_thread.progress.connect(self.roi_finding_progress)
         self.roi_finding_thread.finished.connect(self.roi_finding_ended)
@@ -641,6 +658,7 @@ class GUIController():
 
                 self.selected_rois = []
                 self.preview_window.clear_text_and_outline_items()
+                self.preview_window.clear_mask_items()
                 if self.roi_spatial_footprints() is not None:
                     roi_spatial_footprints = self.roi_spatial_footprints().toarray().reshape((self.video.shape[2], self.video.shape[3], self.roi_spatial_footprints().shape[-1])).transpose((1, 0, 2))
                     self.preview_window.compute_contours_and_overlays(self.mean_images[0].shape, roi_spatial_footprints)
@@ -658,6 +676,9 @@ class GUIController():
                 # show the ROI image
                 self.show_roi_image()
             elif param == "z":
+                if self.drawing_mask:
+                    self.toggle_mask_mode()
+
                 self.z = value
 
                 self.selected_rois = []
@@ -673,6 +694,9 @@ class GUIController():
                 # show the ROI image
                 self.show_roi_image()
             if param == "z":
+                if self.drawing_mask:
+                    self.toggle_mask_mode()
+
                 self.z = value
 
                 self.selected_rois = []
@@ -728,27 +752,28 @@ class GUIController():
         if roi_point is not None:
             group_num = self.controller.video_groups[self.selected_video]
 
-            # find out which ROI to select
-            selected_roi = utilities.get_roi_containing_point(self.controller.roi_spatial_footprints[self.group_num][self.z], roi_point, self.mean_images[self.z].shape)
+            if len(self.controller.roi_spatial_footprints) > 0:
+                # find out which ROI to select
+                selected_roi = utilities.get_roi_containing_point(self.controller.roi_spatial_footprints[self.group_num][self.z], roi_point, self.mean_images[self.z].shape)
 
-            if selected_roi is not None:
-                if ctrl_held:
-                    self.selected_rois.append(selected_roi)
+                if selected_roi is not None:
+                    if ctrl_held:
+                        self.selected_rois.append(selected_roi)
+                    else:
+                        self.selected_rois = [selected_roi]
+
+                    print("ROI #{} selected.".format(selected_roi))
+
+                    if len(self.selected_rois) == 1:
+                        self.param_window.single_roi_selected(discarded=selected_roi in self.removed_rois())
+                    elif len(self.selected_rois) > 1:
+                        self.param_window.multiple_rois_selected(discarded=any(x in self.selected_rois for x in self.removed_rois()), merge_enabled=self.bg_temporal_footprints() is not None)
                 else:
-                    self.selected_rois = [selected_roi]
+                    # no ROI is selected
 
-                print("ROI #{} selected.".format(selected_roi))
+                    self.selected_rois = []
 
-                if len(self.selected_rois) == 1:
-                    self.param_window.single_roi_selected(discarded=selected_roi in self.removed_rois())
-                elif len(self.selected_rois) > 1:
-                    self.param_window.multiple_rois_selected(discarded=any(x in self.selected_rois for x in self.removed_rois()), merge_enabled=self.bg_temporal_footprints() is not None)
-            else:
-                # no ROI is selected
-
-                self.selected_rois = []
-
-                self.param_window.no_rois_selected()
+                    self.param_window.no_rois_selected()
 
     def load_tail_angles(self): # TODO: Ask the user for FPS of tail traces and calcium traces
         if pyqt_version == 4:
@@ -916,16 +941,17 @@ class GUIController():
             
             index = group_paths.index(self.selected_video_path())
 
-        if len(self.controller.roi_temporal_footprints.keys()) > 0:
-            if index == 0:
-                temporal_footprints = temporal_footprints[:, :group_lengths[0]]
+            if len(self.controller.roi_temporal_footprints.keys()) > 0:
+                if index == 0:
+                    temporal_footprints = temporal_footprints[:, :group_lengths[0]]
+                else:
+                    temporal_footprints = temporal_footprints[:, np.sum(group_lengths[:index]):np.sum(group_lengths[:index+1])]
             else:
-                temporal_footprints = temporal_footprints[:, np.sum(group_lengths[:index]):np.sum(group_lengths[:index+1])]
-        else:
-            temporal_footprints = None
+                temporal_footprints = None
 
-        if self.show_zscore:
-            temporal_footprints = (temporal_footprints - np.mean(temporal_footprints, axis=1)[:, np.newaxis])/np.std(temporal_footprints, axis=1)[:, np.newaxis]
+        if temporal_footprints is not None:
+            if self.show_zscore:
+                temporal_footprints = (temporal_footprints - np.mean(temporal_footprints, axis=1)[:, np.newaxis])/np.std(temporal_footprints, axis=1)[:, np.newaxis]
 
         self.preview_window.plot_traces(temporal_footprints, self.selected_rois)
 
@@ -934,6 +960,56 @@ class GUIController():
 
     def set_motion_correct(self, boolean):
         self.controller.motion_correct_all_videos = boolean
+
+    def toggle_mask_mode(self):
+        self.drawing_mask = not self.drawing_mask
+
+        if self.drawing_mask:
+            self.param_window.mask_drawing_started()
+        else:
+            self.param_window.mask_drawing_ended()
+
+            if self.preview_window.temp_mask_item is not None:
+                if len(self.preview_window.mask_points) >= 3:
+                    self.create_mask(self.preview_window.mask_points)
+                    mask_item = self.preview_window.create_mask_item(self.preview_window.mask_points)
+                    self.preview_window.mask_items.append(mask_item)
+                    self.preview_window.viewbox1.addItem(mask_item)
+                    self.preview_window.mask_points = []
+
+    def create_mask(self, mask_points):
+        self.controller.add_mask(mask_points, self.z, self.video.shape[1], self.group_num)
+
+        mask = self.create_mask_image(self.z, mask_points)
+
+        if self.mask_images is None:
+            self.mask_images = [ [] for z in range(self.video.shape[1]) ]
+
+        self.mask_images[self.z].append(mask)
+
+    def delete_mask(self, mask_num):
+        self.controller.delete_mask(mask_num, self.z, self.group_num)
+
+        del self.mask_images[self.z][mask_num]
+
+    def create_mask_image(self, z, mask_points):
+        # create mask image
+        mask_points = np.array(mask_points + [mask_points[0]]).astype(int)
+
+        mask = np.zeros(self.mean_images[z].shape).astype(np.uint8)
+        cv2.fillConvexPoly(mask, mask_points, 1)
+        mask = mask.astype(np.bool)
+
+        if self.controller.params['invert_masks']:
+            mask = mask == False
+
+        return mask
+
+    def mask_points(self):
+        if self.group_num in self.controller.mask_points.keys():
+            return self.controller.mask_points[self.group_num][self.z]
+        else:
+            return []
 
 class MotionCorrectThread(QThread):
     finished = pyqtSignal(list, dict)
@@ -970,18 +1046,19 @@ class ROIFindingThread(QThread):
 
         self.running = False
     
-    def set_parameters(self, video_paths, groups, params, mc_borders, use_multiprocessing, method="cnmf"):
+    def set_parameters(self, video_paths, groups, params, mc_borders, use_multiprocessing, method="cnmf", mask_points=[]):
         self.video_paths         = video_paths
         self.groups              = groups
         self.params              = params
         self.mc_borders          = mc_borders
         self.use_multiprocessing = use_multiprocessing
         self.method              = method
+        self.mask_points         = mask_points
 
     def run(self):
         self.running = True
 
-        roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = utilities.find_rois_multiple_videos(self.video_paths, self.groups, self.params, mc_borders=self.mc_borders, progress_signal=self.progress, thread=self, use_multiprocessing=self.use_multiprocessing, method=self.method)
+        roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = utilities.find_rois_multiple_videos(self.video_paths, self.groups, self.params, mc_borders=self.mc_borders, progress_signal=self.progress, thread=self, use_multiprocessing=self.use_multiprocessing, method=self.method, mask_points=self.mask_points)
 
         self.finished.emit(roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints)
 

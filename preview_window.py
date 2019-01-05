@@ -172,11 +172,15 @@ class PreviewWindow(QMainWindow):
         self.roi_contours           = []
         self.text_items             = []
         self.outline_items          = []
+        self.mask_items             = []
+        self.temp_mask_item         = None
         self.image                  = None # image to show
         self.frames                 = None # frames to play
         self.frame_num              = 0    # current frame #
         self.n_frames               = 1    # total number of frames
         self.video_name             = ""   # name of the currently showing video
+        self.mask_points            = []
+        self.mask                   = None
 
         self.show_rois_checkbox.setEnabled(False)
         self.image_plot.hide()
@@ -254,6 +258,16 @@ class PreviewWindow(QMainWindow):
             self.viewbox2.removeItem(outline_item)
             self.outline_items = []
 
+    def clear_mask_items(self):
+        for mask_item in self.mask_items:
+            self.viewbox1.removeItem(mask_item)
+            self.mask_items = []
+
+        if self.temp_mask_item is not None:
+            self.viewbox1.removeItem(self.temp_mask_item)
+            self.temp_mask_item = None
+            self.mask_points = []
+
     def plot_clicked(self, event):
         if self.controller.mode not in ("loading", "motion_correcting"):
             # get x-y coordinates of where the user clicked
@@ -275,89 +289,150 @@ class PreviewWindow(QMainWindow):
 
             if event.button() == 1:
                 # left click means selecting ROIs
+                if not self.controller.drawing_mask:
+                    self.controller.select_roi((int(y), int(x)), ctrl_held=ctrl_held)
 
-                self.controller.select_roi((int(y), int(x)), ctrl_held=ctrl_held)
+                    # don't allow selecting removed & kept ROIs at the same time
+                    removed_count = 0
+                    for i in self.controller.selected_rois:
+                        if i in self.controller.removed_rois():
+                            removed_count += 1
+                    if removed_count !=0 and removed_count != len(self.controller.selected_rois):
+                        self.controller.selected_rois = [self.controller.selected_rois[-1]]
 
-                # don't allow selecting removed & kept ROIs at the same time
-                removed_count = 0
-                for i in self.controller.selected_rois:
-                    if i in self.controller.removed_rois():
-                        removed_count += 1
-                if removed_count !=0 and removed_count != len(self.controller.selected_rois):
-                    self.controller.selected_rois = [self.controller.selected_rois[-1]]
+                    if len(self.controller.selected_rois) > 0:
+                        if self.controller.selected_rois[-1] in self.controller.removed_rois() and self.left_plot in items:
+                            self.controller.selected_rois = []
+                        elif self.controller.selected_rois[-1] not in self.controller.removed_rois() and self.right_plot in items:
+                            self.controller.selected_rois = []
 
-                if len(self.controller.selected_rois) > 0:
-                    if self.controller.selected_rois[-1] in self.controller.removed_rois() and self.left_plot in items:
-                        self.controller.selected_rois = []
-                    elif self.controller.selected_rois[-1] not in self.controller.removed_rois() and self.right_plot in items:
-                        self.controller.selected_rois = []
+                    if len(self.controller.selected_rois) > 0:
+                        roi_to_select = self.controller.selected_rois[0]
 
-                if len(self.controller.selected_rois) > 0:
-                    roi_to_select = self.controller.selected_rois[0]
+                        if self.left_plot in items:
+                            image = self.kept_rois_image.copy()
+                            contours = []
+                            for i in self.controller.selected_rois:
+                                contours += self.roi_contours[i]
+                                x = np.amax([ np.amax(self.roi_contours[i][j][:, 0, 0]) for j in range(len(self.roi_contours[i])) ])
+                                y = np.amax([ np.amax(self.roi_contours[i][j][:, 0, 1]) for j in range(len(self.roi_contours[i])) ])
+                                text_item = pg.TextItem("{}".format(i), color=roi_colors[i])
+                                text_item.setPos(QPoint(int(y), int(x)))
+                                self.text_items.append(text_item)
+                                self.viewbox1.addItem(text_item)
+                                for j in range(len(self.roi_contours[i])):
+                                    outline_item = pg.PlotDataItem(np.concatenate([self.roi_contours[i][j][:, 0, 1], np.array([self.roi_contours[i][j][0, 0, 1]])]), np.concatenate([self.roi_contours[i][j][:, 0, 0], np.array([self.roi_contours[i][j][0, 0, 0]])]), pen=pg.mkPen((roi_colors[i][0], roi_colors[i][1], roi_colors[i][2]), width=3))
+                                    self.outline_items.append(outline_item)
+                                    self.viewbox1.addItem(outline_item)
 
-                    if self.left_plot in items:
-                        image = self.kept_rois_image.copy()
-                        contours = []
-                        for i in self.controller.selected_rois:
-                            contours += self.roi_contours[i]
-                            x = np.amax([ np.amax(self.roi_contours[i][j][:, 0, 0]) for j in range(len(self.roi_contours[i])) ])
-                            y = np.amax([ np.amax(self.roi_contours[i][j][:, 0, 1]) for j in range(len(self.roi_contours[i])) ])
-                            text_item = pg.TextItem("{}".format(i), color=roi_colors[i])
-                            text_item.setPos(QPoint(int(y), int(x)))
-                            self.text_items.append(text_item)
-                            self.viewbox1.addItem(text_item)
-                            for j in range(len(self.roi_contours[i])):
-                                outline_item = pg.PlotDataItem(np.concatenate([self.roi_contours[i][j][:, 0, 1], np.array([self.roi_contours[i][j][0, 0, 1]])]), np.concatenate([self.roi_contours[i][j][:, 0, 0], np.array([self.roi_contours[i][j][0, 0, 0]])]), pen=pg.mkPen((roi_colors[i][0], roi_colors[i][1], roi_colors[i][2]), width=3))
-                                self.outline_items.append(outline_item)
-                                self.viewbox1.addItem(outline_item)
+                            self.left_plot.setImage(image, autoLevels=False)
+                            self.right_plot.setImage(self.discarded_rois_image, autoLevels=False)
+                        else:
+                            image = self.discarded_rois_image.copy()
+                            contours = []
+                            for i in self.controller.selected_rois:
+                                contours += self.roi_contours[i]
+                                # print([ self.roi_contours[i][j].shape for j in range(len(self.roi_contours[i])) ])
+                                x = np.amax([ np.amax(self.roi_contours[i][j][:, 0, 0]) for j in range(len(self.roi_contours[i])) ])
+                                y = np.amax([ np.amax(self.roi_contours[i][j][:, 0, 1]) for j in range(len(self.roi_contours[i])) ])
+                                text_item = pg.TextItem("{}".format(i), color=roi_colors[i])
+                                text_item.setPos(QPoint(int(y), int(x)))
+                                self.text_items.append(text_item)
+                                self.viewbox2.addItem(text_item)
+                                for j in range(len(self.roi_contours[i])):
+                                    outline_item = pg.PlotDataItem(np.concatenate([self.roi_contours[i][j][:, 0, 1], np.array([self.roi_contours[i][j][0, 0, 1]])]), np.concatenate([self.roi_contours[i][j][:, 0, 0], np.array([self.roi_contours[i][j][0, 0, 0]])]), pen=pg.mkPen((roi_colors[i][0], roi_colors[i][1], roi_colors[i][2]), width=3))
+                                    self.outline_items.append(outline_item)
+                                    self.viewbox2.addItem(outline_item)
 
-                        self.left_plot.setImage(image, autoLevels=False)
-                        self.right_plot.setImage(self.discarded_rois_image, autoLevels=False)
+                            self.right_plot.setImage(image, autoLevels=False)
+                            self.left_plot.setImage(self.kept_rois_image, autoLevels=False)
                     else:
-                        image = self.discarded_rois_image.copy()
-                        contours = []
-                        for i in self.controller.selected_rois:
-                            contours += self.roi_contours[i]
-                            # print([ self.roi_contours[i][j].shape for j in range(len(self.roi_contours[i])) ])
-                            x = np.amax([ np.amax(self.roi_contours[i][j][:, 0, 0]) for j in range(len(self.roi_contours[i])) ])
-                            y = np.amax([ np.amax(self.roi_contours[i][j][:, 0, 1]) for j in range(len(self.roi_contours[i])) ])
-                            text_item = pg.TextItem("{}".format(i), color=roi_colors[i])
-                            text_item.setPos(QPoint(int(y), int(x)))
-                            self.text_items.append(text_item)
-                            self.viewbox2.addItem(text_item)
-                            for j in range(len(self.roi_contours[i])):
-                                outline_item = pg.PlotDataItem(np.concatenate([self.roi_contours[i][j][:, 0, 1], np.array([self.roi_contours[i][j][0, 0, 1]])]), np.concatenate([self.roi_contours[i][j][:, 0, 0], np.array([self.roi_contours[i][j][0, 0, 0]])]), pen=pg.mkPen((roi_colors[i][0], roi_colors[i][1], roi_colors[i][2]), width=3))
-                                self.outline_items.append(outline_item)
-                                self.viewbox2.addItem(outline_item)
-
-                        self.right_plot.setImage(image, autoLevels=False)
                         self.left_plot.setImage(self.kept_rois_image, autoLevels=False)
-                else:
-                    self.left_plot.setImage(self.kept_rois_image, autoLevels=False)
-                    self.right_plot.setImage(self.discarded_rois_image, autoLevels=False)
+                        self.right_plot.setImage(self.discarded_rois_image, autoLevels=False)
+                elif self.left_plot in items:
+                    if ctrl_held:
+                        # add mask point
+                        self.mask_points.append([x, y])
+
+                        if self.temp_mask_item is not None:
+                            self.viewbox1.removeItem(self.temp_mask_item)
+
+                        self.temp_mask_item = self.create_mask_item(self.mask_points, temporary=True)
+                        self.viewbox1.addItem(self.temp_mask_item)
+                    else:
+                        # determine which mask was clicked, if any
+                        mask_num = -1
+
+                        if self.controller.mask_images is not None:
+                            for i in range(len(self.controller.mask_images[self.controller.z])):
+                                mask = self.controller.mask_images[self.controller.z][i]
+
+                                if mask[int(y), int(x)] > 0:
+                                    mask_num = i
+
+                        print(mask_num)
+
+                        if mask_num == -1 and len(self.mask_points) >= 3:
+                            self.controller.create_mask(self.mask_points)
+
+                            self.mask_points = []
+
+                        self.update_mask_items(selected_mask=mask_num)
+
             elif event.button() == 2:
-                if self.left_plot in items:
-                    selected_roi = utilities.get_roi_containing_point(self.controller.roi_spatial_footprints(), (int(y), int(x)), self.controller.selected_video_mean_image().shape)
+                if not self.controller.drawing_mask:
+                    if self.left_plot in items:
+                        selected_roi = utilities.get_roi_containing_point(self.controller.roi_spatial_footprints(), (int(y), int(x)), self.controller.selected_video_mean_image().shape)
 
-                    if selected_roi is not None:
-                        if selected_roi not in self.controller.selected_rois:
-                            self.controller.selected_rois.append(selected_roi)
+                        if selected_roi is not None:
+                            if selected_roi not in self.controller.selected_rois:
+                                self.controller.selected_rois.append(selected_roi)
 
-                        print("ROIs selected: {}.".format(self.controller.selected_rois))
+                            print("ROIs selected: {}.".format(self.controller.selected_rois))
 
-                        self.controller.discard_selected_rois()
+                            self.controller.discard_selected_rois()
+                    else:
+                        selected_roi = utilities.get_roi_containing_point(self.controller.roi_spatial_footprints(), (int(y), int(x)), self.controller.selected_video_mean_image().shape)
+
+                        if selected_roi is not None:
+                            if selected_roi not in self.controller.selected_rois:
+                                self.controller.selected_rois.append(selected_roi)
+
+                            print("ROIs selected: {}.".format(self.controller.selected_rois))
+
+                            self.controller.keep_selected_rois()
                 else:
-                    selected_roi = utilities.get_roi_containing_point(self.controller.roi_spatial_footprints(), (int(y), int(x)), self.controller.selected_video_mean_image().shape)
+                    # if not ctrl_held:
+                    #     if len(self.mask_points) >= 3:
+                    #         self.controller.create_mask(self.mask_points)
 
-                    if selected_roi is not None:
-                        if selected_roi not in self.controller.selected_rois:
-                            self.controller.selected_rois.append(selected_roi)
+                    #         self.update_mask_items(selected_mask=len(self.controller.mask_points())-1)
 
-                        print("ROIs selected: {}.".format(self.controller.selected_rois))
+                    #         self.mask_points = []
+                    if not ctrl_held:
+                        # determine which mask was clicked, if any
+                        mask_num = -1
 
-                        self.controller.keep_selected_rois()
+                        for i in range(len(self.controller.mask_images[self.controller.z])):
+                            mask = self.controller.mask_images[self.controller.z][i]
+
+                            if mask[int(y), int(x)] > 0:
+                                mask_num = i
+
+                        if mask_num >= 0:
+                            # delete this mask
+                            self.controller.delete_mask(mask_num)
+
+                            self.update_mask_items()
 
             self.controller.update_trace_plot()
+
+    def create_mask_item(self, mask_points, temporary=False, selected=False):
+        if temporary:
+            return pg.PlotDataItem([ p[0] for p in mask_points ] + [mask_points[0][0]], [ p[1] for p in mask_points ] + [mask_points[0][1]], symbolSize=5, pen=pg.mkPen((255, 255, 255)), symbolPen=pg.mkPen((255, 255, 255)))
+        elif selected:
+            return pg.PlotDataItem([ p[0] for p in mask_points ] + [mask_points[0][0]], [ p[1] for p in mask_points ] + [mask_points[0][1]], symbolSize=5, pen=pg.mkPen((0, 255, 0)), symbolPen=pg.mkPen((0, 255, 0)))
+        return pg.PlotDataItem([ p[0] for p in mask_points ] + [mask_points[0][0]], [ p[1] for p in mask_points ] + [mask_points[0][1]], symbolSize=5, pen=pg.mkPen((255, 255, 0)), symbolPen=pg.mkPen((255, 255, 0)))
 
     def plot_image(self, image, video_max=255, show_rois=False, update_overlay=True, recreate_overlays=False, recreate_roi_images=True):
         if update_overlay or recreate_overlays or recreate_roi_images:
@@ -365,7 +440,7 @@ class PreviewWindow(QMainWindow):
             if roi_spatial_footprints is not None:
                 roi_spatial_footprints = roi_spatial_footprints.toarray().reshape((self.controller.video.shape[2], self.controller.video.shape[3], roi_spatial_footprints.shape[-1])).transpose((1, 0, 2))
 
-        if update_overlay:
+        if update_overlay and roi_spatial_footprints is not None:
             recreate_overlays = True
             recreate_roi_images = True
             self.compute_contours_and_overlays(image.shape, roi_spatial_footprints)
@@ -449,11 +524,23 @@ class PreviewWindow(QMainWindow):
             self.setWindowTitle("{}. Z={}. Frame {}/{}.".format(self.video_name, self.controller.z, self.frame_num + 1, self.n_frames))
 
     def update_left_image_plot(self, image, roi_spatial_footprints=None, video_dimensions=None, removed_rois=None, selected_rois=None, show_rois=False):
+        print("Updating left image plot...")
         image = self.create_kept_rois_image(image, self.controller.video_max, roi_spatial_footprints=roi_spatial_footprints, video_dimensions=video_dimensions, removed_rois=removed_rois, selected_rois=selected_rois, show_rois=show_rois)
         if show_rois:
             self.kept_rois_image = image
 
         self.left_plot.setImage(image, autoLevels=False)
+
+        self.update_mask_items()
+
+    def update_mask_items(self, selected_mask=-1):
+        self.clear_mask_items()
+        mask_points = self.controller.mask_points()
+
+        for i in range(len(mask_points)):
+            mask_item = self.create_mask_item(mask_points[i], selected=selected_mask==i)
+            self.viewbox1.addItem(mask_item)
+            self.mask_items.append(mask_item)
 
     def compute_contours_and_overlays(self, shape, roi_spatial_footprints):
         print("Computing new contours.....")

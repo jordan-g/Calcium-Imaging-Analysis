@@ -17,8 +17,12 @@ from caiman.source_extraction.cnmf.temporal import update_temporal_components
 from caiman.source_extraction.cnmf.pre_processing import preprocess_data
 from caiman.motion_correction import MotionCorrect
 
-import suite2p
-from suite2p.run_s2p import run_s2p
+try:
+    import suite2p
+    from suite2p.run_s2p import run_s2p
+    suite2p_enabled = True
+except:
+    suite2p_enabled = False
 
 if sys.version_info[0] < 3:
     python_version = 2
@@ -393,7 +397,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, us
 
     return mc_video, mc_borders
 
-def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, progress_signal=None, thread=None, use_multiprocessing=True, method="cnmf"):
+def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, progress_signal=None, thread=None, use_multiprocessing=True, method="cnmf", mask_points=[]):
     start_time = time.time()
 
     group_nums = np.unique(video_groups)
@@ -419,8 +423,28 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
 
             video = video.transpose((0, 1, 3, 2))
 
+            if len(mask_points) > 0 and n in mask_points.keys():
+                mask = np.zeros(video.shape[1:]).astype(np.uint8)
+                for z in range(video.shape[1]):
+                    if len(mask_points[n][z]) > 0:
+                        for p in mask_points[n][z]:
+                            # create mask image
+                            p = np.array(p + [p[0]]).astype(int)
+
+                            cv2.fillConvexPoly(mask[z, :, :], p, 1)
+
+                mask = mask.astype(bool)
+
+                if not params['invert_masks']:
+                    mask = mask == False
+
+                mask = np.repeat(mask[np.newaxis, :, :, :], video.shape[0], axis=0)
+
+                video[mask] = 0
+
             if i == 0:
                 final_video = video.copy()
+                video = None
             else:
                 final_video = np.concatenate([final_video, video], axis=0)
 
@@ -524,7 +548,11 @@ def find_rois_cnmf(video, video_path, params, mc_borders=None, use_multiprocessi
 
         cnm = cnm.fit(images)
 
-        A_in, C_in, b_in, f_in = cnm.A, cnm.C, cnm.b, cnm.f
+        try:
+            A_in, C_in, b_in, f_in = cnm.A, cnm.C, cnm.b, cnm.f
+        except:
+            A_in, C_in, b_in, f_in = cnm.estimates.A, cnm.estimates.C, cnm.estimates.b, cnm.estimates.f
+
         cnm2 = cnmf.CNMF(n_processes=1, k=A_in.shape[-1], gSig=gSig, p=p, dview=dview,
                         merge_thresh=merge_thresh,  Ain=A_in, Cin=C_in, b_in = b_in,
                         f_in=f_in, rf = None, stride = None, gnb = gnb, 
@@ -532,13 +560,21 @@ def find_rois_cnmf(video, video_path, params, mc_borders=None, use_multiprocessi
 
         cnm2 = cnm2.fit(images)
 
-        roi_spatial_footprints[z]  = cnm2.A
-        roi_temporal_footprints[z] = cnm2.C
-        roi_temporal_residuals[z]  = cnm2.YrA
-        bg_spatial_footprints[z]   = cnm2.b
-        bg_temporal_footprints[z]  = cnm2.f
+        try:
+            roi_spatial_footprints[z]  = cnm2.A
+            roi_temporal_footprints[z] = cnm2.C
+            roi_temporal_residuals[z]  = cnm2.YrA
+            bg_spatial_footprints[z]   = cnm2.b
+            bg_temporal_footprints[z]  = cnm2.f
+        except:
+            roi_spatial_footprints[z]  = cnm2.estimates.A
+            roi_temporal_footprints[z] = cnm2.estimates.C
+            roi_temporal_residuals[z]  = cnm2.estimates.YrA
+            bg_spatial_footprints[z]   = cnm2.estimates.b
+            bg_temporal_footprints[z]  = cnm2.estimates.f
 
-        os.remove(fname)
+        if os.path.exists(fname):
+            os.remove(fname)
 
     if use_multiprocessing:
         if backend == 'multiprocessing':
@@ -557,104 +593,105 @@ def find_rois_cnmf(video, video_path, params, mc_borders=None, use_multiprocessi
     return roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints
 
 def find_rois_suite2p(video, video_path, params, mc_borders=None, use_multiprocessing=True):
-    full_video_path = video_path
+    if suite2p_enabled:
+        full_video_path = video_path
 
-    directory = os.path.dirname(full_video_path)
-    filename  = os.path.basename(full_video_path)
+        directory = os.path.dirname(full_video_path)
+        filename  = os.path.basename(full_video_path)
 
-    roi_spatial_footprints  = [ None for i in range(video.shape[1]) ]
-    roi_temporal_footprints = [ None for i in range(video.shape[1]) ]
-    roi_temporal_residuals  = [ None for i in range(video.shape[1]) ]
-    bg_spatial_footprints   = [ None for i in range(video.shape[1]) ]
-    bg_temporal_footprints  = [ None for i in range(video.shape[1]) ]
+        roi_spatial_footprints  = [ None for i in range(video.shape[1]) ]
+        roi_temporal_footprints = [ None for i in range(video.shape[1]) ]
+        roi_temporal_residuals  = [ None for i in range(video.shape[1]) ]
+        bg_spatial_footprints   = [ None for i in range(video.shape[1]) ]
+        bg_temporal_footprints  = [ None for i in range(video.shape[1]) ]
 
-    if os.path.exists("suite2p"):
-        shutil.rmtree("suite2p")
+        if os.path.exists("suite2p"):
+            shutil.rmtree("suite2p")
 
-    for z in range(video.shape[1]):
-        fname = os.path.splitext(filename)[0] + "_masked_z_{}.h5".format(z)
+        for z in range(video.shape[1]):
+            fname = os.path.splitext(filename)[0] + "_masked_z_{}.h5".format(z)
 
-        video_path = os.path.join(directory, fname)
+            video_path = os.path.join(directory, fname)
 
-        h5f = h5py.File(video_path, 'w')
-        h5f.create_dataset('data', data=video[:, z, :, :])
-        h5f.close()
+            h5f = h5py.File(video_path, 'w')
+            h5f.create_dataset('data', data=video[:, z, :, :])
+            h5f.close()
 
-        ops = {
-            'fast_disk': [], # used to store temporary binary file, defaults to save_path0
-            'save_path0': '', # stores results, defaults to first item in data_path
-            'delete_bin': False, # whether to delete binary file after processing
-            # main settings
-            'nplanes' : 1, # each tiff has these many planes in sequence
-            'nchannels' : 1, # each tiff has these many channels per plane
-            'functional_chan' : 1, # this channel is used to extract functional ROIs (1-based)
-            'diameter':params['diameter'], # this is the main parameter for cell detection, 2-dimensional if Y and X are different (e.g. [6 12])
-            'tau':  1., # this is the main parameter for deconvolution
-            'fs': params['sampling_rate'],  # sampling rate (total across planes)
-            # output settings
-            'save_mat': False, # whether to save output as matlab files
-            'combined': True, # combine multiple planes into a single result /single canvas for GUI
-            # parallel settings
-            'num_workers': 0, # 0 to select num_cores, -1 to disable parallelism, N to enforce value
-            'num_workers_roi': 0, # 0 to select number of planes, -1 to disable parallelism, N to enforce value
-            # registration settings
-            'do_registration': False, # whether to register data
-            'nimg_init': 200, # subsampled frames for finding reference image
-            'batch_size': 200, # number of frames per batch
-            'maxregshift': 0.1, # max allowed registration shift, as a fraction of frame max(width and height)
-            'align_by_chan' : 1, # when multi-channel, you can align by non-functional channel (1-based)
-            'reg_tif': False, # whether to save registered tiffs
-            'subpixel' : 10, # precision of subpixel registration (1/subpixel steps)
-            # cell detection settings
-            'connected': params['connected'], # whether or not to keep ROIs fully connected (set to 0 for dendrites)
-            'navg_frames_svd': 5000, # max number of binned frames for the SVD
-            'nsvd_for_roi': 1000, # max number of SVD components to keep for ROI detection
-            'max_iterations': 20, # maximum number of iterations to do cell detection
-            'ratio_neuropil': params['neuropil_basis_ratio'], # ratio between neuropil basis size and cell radius
-            'ratio_neuropil_to_cell': params['neuropil_radius_ratio'], # minimum ratio between neuropil radius and cell radius
-            'tile_factor': 1., # use finer (>1) or coarser (<1) tiles for neuropil estimation during cell detection
-            'threshold_scaling': 1., # adjust the automatically determined threshold by this scalar multiplier
-            'max_overlap': 0.75, # cells with more overlap than this get removed during triage, before refinement
-            'inner_neuropil_radius': params['inner_neuropil_radius'], # number of pixels to keep between ROI and neuropil donut
-            'outer_neuropil_radius': np.inf, # maximum neuropil radius
-            'min_neuropil_pixels': params['min_neuropil_pixels'], # minimum number of pixels in the neuropil
-            # deconvolution settings
-            'baseline': 'maximin', # baselining mode
-            'win_baseline': 60., # window for maximin
-            'sig_baseline': 10., # smoothing constant for gaussian filter
-            'prctile_baseline': 8.,# optional (whether to use a percentile baseline)
-            'neucoeff': .7,  # neuropil coefficient
-        }
+            ops = {
+                'fast_disk': [], # used to store temporary binary file, defaults to save_path0
+                'save_path0': '', # stores results, defaults to first item in data_path
+                'delete_bin': False, # whether to delete binary file after processing
+                # main settings
+                'nplanes' : 1, # each tiff has these many planes in sequence
+                'nchannels' : 1, # each tiff has these many channels per plane
+                'functional_chan' : 1, # this channel is used to extract functional ROIs (1-based)
+                'diameter':params['diameter'], # this is the main parameter for cell detection, 2-dimensional if Y and X are different (e.g. [6 12])
+                'tau':  1., # this is the main parameter for deconvolution
+                'fs': params['sampling_rate'],  # sampling rate (total across planes)
+                # output settings
+                'save_mat': False, # whether to save output as matlab files
+                'combined': True, # combine multiple planes into a single result /single canvas for GUI
+                # parallel settings
+                'num_workers': 0, # 0 to select num_cores, -1 to disable parallelism, N to enforce value
+                'num_workers_roi': 0, # 0 to select number of planes, -1 to disable parallelism, N to enforce value
+                # registration settings
+                'do_registration': False, # whether to register data
+                'nimg_init': 200, # subsampled frames for finding reference image
+                'batch_size': 200, # number of frames per batch
+                'maxregshift': 0.1, # max allowed registration shift, as a fraction of frame max(width and height)
+                'align_by_chan' : 1, # when multi-channel, you can align by non-functional channel (1-based)
+                'reg_tif': False, # whether to save registered tiffs
+                'subpixel' : 10, # precision of subpixel registration (1/subpixel steps)
+                # cell detection settings
+                'connected': params['connected'], # whether or not to keep ROIs fully connected (set to 0 for dendrites)
+                'navg_frames_svd': 5000, # max number of binned frames for the SVD
+                'nsvd_for_roi': 1000, # max number of SVD components to keep for ROI detection
+                'max_iterations': 20, # maximum number of iterations to do cell detection
+                'ratio_neuropil': params['neuropil_basis_ratio'], # ratio between neuropil basis size and cell radius
+                'ratio_neuropil_to_cell': params['neuropil_radius_ratio'], # minimum ratio between neuropil radius and cell radius
+                'tile_factor': 1., # use finer (>1) or coarser (<1) tiles for neuropil estimation during cell detection
+                'threshold_scaling': 1., # adjust the automatically determined threshold by this scalar multiplier
+                'max_overlap': 0.75, # cells with more overlap than this get removed during triage, before refinement
+                'inner_neuropil_radius': params['inner_neuropil_radius'], # number of pixels to keep between ROI and neuropil donut
+                'outer_neuropil_radius': np.inf, # maximum neuropil radius
+                'min_neuropil_pixels': params['min_neuropil_pixels'], # minimum number of pixels in the neuropil
+                # deconvolution settings
+                'baseline': 'maximin', # baselining mode
+                'win_baseline': 60., # window for maximin
+                'sig_baseline': 10., # smoothing constant for gaussian filter
+                'prctile_baseline': 8.,# optional (whether to use a percentile baseline)
+                'neucoeff': .7,  # neuropil coefficient
+            }
 
-        db = {
-            'h5py': video_path, # a single h5 file path
-            'h5py_key': 'data',
-            'look_one_level_down': False, # whether to look in ALL subfolders when searching for tiffs
-            'data_path': [], # a list of folders with tiffs 
-                                                 # (or folder of folders with tiffs if look_one_level_down is True, or subfolders is not empty)
-            'subfolders': [] # choose subfolders of 'data_path' to look in (optional)
-        }
+            db = {
+                'h5py': video_path, # a single h5 file path
+                'h5py_key': 'data',
+                'look_one_level_down': False, # whether to look in ALL subfolders when searching for tiffs
+                'data_path': [], # a list of folders with tiffs 
+                                                     # (or folder of folders with tiffs if look_one_level_down is True, or subfolders is not empty)
+                'subfolders': [] # choose subfolders of 'data_path' to look in (optional)
+            }
 
-        opsEnd=run_s2p(ops=ops,db=db)
+            opsEnd=run_s2p(ops=ops,db=db)
 
-        stat = np.load("suite2p/plane0/stat.npy")
-        F    = np.load("suite2p/plane0/F.npy")
-        Fneu = np.load("suite2p/plane0/Fneu.npy")
+            stat = np.load("suite2p/plane0/stat.npy")
+            F    = np.load("suite2p/plane0/F.npy")
+            Fneu = np.load("suite2p/plane0/Fneu.npy")
 
-        spatial_components = np.zeros((video.shape[2], video.shape[3], len(stat)))
-        for i in range(len(stat)):
-            spatial_components[stat[i]['xpix'], stat[i]['ypix'], i] = stat[i]['lam']
+            spatial_components = np.zeros((video.shape[2], video.shape[3], len(stat)))
+            for i in range(len(stat)):
+                spatial_components[stat[i]['xpix'], stat[i]['ypix'], i] = stat[i]['lam']
 
-        roi_spatial_footprints[z]  = scipy.sparse.coo_matrix(spatial_components.reshape((video.shape[2]*video.shape[3], len(stat))))
-        roi_temporal_footprints[z] = F - ops["neucoeff"]*Fneu
-        roi_temporal_residuals[z]  = np.zeros(F.shape)
-        bg_spatial_footprints[z]   = None
-        bg_temporal_footprints[z]  = None
+            roi_spatial_footprints[z]  = scipy.sparse.coo_matrix(spatial_components.reshape((video.shape[2]*video.shape[3], len(stat))))
+            roi_temporal_footprints[z] = F - ops["neucoeff"]*Fneu
+            roi_temporal_residuals[z]  = np.zeros(F.shape)
+            bg_spatial_footprints[z]   = None
+            bg_temporal_footprints[z]  = None
 
-        os.remove(fname)
-        shutil.rmtree("suite2p")
+            os.remove(fname)
+            shutil.rmtree("suite2p")
 
-    return roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints
+        return roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints
 
 def filter_rois(video_paths, roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints, params):
     for i in range(len(video_paths)):
