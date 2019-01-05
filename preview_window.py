@@ -524,7 +524,7 @@ class PreviewWindow(QMainWindow):
             self.setWindowTitle("{}. Z={}. Frame {}/{}.".format(self.video_name, self.controller.z, self.frame_num + 1, self.n_frames))
 
     def update_left_image_plot(self, image, roi_spatial_footprints=None, video_dimensions=None, removed_rois=None, selected_rois=None, show_rois=False):
-        print("Updating left image plot...")
+        # print("Updating left image plot...")
         image = self.create_kept_rois_image(image, self.controller.video_max, roi_spatial_footprints=roi_spatial_footprints, video_dimensions=video_dimensions, removed_rois=removed_rois, selected_rois=selected_rois, show_rois=show_rois)
         if show_rois:
             self.kept_rois_image = image
