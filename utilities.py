@@ -214,51 +214,74 @@ def motion_correct_multiple_videos(video_paths, video_groups, max_shift, patch_s
 
         video_lengths = []
 
-        for i in range(len(paths)):
-            video_path = paths[i]
+        final_video_path = "final_video_temp.tif"
 
-            video = tifffile.imread(video_path)
+        with tifffile.TiffWriter(final_video_path, bigtiff=True) as tif:
+            for i in range(len(paths)):
+                video_path = paths[i]
+                new_video_path = "video_temp.tif"
+
+                shutil.copyfile(video_path, new_video_path)
+
+                video = tifffile.memmap(new_video_path)
+
+                print("memmap shape", video.shape)
+
+                if len(video.shape) == 3:
+                    # add a z dimension
+                    video = video[:, np.newaxis, :, :]
+
+                # flip video 90 degrees to match what is shown in Fiji
+                video = video.transpose((0, 1, 3, 2))
                 
-            if len(video.shape) == 3:
-                # add a z dimension
-                video = video[:, np.newaxis, :, :]
+                video_lengths.append(video.shape[0])
+                    
+                tif.save(video)
 
-            # flip video 90 degrees to match what is shown in Fiji
-            video = video.transpose((0, 1, 3, 2))
-            
-            video_lengths.append(video.shape[0])
-                
-            if i == 0:
-                final_video = video
-            else:
-                final_video = np.concatenate([final_video, video], axis=0)
-        
-        final_video_path = "video_temp.tif"
+                del video
 
-        mc_video, mc_borders[group_num] = motion_correct(final_video, final_video_path, max_shift, patch_stride, patch_overlap, use_multiprocessing=use_multiprocessing)
+                if os.path.exists(new_video_path):
+                    os.remove(new_video_path)
+
+        mc_video, mc_borders[group_num] = motion_correct(final_video_path, max_shift, patch_stride, patch_overlap, use_multiprocessing=use_multiprocessing)
         
         mc_video = mc_video.transpose((0, 1, 3, 2))
 
+        mc_video_paths = []
         for i in range(len(paths)):
+            video_path    = paths[i]
+            directory     = os.path.dirname(video_path)
+            filename      = os.path.basename(video_path)
+            mc_video_path = os.path.join(directory, os.path.splitext(filename)[0] + "_mc.tif")
+
             if i == 0:
-                mc_videos.append(mc_video[:video_lengths[0]])
+                tifffile.imsave(mc_video_path, mc_video[:video_lengths[0]])
             else:
-                mc_videos.append(mc_video[np.sum(video_lengths[:i]):np.sum(video_lengths[:i]) + video_lengths[i]])
+                tifffile.imsave(mc_video_path, mc_video[np.sum(video_lengths[:i]):np.sum(video_lengths[:i]) + video_lengths[i]])
+
+            mc_video_paths.append(mc_video_path)
 
         if progress_signal is not None:
             progress_signal.emit(n)
+
+        if os.path.exists(final_video_path):
+            os.remove(final_video_path)
+
+        del mc_video
 
     end_time = time.time()
 
     print("---- Motion correction finished. Elapsed time: {} s.".format(end_time - start_time))
             
-    return mc_videos, mc_borders
+    return mc_video_paths, mc_borders
 
-def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, use_multiprocessing=True):
+def motion_correct(video_path, max_shift, patch_stride, patch_overlap, use_multiprocessing=True):
     full_video_path = video_path
 
     directory = os.path.dirname(full_video_path)
     filename  = os.path.basename(full_video_path)
+
+    memmap_video = tifffile.memmap(video_path)
 
     if use_multiprocessing:
         if os.name == 'nt':
@@ -272,9 +295,13 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, us
     else:
         dview = None
 
-    z_range = list(range(video.shape[1]))
+    z_range = list(range(memmap_video.shape[1]))
 
-    mc_video = video.copy()
+    new_video_path = "mc_video_temp.tif"
+
+    shutil.copyfile(video_path, new_video_path)
+
+    mc_video = tifffile.memmap(new_video_path).astype(np.uint16)
 
     mc_borders = [ None for z in z_range ]
 
@@ -282,11 +309,9 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, us
 
     for z in z_range:
         video_path = os.path.join(directory, os.path.splitext(filename)[0] + "_z_{}_temp.tif".format(z))
-        tifffile.imsave(video_path, video[:, z, :, :])
+        tifffile.imsave(video_path, memmap_video[:, z, :, :])
 
         mc_video[:, z, :, :] *= 0
-
-        a = tifffile.imread(video_path)
 
         # --- PARAMETERS --- #
 
@@ -329,8 +354,10 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, us
         # --- RIGID MOTION CORRECTION --- #
 
         # Load the original movie
-        m_orig = cm.load(fname)
+        m_orig = tifffile.memmap(fname)
+        # m_orig = cm.load(fname)
         min_mov = np.min(m_orig) # movie must be mostly positive for this to work
+        print("minimum", min_mov)
 
         offset_mov = -min_mov
 
@@ -341,7 +368,7 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, us
                         strides= strides, overlaps= overlaps, splits_els=splits_els,
                         num_splits_to_process_els=num_splits_to_process_els, 
                         upsample_factor_grid=upsample_factor_grid, max_deviation_rigid=max_deviation_rigid, 
-                        shifts_opencv = True, nonneg_movie = True)
+                        shifts_opencv = True, nonneg_movie = True, border_nan='min')
 
         # Do rigid motion correction
         mc.motion_correct_rigid(save_movie=False)
@@ -368,8 +395,15 @@ def motion_correct(video, video_path, max_shift, patch_stride, patch_overlap, us
 
         mc_borders[z] = bord_px_els
 
-        mc_video[:, z, :, :] = images
+        # images += np.amin(images)
 
+        # print(np.amax(images))
+        # print(np.amin(images))
+        # print(type(images))
+
+        mc_video[:, z, :, :] = (images - np.amin(images)).astype(np.uint16)
+
+        del m_orig
         os.remove(video_path)
 
         try:
@@ -478,6 +512,9 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
         new_roi_temporal_residuals[group_num]  = roi_temporal_residuals
         new_bg_spatial_footprints[group_num]   = bg_spatial_footprints
         new_bg_temporal_footprints[group_num]  = bg_temporal_footprints
+
+        if os.path.exists(final_video_path):
+            os.remove(final_video_path)
 
         if progress_signal is not None:
             progress_signal.emit(n)
@@ -598,8 +635,8 @@ def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True
             bg_spatial_footprints[z]   = cnm2.estimates.b
             bg_temporal_footprints[z]  = cnm2.estimates.f
 
-        if os.path.exists(fname):
-            os.remove(fname)
+        if os.path.exists(video_path):
+            os.remove(video_path)
 
     del memmap_video
 
@@ -721,25 +758,57 @@ def find_rois_suite2p(video, video_path, params, mc_borders=None, use_multiproce
         return roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints
 
 def filter_rois(video_paths, roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints, params):
-    for i in range(len(video_paths)):
-        video_path = video_paths[i]
+    final_video_path = "final_video_temp.tif"
 
-        video = tifffile.imread(video_path)
-            
-        if len(video.shape) == 3:
-            # add a z dimension
-            video = video[:, np.newaxis, :, :]
-            
-        if i == 0:
-            final_video = video
-        else:
-            final_video = np.concatenate([final_video, video], axis=0)
+    with tifffile.TiffWriter(final_video_path, bigtiff=True) as tif:
+        for i in range(len(video_paths)):
+            video_path = video_paths[i]
+
+            video = tifffile.memmap(video_path)
+                
+            if len(video.shape) == 3:
+                # add a z dimension
+                video = video[:, np.newaxis, :, :]
+
+            tif.save(video)
+
+            del video
 
     filtered_out_rois = []
-    for z in range(final_video.shape[1]):
+
+    memmap_video = tifffile.memmap(final_video_path)
+
+    if len(memmap_video.shape) == 5:
+        n_frames = memmap_video.shape[1]
+        num_z = memmap_video.shape[2]
+        height = memmap_video.shape[3]
+        width = memmap_video.shape[4]
+    else:
+        n_frames = memmap_video.shape[0]
+        num_z = memmap_video.shape[1]
+        height = memmap_video.shape[2]
+        width = memmap_video.shape[3]
+
+    for z in range(num_z):
+        directory = os.path.dirname(final_video_path)
+        filename  = os.path.basename(final_video_path)
+
+        fname = os.path.splitext(filename)[0] + "_masked_z_{}_d1_{}_d2_{}_d3_1_order_C_frames_{}_.mmap".format(z, height, width, n_frames)
+
+        video_path = os.path.join(directory, fname)
+
+        if len(memmap_video.shape) == 5:
+            tifffile.imsave(video_path, memmap_video[:, :, z, :, :].reshape((-1, memmap_video.shape[3], memmap_video.shape[4])).transpose([1, 2, 0]).reshape(-1, memmap_video.shape[0]).astype(np.float32))
+        else:
+            tifffile.imsave(video_path, memmap_video[:, z, :, :].transpose([1, 2, 0]).reshape(-1, memmap_video.shape[0]).astype(np.float32))
+
+        video = tifffile.memmap(video_path)
+
+        print(video.shape)
+
         idx_components, idx_components_bad, SNR_comp, r_values, cnn_preds = \
-                estimate_components_quality_auto(final_video[:, z, :, :].transpose([1, 2, 0]), roi_spatial_footprints[z], roi_temporal_footprints[z], bg_spatial_footprints[z], bg_temporal_footprints[z], 
-                                                 roi_temporal_residuals[z], params['imaging_fps']/final_video.shape[1], params['decay_time'], params['half_size'], (video.shape[-2], video.shape[-1]), 
+                estimate_components_quality_auto(video, roi_spatial_footprints[z], roi_temporal_footprints[z], bg_spatial_footprints[z], bg_temporal_footprints[z], 
+                                                 roi_temporal_residuals[z], params['imaging_fps']/num_z, params['decay_time'], params['half_size'], (video.shape[-2], video.shape[-1]), 
                                                  dview = None, min_SNR=params['min_snr'], 
                                                  r_values_min = params['min_spatial_corr'], use_cnn = params['use_cnn'], 
                                                  thresh_cnn_lowest = params['cnn_threshold'], gSig_range=[ (i, i) for i in range(max(1, params['half_size']-5), params['half_size']+5) ])
@@ -755,6 +824,14 @@ def filter_rois(video_paths, roi_spatial_footprints, roi_temporal_footprints, ro
             area = np.sum(f[:, i] > 0)
             if (area < params['min_area'] or area > params['max_area']) and i not in filtered_out_rois[-1]:
                 filtered_out_rois[-1].append(i)
+
+        if os.path.exists(video_path):
+            os.remove(video_path)
+
+    if os.path.exists(final_video_path):
+        os.remove(final_video_path)
+        
+    del memmap_video
 
     return filtered_out_rois
 

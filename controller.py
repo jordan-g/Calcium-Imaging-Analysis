@@ -102,7 +102,6 @@ class Controller():
         else:
             group_num = 0
 
-
         # store video lengths and group numbers
         for video_path in video_paths:
             video = tifffile.memmap(video_path)
@@ -298,7 +297,20 @@ class Controller():
             self.discarded_rois          = roi_data['discarded_rois']
             self.removed_rois            = roi_data['removed_rois']
             self.locked_rois             = roi_data['locked_rois']
-            self.mask_points                   = roi_data['masks']
+            if 'masks' in roi_data.keys():
+                self.mask_points             = roi_data['masks']
+            else:
+                self.mask_points = {}
+                if len(self.video_paths) > 0:
+                    # get number of z planes
+                    video = tifffile.memmap(self.video_paths[0])
+                    if len(video.shape) > 3:
+                        num_z = video.shape[1]
+                    else:
+                        num_z = 1
+
+                    for group_num in np.unique(self.video_groups):
+                        self.mask_points[group_num] = [ [] for z in range(num_z) ]
         else:
             roi_spatial_footprints  = roi_data['roi_spatial_footprints']
             roi_temporal_footprints = roi_data['roi_temporal_footprints']
@@ -309,7 +321,18 @@ class Controller():
             discarded_rois          = roi_data['discarded_rois']
             removed_rois            = roi_data['removed_rois']
             locked_rois             = roi_data['locked_rois']
-            masks                   = roi_data['masks']
+            if 'masks' in roi_data.keys():
+                masks                   = roi_data['masks']
+            else:
+                if len(self.video_paths) > 0:
+                    # get number of z planes
+                    video = tifffile.memmap(self.video_paths[0])
+                    if len(video.shape) > 3:
+                        num_z = video.shape[1]
+                    else:
+                        num_z = 1
+
+                    masks = [ [] for z in range(num_z) ]
 
             self.roi_spatial_footprints[group_num] = roi_spatial_footprints
             self.bg_spatial_footprints[group_num]  = bg_spatial_footprints
@@ -317,7 +340,7 @@ class Controller():
             self.discarded_rois[group_num]         = discarded_rois
             self.removed_rois[group_num]           = removed_rois
             self.locked_rois[group_num]            = locked_rois
-            self.mask_points[group_num]                  = masks
+            self.mask_points[group_num]            = masks
 
             group_indices = [ i for i in range(len(self.video_paths)) if self.video_groups[i] == group_num ]
             group_lengths = [ self.video_lengths[i] for i in group_indices ]

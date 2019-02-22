@@ -475,19 +475,7 @@ class GUIController():
         # notify the param window
         self.param_window.update_motion_correction_progress(group_num)
 
-    def motion_correction_ended(self, mc_videos, mc_borders):
-        mc_video_paths = []
-        for i in range(len(mc_videos)):
-            video_path    = self.controller.video_paths[i]
-            directory     = os.path.dirname(video_path)
-            filename      = os.path.basename(video_path)
-            mc_video_path = os.path.join(directory, os.path.splitext(filename)[0] + "_mc.tif")
-            
-            # save the motion-corrected video
-            tifffile.imsave(mc_video_path, mc_videos[i])
-            
-            mc_video_paths.append(mc_video_path)
-
+    def motion_correction_ended(self, mc_video_paths, mc_borders):
         self.controller.mc_video_paths = mc_video_paths
         self.controller.mc_borders     = mc_borders
 
@@ -1037,9 +1025,9 @@ class MotionCorrectThread(QThread):
     def run(self):
         self.running = True
 
-        mc_videos, mc_borders = utilities.motion_correct_multiple_videos(self.video_paths, self.groups, self.max_shift, self.patch_stride, self.patch_overlap, progress_signal=self.progress, thread=self, use_multiprocessing=self.use_multiprocessing)
+        mc_video_paths, mc_borders = utilities.motion_correct_multiple_videos(self.video_paths, self.groups, self.max_shift, self.patch_stride, self.patch_overlap, progress_signal=self.progress, thread=self, use_multiprocessing=self.use_multiprocessing)
 
-        self.finished.emit(mc_videos, mc_borders)
+        self.finished.emit(mc_video_paths, mc_borders)
 
         self.running = False
 
