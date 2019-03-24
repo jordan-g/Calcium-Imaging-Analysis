@@ -9,6 +9,7 @@ import time
 import shutil
 import h5py
 import scipy
+import peakutils
 
 import caiman as cm
 from caiman.source_extraction.cnmf import cnmf as cnmf
@@ -225,7 +226,7 @@ def motion_correct_multiple_videos(video_paths, video_groups, max_shift, patch_s
 
                 video = tifffile.memmap(new_video_path)
 
-                print("memmap shape", video.shape)
+                # print("memmap shape", video.shape)
 
                 if len(video.shape) == 3:
                     # add a z dimension
@@ -243,7 +244,16 @@ def motion_correct_multiple_videos(video_paths, video_groups, max_shift, patch_s
                 if os.path.exists(new_video_path):
                     os.remove(new_video_path)
 
-        mc_video, mc_borders[group_num] = motion_correct(final_video_path, max_shift, patch_stride, patch_overlap, use_multiprocessing=use_multiprocessing)
+        final_video = tifffile.memmap(final_video_path).astype(np.uint16)
+        if len(final_video.shape) == 5:
+            final_video_path_2 = "final_video_temp_2.tif"
+            tifffile.imsave(final_video_path_2, final_video.reshape((final_video.shape[0]*final_video.shape[1], final_video.shape[2], final_video.shape[3], final_video.shape[4])))
+            if os.path.exists(final_video_path):
+                os.remove(final_video_path)
+        else:
+            final_video_path_2 = final_video_path
+
+        mc_video, mc_borders[group_num] = motion_correct(final_video_path_2, max_shift, patch_stride, patch_overlap, use_multiprocessing=use_multiprocessing)
         
         mc_video = mc_video.transpose((0, 1, 3, 2))
 
@@ -264,8 +274,8 @@ def motion_correct_multiple_videos(video_paths, video_groups, max_shift, patch_s
         if progress_signal is not None:
             progress_signal.emit(n)
 
-        if os.path.exists(final_video_path):
-            os.remove(final_video_path)
+        if os.path.exists(final_video_path_2):
+            os.remove(final_video_path_2)
 
         del mc_video
 
@@ -302,6 +312,8 @@ def motion_correct(video_path, max_shift, patch_stride, patch_overlap, use_multi
     shutil.copyfile(video_path, new_video_path)
 
     mc_video = tifffile.memmap(new_video_path).astype(np.uint16)
+
+    print("mc video", mc_video.shape)
 
     mc_borders = [ None for z in z_range ]
 
@@ -497,15 +509,24 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
                 if os.path.exists(new_video_path):
                     os.remove(new_video_path)
 
+        final_video = tifffile.memmap(final_video_path).astype(np.uint16)
+        if len(final_video.shape) == 5:
+            final_video_path_2 = "final_video_temp_2.tif"
+            tifffile.imsave(final_video_path_2, final_video.reshape((final_video.shape[0]*final_video.shape[1], final_video.shape[2], final_video.shape[3], final_video.shape[4])))
+            if os.path.exists(final_video_path):
+                os.remove(final_video_path)
+        else:
+            final_video_path_2 = final_video_path
+
         if len(mc_borders.keys()) > 0:
             borders = mc_borders[group_num]
         else:
             borders = None
 
         if method == "cnmf":
-            roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = find_rois_cnmf(final_video_path, params, mc_borders=borders, use_multiprocessing=use_multiprocessing)
+            roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = find_rois_cnmf(final_video_path_2, params, mc_borders=borders, use_multiprocessing=use_multiprocessing)
         else:
-            roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = find_rois_suite2p(final_video_path, params, mc_borders=borders, use_multiprocessing=use_multiprocessing)
+            roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = find_rois_suite2p(final_video_path_2, params, mc_borders=borders, use_multiprocessing=use_multiprocessing)
 
         new_roi_spatial_footprints[group_num]  = roi_spatial_footprints
         new_roi_temporal_footprints[group_num] = roi_temporal_footprints
@@ -513,8 +534,8 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
         new_bg_spatial_footprints[group_num]   = bg_spatial_footprints
         new_bg_temporal_footprints[group_num]  = bg_temporal_footprints
 
-        if os.path.exists(final_video_path):
-            os.remove(final_video_path)
+        if os.path.exists(final_video_path_2):
+            os.remove(final_video_path_2)
 
         if progress_signal is not None:
             progress_signal.emit(n)
@@ -774,9 +795,18 @@ def filter_rois(video_paths, roi_spatial_footprints, roi_temporal_footprints, ro
 
             del video
 
+    final_video = tifffile.memmap(final_video_path).astype(np.uint16)
+    if len(final_video.shape) == 5:
+        final_video_path_2 = "final_video_temp_2.tif"
+        tifffile.imsave(final_video_path_2, final_video.reshape((final_video.shape[0]*final_video.shape[1], final_video.shape[2], final_video.shape[3], final_video.shape[4])))
+        if os.path.exists(final_video_path):
+            os.remove(final_video_path)
+    else:
+        final_video_path_2 = final_video_path
+
     filtered_out_rois = []
 
-    memmap_video = tifffile.memmap(final_video_path)
+    memmap_video = tifffile.memmap(final_video_path_2)
 
     if len(memmap_video.shape) == 5:
         n_frames = memmap_video.shape[1]
@@ -790,8 +820,8 @@ def filter_rois(video_paths, roi_spatial_footprints, roi_temporal_footprints, ro
         width = memmap_video.shape[3]
 
     for z in range(num_z):
-        directory = os.path.dirname(final_video_path)
-        filename  = os.path.basename(final_video_path)
+        directory = os.path.dirname(final_video_path_2)
+        filename  = os.path.basename(final_video_path_2)
 
         fname = os.path.splitext(filename)[0] + "_masked_z_{}_d1_{}_d2_{}_d3_1_order_C_frames_{}_.mmap".format(z, height, width, n_frames)
 
@@ -828,8 +858,8 @@ def filter_rois(video_paths, roi_spatial_footprints, roi_temporal_footprints, ro
         if os.path.exists(video_path):
             os.remove(video_path)
 
-    if os.path.exists(final_video_path):
-        os.remove(final_video_path)
+    if os.path.exists(final_video_path_2):
+        os.remove(final_video_path_2)
         
     del memmap_video
 
@@ -873,3 +903,40 @@ def blend_transparent(face_img, overlay_t_img):
 
     # And finally just add them together, and rescale it back to an 8bit integer image    
     return np.uint8(cv2.addWeighted(face_part, 255.0, overlay_part, 255.0, 0.0))
+
+def calculate_tail_beat_frequency(fps, tail_angle_array):
+    tail_angles = tail_angle_array.copy()
+
+    baseline = np.mean(tail_angles[:100])
+    tail_angles -= baseline
+
+    N = 10
+    smoothed_tail_angles = np.convolve(tail_angles, np.ones((N,))/N, mode='valid')
+
+    derivative = np.abs(np.diff(smoothed_tail_angles, append=[0]))/0.01
+    smoothed_derivative = np.convolve(derivative, np.ones((N,))/N, mode='same')
+
+    threshold = 2
+    min_dist = 5
+    min_deriv = 10
+    highs = peakutils.peak.indexes(smoothed_tail_angles, thres=threshold/max(smoothed_tail_angles), min_dist=min_dist)
+    highs = np.array([ h for h in highs if smoothed_derivative[h] > min_deriv ])
+
+    lows = peakutils.peak.indexes(-smoothed_tail_angles, thres=threshold/max(-smoothed_tail_angles), min_dist=min_dist)
+    lows = np.array([ h for h in lows if smoothed_derivative[h] > min_deriv ])
+
+    low_freqs = [ 1.0/(lows[i] - lows[i-1]) for i in range(1, len(lows)) ]
+
+    low_freqs_array = np.zeros(smoothed_tail_angles.shape)
+    for i in range(len(low_freqs)):
+        low_freqs_array[lows[i]:lows[i+1]] = low_freqs[i]
+
+    high_freqs = [ 1.0/(highs[i] - highs[i-1]) for i in range(1, len(highs)) ]
+
+    high_freqs_array = np.zeros(smoothed_tail_angles.shape)
+    for i in range(len(high_freqs)):
+        high_freqs_array[highs[i]:highs[i+1]] = high_freqs[i]
+
+    freqs_array = (low_freqs_array + high_freqs_array)/2
+
+    return fps*freqs_array
