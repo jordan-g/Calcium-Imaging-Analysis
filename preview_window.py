@@ -38,7 +38,7 @@ class PreviewWindow(QMainWindow):
 
         # create main widget
         self.main_widget = QWidget(self)
-        self.main_widget.setMinimumSize(QSize(800, 900))
+        self.main_widget.setMinimumSize(QSize(800, 700))
 
         # create main layout
         self.main_layout = QVBoxLayout(self.main_widget)
@@ -79,18 +79,13 @@ class PreviewWindow(QMainWindow):
         self.viewbox4.setLabel('left', "ROI #")
         self.viewbox4.setMouseEnabled(x=True,y=False)
         self.viewbox4.setLabel('bottom', "Frame #")
-        self.viewbox5 = self.image_plot.addPlot(name='heatmap2_plot', row=3,col=0, colspan=2)
-        self.viewbox5.setLabel('left', "ROI #")
-        self.viewbox5.setMouseEnabled(x=True,y=False)
-        self.viewbox5.setLabel('bottom', "Frame #")
+
         self.viewbox6 = self.image_plot.addPlot(name='tail_angle_plot', row=4,col=0,colspan=2)
         self.viewbox6.setLabel('left', "Tail Angle (º)")
         self.viewbox6.setLabel('bottom', "Frame #")
         self.viewbox6.setMouseEnabled(x=True,y=False)
         self.heatmap_plot = pg.ImageItem()
-        self.heatmap_plot_2 = pg.ImageItem()
         self.viewbox4.addItem(self.heatmap_plot)
-        self.viewbox5.addItem(self.heatmap_plot_2)
         self.image_plot.ci.layout.setRowStretchFactor(0,2)
         self.left_plot = pg.ImageItem()
         self.right_plot = pg.ImageItem()
@@ -101,13 +96,11 @@ class PreviewWindow(QMainWindow):
         self.viewbox2.setXLink('left_plot')
         self.viewbox2.setYLink('left_plot')
         self.viewbox4.setXLink('trace_plot')
-        self.viewbox5.setXLink('trace_plot')
         self.viewbox6.setXLink('trace_plot')
         colormap = cm.get_cmap("inferno")
         colormap._init()
         lut = (colormap._lut * 255).view(np.ndarray)
         self.heatmap_plot.setLookupTable(lut)
-        self.heatmap_plot_2.setLookupTable(lut)
         self.image_plot.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.MinimumExpanding)
         self.image_plot.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         self.image_layout.addWidget(self.image_plot)
@@ -130,10 +123,21 @@ class PreviewWindow(QMainWindow):
 
         self.show_rois_checkbox = QCheckBox("Show ROIs")
         self.show_rois_checkbox.setObjectName("Show ROIs")
+        self.show_rois_checkbox.setStyleSheet("color: rgba(150, 150, 150, 1);")
         self.show_rois_checkbox.setChecked(False)
         self.show_rois_checkbox.setEnabled(False)
         self.show_rois_checkbox.clicked.connect(self.toggle_show_rois)
         self.bottom_layout.addWidget(self.show_rois_checkbox)
+
+        label = QLabel("Frame Offset:")
+        label.setStyleSheet("color: rgba(150, 150, 150, 1);")
+        self.bottom_layout.addWidget(label)
+
+        self.frame_offset_textbox = QLineEdit("Frame Offset")
+        self.frame_offset_textbox.setObjectName("Frame Offset")
+        self.frame_offset_textbox.setText("0")
+        self.frame_offset_textbox.editingFinished.connect(lambda:self.update_frame_offset())
+        self.bottom_layout.addWidget(self.frame_offset_textbox)
 
         self.bottom_layout.addStretch()
 
@@ -181,12 +185,28 @@ class PreviewWindow(QMainWindow):
         self.video_name             = ""   # name of the currently showing video
         self.mask_points            = []
         self.mask                   = None
+        self.frame_offset           = 0
+        self.heatmap                = None
+        self.selected_rois          = []
+        self.roi_temporal_footprints = None
 
         self.show_rois_checkbox.setEnabled(False)
         self.image_plot.hide()
         self.bottom_widget.hide()
         self.timer.stop()
         self.setWindowTitle("Preview")
+
+    def update_frame_offset(self):
+        try:
+            self.frame_offset = int(float(self.frame_offset_textbox.text()))
+
+            if self.heatmap is not None:
+                self.heatmap_plot.setRect(QRectF(self.frame_offset + self.controller.z/self.controller.video.shape[1], 0, self.heatmap.shape[0], self.heatmap.shape[1]))
+
+            if self.roi_temporal_footprints is not None:
+                self.plot_traces(self.roi_temporal_footprints, self.selected_rois)
+        except:
+            pass
 
     def toggle_show_rois(self):
         show_rois = self.show_rois_checkbox.isChecked()
@@ -212,19 +232,21 @@ class PreviewWindow(QMainWindow):
         colormap._init()
         lut = (colormap._lut * 255).view(np.ndarray)
         self.heatmap_plot.setLookupTable(lut)
-        self.heatmap_plot_2.setLookupTable(lut)
 
     def plot_tail_angles(self, tail_angles, tail_data_fps, imaging_fps):
         self.viewbox6.clear()
 
-        imaging_fps_one_plane = imaging_fps/self.controller.video.shape[1]
+        imaging_fps_one_plane = imaging_fps
 
         if tail_angles is not None:
-            one_frame    = int(np.floor((1.0/imaging_fps_one_plane)*tail_data_fps))
-            total_frames = int(np.floor(one_frame*self.controller.video.shape[0]))
+            one_frame    = (1.0/imaging_fps_one_plane)*tail_data_fps
+            total_frames = int(np.floor(one_frame*self.controller.video.shape[0] + self.frame_offset + 1))
+
+            print(tail_angles.shape)
+            print(total_frames)
 
             if total_frames < tail_angles.shape[0]:
-                x = np.linspace(0, self.controller.video.shape[0], total_frames)
+                x = np.linspace(0, self.controller.video.shape[0]+self.frame_offset+1, total_frames)
                 self.viewbox6.plot(x, tail_angles[:total_frames, -1], pen=pg.mkPen((255, 255, 0), width=2))
 
                 return True
@@ -235,13 +257,15 @@ class PreviewWindow(QMainWindow):
 
     def plot_traces(self, roi_temporal_footprints, selected_rois=[]):
         self.viewbox3.clear()
+        self.selected_rois = selected_rois
+        self.roi_temporal_footprints = roi_temporal_footprints
         if roi_temporal_footprints is not None and len(selected_rois) > 0:
             if self.controller.show_zscore:
                 max_value = 1
             else:
                 max_value = np.amax(roi_temporal_footprints)
 
-            x = np.arange(roi_temporal_footprints.shape[1]) + self.controller.z/self.controller.video.shape[1]
+            x = np.arange(roi_temporal_footprints.shape[1]) + self.controller.z/self.controller.video.shape[1] + self.frame_offset
             for i in range(len(selected_rois)):
                 roi = selected_rois[i]
 
@@ -637,30 +661,31 @@ class PreviewWindow(QMainWindow):
                             del remaining_indices[l]
 
                         heatmap = heatmap_sorted
-
-                heatmap2 = np.sort(heatmap, axis=0)
-
-                heatmap[heatmap > 3] = 3
-                heatmap[heatmap < -2] = -2
-
-                heatmap2[heatmap2 > 3] = 3
-                heatmap2[heatmap2 < -2] = -2
+                else:
+                    heatmap = heatmap/np.amax(heatmap)
 
                 if self.controller.show_zscore:
-                    self.heatmap_plot.setImage(heatmap.T, levels=(-2.01, 3.01))
-                    self.heatmap_plot_2.setImage(heatmap2.T, levels=(-2.01, 3.01))
-                else:
-                    self.heatmap_plot.setImage(heatmap.T)
-                    self.heatmap_plot_2.setImage(heatmap2.T)
+                    heatmap[heatmap > 3] = 3
+                    heatmap[heatmap < -2] = -2
+                # else:
+                #     heatmap[heatmap > 1] = 1
+                #     heatmap[heatmap < 0] = 0
 
-                self.heatmap_plot.setRect(QRectF(1 + self.controller.z/self.controller.video.shape[1], 0, heatmap.shape[1], heatmap.shape[0]))
-                self.heatmap_plot_2.setRect(QRectF(1 + self.controller.z/self.controller.video.shape[1], 0, heatmap.shape[1], heatmap.shape[0]))
+                self.heatmap = heatmap.T
+
+                print(np.amin(heatmap), np.amax(heatmap))
+                print(heatmap[0])
+
+                if self.controller.show_zscore:
+                    self.heatmap_plot.setImage(self.heatmap, levels=(-2.01, 3.01))
+                else:
+                    self.heatmap_plot.setImage(self.heatmap, levels=(0, 1.01))
+
+                self.heatmap_plot.setRect(QRectF(self.frame_offset + self.controller.z/self.controller.video.shape[1], 0, heatmap.shape[1], heatmap.shape[0]))
             else:
                 self.heatmap_plot.setImage(None)
-                self.heatmap_plot_2.setImage(None)
         else:
             self.heatmap_plot.setImage(None)
-            self.heatmap_plot_2.setImage(None)
 
         return image
 

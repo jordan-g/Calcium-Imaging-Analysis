@@ -269,6 +269,8 @@ class GUIController():
             self.selected_video = index
             self.group_num      = self.controller.video_groups[self.selected_video]
 
+            print(self.selected_video_path())
+
             self.open_video(self.selected_video_path())
             self.update_adjusted_mean_images()
             if group_changed:
@@ -720,9 +722,11 @@ class GUIController():
 
         if self.show_zscore:
             self.preview_window.viewbox3.setYRange(-2, 3)
+            self.preview_window.heatmap_plot.setImage(self.preview_window.heatmap, levels=(-2.01, 3.01))
             self.preview_window.viewbox3.setLabel('left', "Z-Score")
         else:
             self.preview_window.viewbox3.setYRange(0, 1)
+            self.preview_window.heatmap_plot.setImage(self.preview_window.heatmap, levels=(0, 1.01))
             self.preview_window.viewbox3.setLabel('left', "Fluorescence")
 
         self.show_roi_image()
@@ -776,7 +780,8 @@ class GUIController():
             load_path = QFileDialog.getOpenFileName(self.param_window, 'Select saved tail angle data.', '', 'CSV (*.csv)')[0]
 
         if load_path is not None and len(load_path) > 0:
-            tail_angles = np.genfromtxt(load_path, delimiter=",")[:, 1:]
+            tail_angles = np.genfromtxt(load_path, delimiter=",")
+            print(tail_angles.shape)
 
             self.controller.tail_angles[self.selected_video] = tail_angles
 
@@ -930,7 +935,10 @@ class GUIController():
 
         if temporal_footprints is not None:
             group_indices = [ i for i in range(len(self.controller.video_paths)) if self.controller.video_groups[i] == self.group_num ]
-            group_paths   = [ self.controller.video_paths[i] for i in group_indices ]
+            if self.controller.use_mc_video and len(self.controller.mc_video_paths) > 0:
+                group_paths   = [ self.controller.mc_video_paths[i] for i in group_indices ]
+            else:
+                group_paths   = [ self.controller.video_paths[i] for i in group_indices ]
             group_lengths = [ self.controller.video_lengths[i] for i in group_indices ]
             
             index = group_paths.index(self.selected_video_path())
@@ -1089,7 +1097,7 @@ class TailTraceParametersDialog(QDialog):
         layout.setSpacing(5)
         param_layout.addWidget(widget)
 
-        label = param_window.HoverLabel("Imaging FPS:")
+        label = param_window.HoverLabel("Imaging FPS (per plane):")
         label.setHoverMessage("Imaging frame rate (frames per second).")
         layout.addWidget(label)
 
