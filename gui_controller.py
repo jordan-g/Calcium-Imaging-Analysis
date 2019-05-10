@@ -180,11 +180,14 @@ class GUIController():
 
             # notify the param window
             self.param_window.videos_imported(video_paths)
+            self.param_window.show_video(self.controller.video_paths[self.selected_video])
 
         # make the param window the front-most window
         self.param_window.activateWindow()
 
     def open_video(self, video_path):
+        print("Opening video: {}".format(video_path))
+
         # open the video
         base_name = os.path.basename(video_path)
         if base_name.endswith('.tif') or base_name.endswith('.tiff'):
@@ -237,6 +240,7 @@ class GUIController():
 
         # notify the param window and preview window
         self.param_window.video_opened(max_z=self.video.shape[1]-1, z=self.z)
+        self.param_window.show_video(video_path)
 
     def update_mean_images(self):
         self.mean_images = [ (utilities.mean(self.video, z)/self.video_max)*self.video_max for z in range(self.video.shape[1]) ]
@@ -247,12 +251,13 @@ class GUIController():
     def update_mask_images(self):
         self.mask_images = [ [] for z in range(self.video.shape[1]) ]
 
-        for z in range(self.video.shape[1]):
-            mask_points_list = self.controller.mask_points[self.group_num][z]
+        if self.group_num in self.controller.mask_points.keys():
+            for z in range(self.video.shape[1]):
+                mask_points_list = self.controller.mask_points[self.group_num][z]
 
-            for mask_points in mask_points_list:
-                mask = self.create_mask_image(z, mask_points)
-                self.mask_images[z].append(mask)
+                for mask_points in mask_points_list:
+                    mask = self.create_mask_image(z, mask_points)
+                    self.mask_images[z].append(mask)
 
     def update_adjusted_video(self):
         self.adjusted_video = utilities.adjust_gamma(utilities.adjust_contrast(self.video[:, self.z, :, :], self.controller.params['contrast']), self.controller.params['gamma'])
@@ -281,6 +286,7 @@ class GUIController():
 
             self.preview_window.plot_tail_angles(self.controller.tail_angles[self.selected_video], self.controller.params['tail_data_fps'], self.controller.params['imaging_fps'])
             self.update_trace_plot()
+
     def play_video(self):
         # calculate gamma- and contrast-adjusted video and mean images
         self.update_adjusted_video()
@@ -518,6 +524,10 @@ class GUIController():
 
         # notify the param window
         self.param_window.roi_finding_started()
+
+        # roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = utilities.find_rois_multiple_videos(video_paths, self.controller.video_groups, self.controller.params, mc_borders=self.controller.mc_borders, progress_signal=None, thread=None, use_multiprocessing=self.controller.use_multiprocessing, method=self.controller.roi_finding_mode, mask_points=self.controller.mask_points)
+
+        # self.roi_finding_ended(roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints)
 
     def roi_finding_progress(self, group_num):
         # notify the param window

@@ -23,8 +23,9 @@ TITLE_STYLESHEET           = "font-size: 16px; font-weight: bold;"
 SUBTITLE_STYLESHEET        = "font-size: 14px; font-weight: bold;"
 ROUNDED_STYLESHEET_DARK    = "QLineEdit { background-color: rgba(0, 0, 0, 0.3); border-radius: 2px; border: 1px solid rgba(0, 0, 0, 0.5); padding: 2px };"
 ROUNDED_STYLESHEET_LIGHT   = "QLineEdit { background-color: rgba(255, 255, 255, 1); border-radius: 2px; border: 1px solid rgba(0, 0, 0, 0.2); padding: 2px; }"
-LIST_STYLESHEET_DARK       = "QListWidget { background-color: rgba(0, 0, 0, 0.3); border-radius: 2px; border: 1px solid rgba(0, 0, 0, 0.5); padding: 2px };"
-LIST_STYLESHEET_LIGHT      = "QListWidget { background-color: rgba(255, 255, 255, 1); border-radius: 2px; border: 1px solid rgba(0, 0, 0, 0.2); padding: 2px; }"
+LIST_STYLESHEET_DARK       = "QListWidget { background-color: rgba(0, 0, 0, 0.3); border-radius: 5px; border: 1px solid rgba(0, 0, 0, 0.5); padding: 2px };"
+LIST_STYLESHEET_LIGHT      = "QListWidget { background-color: rgba(255, 255, 255, 1); border-radius: 5px; border: 1px solid rgba(0, 0, 0, 0.2); padding: 2px; }"
+LIST_ITEM_STYLESHEET_LIGHT = "QListWidget { background-color: rgba(255, 255, 255, 1); }"
 STATUSBAR_STYLESHEET_LIGHT = "background-color: rgba(255, 255, 255, 0.3); border-top: 1px solid rgba(0, 0, 0, 0.2); font-size: 12px; font-style: italic;"
 STATUSBAR_STYLESHEET_DARK  = "background-color: rgba(255, 255, 255, 0.1); border-top: 1px solid rgba(0, 0, 0, 0.5); font-size: 12px; font-style: italic;"
 rounded_stylesheet         = ROUNDED_STYLESHEET_LIGHT
@@ -114,6 +115,7 @@ class ParamWindow(QMainWindow):
         self.videos_list.itemSelectionChanged.connect(self.item_selected)
         self.videos_list_layout.addWidget(self.videos_list)
         self.videos_list.setDragDropMode(QAbstractItemView.InternalMove)
+        self.videos_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.videos_list.installEventFilter(self)
 
         self.delete_shortcut = QShortcut(QKeySequence('Delete'), self.videos_list)
@@ -254,7 +256,7 @@ class ParamWindow(QMainWindow):
             else:
                 groups.append(group_num)
 
-                old_index = self.controller.video_paths().index(item.text())
+                old_index = self.controller.video_paths().index(item.data(100))
                 old_indices.append(old_index)
 
         self.controller.videos_rearranged(old_indices, groups)
@@ -283,13 +285,13 @@ class ParamWindow(QMainWindow):
     def remove_selected_items(self):
         selected_items = self.videos_list.selectedItems()
 
-        self.controller.remove_videos_at_indices([ self.controller.video_paths().index(item.text()) for item in selected_items ])
+        self.controller.remove_videos_at_indices([ self.controller.video_paths().index(item.data(100)) for item in selected_items ])
 
         for i in range(len(selected_items)-1, -1, -1):
             self.videos_list.takeItem(self.videos_list.row(selected_items[i]))
 
     def remove_items(self, items):
-        self.controller.remove_videos_at_indices([ self.controller.video_paths().index(item.text()) for item in items ])
+        self.controller.remove_videos_at_indices([ self.controller.video_paths().index(item.data(100)) for item in items ])
 
         for i in range(len(items)-1, -1, -1):
             self.videos_list.takeItem(self.videos_list.row(items[i]))
@@ -313,7 +315,7 @@ class ParamWindow(QMainWindow):
             item = self.videos_list.item(i)
 
             if item.font() != categoryFont:
-                index = self.controller.video_paths().index(item.text())
+                index = self.controller.video_paths().index(item.data(100))
                 if self.controller.video_groups()[index] == group_num:
                     items_to_remove.append(item)
 
@@ -338,6 +340,8 @@ class ParamWindow(QMainWindow):
                 if tab_index == 0:
                     self.remove_videos_action.setEnabled(False)
                     self.remove_group_action.setEnabled(True)
+
+                # self.loading_widget.preview_selected_video_button.setEnabled(False)
             else:
                 self.loading_widget.remove_videos_button.setDisabled(False)
                 self.loading_widget.remove_group_button.setDisabled(True)
@@ -345,8 +349,10 @@ class ParamWindow(QMainWindow):
                     self.remove_videos_action.setEnabled(True)
                     self.remove_group_action.setEnabled(False)
 
-                index = self.controller.video_paths().index(selected_items[0].text())
-                self.controller.video_selected(index)
+                # self.loading_widget.preview_selected_video_button.setEnabled(True)
+
+                # index = self.controller.video_paths().index(selected_items[0].text())
+                # self.controller.video_selected(index)
         else:
             self.loading_widget.remove_videos_button.setDisabled(True)
             self.loading_widget.remove_group_button.setDisabled(True)
@@ -354,7 +360,79 @@ class ParamWindow(QMainWindow):
                 self.remove_videos_action.setEnabled(False)
                 self.remove_group_action.setEnabled(False)
 
+        for i in range(self.videos_list.count()):
+            item = self.videos_list.item(i)
+
+            widget = self.videos_list.itemWidget(item)
+            if widget is not None:
+                label = widget.findChild(QLabel)
+
+                if item in selected_items:
+                    label.setStyleSheet("QLabel{color: white;}")
+                else:
+                    label.setStyleSheet("QLabel{color: black;}")
+
+            # self.loading_widget.preview_selected_video_button.setEnabled(False)
+
             index = None
+
+    def show_video(self, video_path):
+        # selected_items = self.videos_list.selectedItems()
+
+        # if len(selected_items) > 0:
+        #     if selected_items[0].font() != categoryFont:
+        # print(video_path)
+        index = self.controller.video_paths().index(video_path)
+        self.controller.video_selected(index)
+
+        for i in range(self.videos_list.count()):
+            item = self.videos_list.item(i)
+
+            widget = self.videos_list.itemWidget(item)
+            # print(i, item, widget)
+            if widget is not None:
+                button = widget.findChild(HoverButton, "play_button")
+
+                if item.data(100) == video_path:
+                    color = QColor(255, 220, 0, 60)
+                    item.setBackground(QBrush(color, Qt.SolidPattern))
+
+                    button.setStyleSheet("QPushButton{border: none; background-image:url(icons/play_icon_enabled.png);} QPushButton:hover{background-image:url(icons/play_icon_enabled.png);}")
+                else:
+                    color = QColor(255, 255, 255, 255)
+                    item.setBackground(QBrush(color, Qt.SolidPattern))
+
+                    button.setStyleSheet("QPushButton{border: none; background-image:url(icons/play_icon_disabled.png);} QPushButton:hover{background-image:url(icons/play_icon.png);}")
+
+    def make_show_video(self, video_path, preview_selected_video_button):
+        def show_video():
+            # selected_items = self.videos_list.selectedItems()
+
+            # if len(selected_items) > 0:
+            #     if selected_items[0].font() != categoryFont:
+            # print(video_path)
+            index = self.controller.video_paths().index(video_path)
+            self.controller.video_selected(index)
+
+            for i in range(self.videos_list.count()):
+                item = self.videos_list.item(i)
+
+                widget = self.videos_list.itemWidget(item)
+                # print(i, item, widget)
+                if widget is not None:
+                    button = widget.findChild(HoverButton, "play_button")
+
+                    if button == preview_selected_video_button:
+                        color = QColor(255, 220, 0, 60)
+                        item.setBackground(QBrush(color, Qt.SolidPattern))
+
+                        button.setStyleSheet("QPushButton{border: none; background-image:url(icons/play_icon_enabled.png);} QPushButton:hover{background-image:url(icons/play_icon_enabled.png);}")
+                    else:
+                        color = QColor(255, 255, 255, 255)
+                        item.setBackground(QBrush(color, Qt.SolidPattern))
+
+                        button.setStyleSheet("QPushButton{border: none; background-image:url(icons/play_icon_disabled.png);} QPushButton:hover{background-image:url(icons/play_icon.png);}")
+        return show_video
 
     def create_menus(self):
         self.add_videos_action = QAction('Add Videos...', self)
@@ -448,6 +526,38 @@ class ParamWindow(QMainWindow):
 
         for video_path in video_paths:
             self.videos_list.addItem(video_path)
+
+            item = self.videos_list.findItems(video_path, Qt.MatchFlag.MatchExactly)[0]
+            widget = QWidget()
+            label =  QLabel(video_path)
+            widget.setStyleSheet(LIST_ITEM_STYLESHEET_LIGHT)
+
+            button_name = "play_button"
+
+            preview_selected_video_button = HoverButton('', self, self.statusBar())
+            preview_selected_video_button.setHoverMessage("Show the selected video.")
+            # preview_selected_video_button.setIcon(QIcon("icons/play_icon.png"))
+            # preview_selected_video_button.setIconSize(QSize(13,16))
+            preview_selected_video_button.setFixedSize(QSize(13, 16))
+            preview_selected_video_button.clicked.connect(self.make_show_video(video_path, preview_selected_video_button))
+            preview_selected_video_button.setStyleSheet("QPushButton{border: none; background-image:url(icons/play_icon_disabled.png);} QPushButton:hover{background-image:url(icons/play_icon.png);}")
+            preview_selected_video_button.setObjectName(button_name)
+            widgetButton =  QPushButton()
+            layout = QHBoxLayout()
+            layout.setContentsMargins(5, 5, 5, 5)
+            layout.setSpacing(5)
+            layout.addWidget(preview_selected_video_button)
+            layout.addWidget(label)
+            # layout.addStretch()
+
+            layout.setSizeConstraint(QLayout.SetFixedSize)
+            widget.setLayout(layout)  
+            item.setSizeHint(widget.sizeHint())
+            item.setText("")
+            item.setData(100, video_path)
+            color = QColor(255, 255, 255, 255)
+            item.setBackground(QBrush(color, Qt.SolidPattern))
+            self.videos_list.setItemWidget(item, widget)
 
         self.main_param_widget.setDisabled(False)
         self.tab_widget.setTabEnabled(1, True)
