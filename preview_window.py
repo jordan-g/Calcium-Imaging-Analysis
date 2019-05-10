@@ -21,6 +21,8 @@ except:
 roi_colors = [ np.random.permutation((np.random.uniform(120, 200), np.random.uniform(50, 200), np.random.uniform(50, 200))) for i in range(10000) ]
 colormaps  = ["inferno", "plasma", "viridis", "magma", "Reds", "Greens", "Blues", "Greys", "gray", "hot"]
 
+ROUNDED_STYLESHEET_DARK    = "QLineEdit { background-color: rgba(255, 255, 255, 0.3); border-radius: 2px; border: 1px solid rgba(0, 0, 0, 0.5); padding: 2px; color: white; };"
+
 class PreviewWindow(QMainWindow):
     def __init__(self, controller):
         QMainWindow.__init__(self)
@@ -39,6 +41,7 @@ class PreviewWindow(QMainWindow):
         # create main widget
         self.main_widget = QWidget(self)
         self.main_widget.setMinimumSize(QSize(800, 700))
+        self.resize(800, 1000)
 
         # create main layout
         self.main_layout = QVBoxLayout(self.main_widget)
@@ -129,6 +132,8 @@ class PreviewWindow(QMainWindow):
         self.show_rois_checkbox.clicked.connect(self.toggle_show_rois)
         self.bottom_layout.addWidget(self.show_rois_checkbox)
 
+        self.bottom_layout.addStretch()
+
         label = QLabel("Frame Offset:")
         label.setStyleSheet("color: rgba(150, 150, 150, 1);")
         self.bottom_layout.addWidget(label)
@@ -137,6 +142,7 @@ class PreviewWindow(QMainWindow):
         self.frame_offset_textbox.setObjectName("Frame Offset")
         self.frame_offset_textbox.setText("0")
         self.frame_offset_textbox.editingFinished.connect(lambda:self.update_frame_offset())
+        self.frame_offset_textbox.setStyleSheet(ROUNDED_STYLESHEET_DARK)
         self.bottom_layout.addWidget(self.frame_offset_textbox)
 
         self.bottom_layout.addStretch()
