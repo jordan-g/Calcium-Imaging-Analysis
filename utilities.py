@@ -215,12 +215,14 @@ def motion_correct_multiple_videos(video_paths, video_groups, max_shift, patch_s
 
         video_lengths = []
 
-        final_video_path = "final_video_temp.tif"
+        directory = os.path.dirname(paths[0])
+
+        final_video_path = os.path.join(directory, "final_video_temp.tif")
 
         with tifffile.TiffWriter(final_video_path, bigtiff=True) as tif:
             for i in range(len(paths)):
                 video_path = paths[i]
-                new_video_path = "video_temp.tif"
+                new_video_path = os.path.join(directory, "video_temp.tif")
 
                 shutil.copyfile(video_path, new_video_path)
 
@@ -246,14 +248,14 @@ def motion_correct_multiple_videos(video_paths, video_groups, max_shift, patch_s
 
         final_video = tifffile.memmap(final_video_path).astype(np.uint16)
         if len(final_video.shape) == 5:
-            final_video_path_2 = "final_video_temp_2.tif"
+            final_video_path_2 = os.path.join(directory, "final_video_temp_2.tif")
             tifffile.imsave(final_video_path_2, final_video.reshape((final_video.shape[0]*final_video.shape[1], final_video.shape[2], final_video.shape[3], final_video.shape[4])))
             if os.path.exists(final_video_path):
                 os.remove(final_video_path)
         else:
             final_video_path_2 = final_video_path
 
-        mc_video, mc_borders[group_num] = motion_correct(final_video_path_2, max_shift, patch_stride, patch_overlap, use_multiprocessing=use_multiprocessing)
+        mc_video, new_video_path, mc_borders[group_num] = motion_correct(final_video_path_2, max_shift, patch_stride, patch_overlap, use_multiprocessing=use_multiprocessing)
         
         mc_video = mc_video.transpose((0, 1, 3, 2))
 
@@ -276,6 +278,7 @@ def motion_correct_multiple_videos(video_paths, video_groups, max_shift, patch_s
 
         if os.path.exists(final_video_path_2):
             os.remove(final_video_path_2)
+            os.remove(new_video_path)
 
         del mc_video
 
@@ -307,19 +310,18 @@ def motion_correct(video_path, max_shift, patch_stride, patch_overlap, use_multi
 
     z_range = list(range(memmap_video.shape[1]))
 
-    new_video_path = "mc_video_temp.tif"
+    new_video_path = os.path.join(directory, "mc_video_temp.tif")
 
     shutil.copyfile(video_path, new_video_path)
 
     mc_video = tifffile.memmap(new_video_path).astype(np.uint16)
-
-    print("mc video", mc_video.shape)
 
     mc_borders = [ None for z in z_range ]
 
     counter = 0
 
     for z in z_range:
+        print("Motion correcting plane z={}...".format(z))
         video_path = os.path.join(directory, os.path.splitext(filename)[0] + "_z_{}_temp.tif".format(z))
         tifffile.imsave(video_path, memmap_video[:, z, :, :])
 
@@ -369,7 +371,6 @@ def motion_correct(video_path, max_shift, patch_stride, patch_overlap, use_multi
         m_orig = tifffile.memmap(fname)
         # m_orig = cm.load(fname)
         min_mov = np.min(m_orig) # movie must be mostly positive for this to work
-        print("minimum", min_mov)
 
         offset_mov = -min_mov
 
@@ -421,7 +422,6 @@ def motion_correct(video_path, max_shift, patch_stride, patch_overlap, use_multi
         try:
             os.remove(mc.fname_tot_rig)
             os.remove(mc.fname_tot_els)
-            os.remove(video_path)
         except:
             pass
 
@@ -437,11 +437,18 @@ def motion_correct(video_path, max_shift, patch_stride, patch_overlap, use_multi
                 dview.shutdown()
         cm.stop_server()
 
+    mmap_files = glob.glob(os.path.join(directory, '*.mmap'))
+    for mmap_file in mmap_files:
+        try:
+            os.remove(mmap_file)
+        except:
+            pass
+
     log_files = glob.glob('Yr*_LOG_*')
     for log_file in log_files:
         os.remove(log_file)
 
-    return mc_video, mc_borders
+    return mc_video, new_video_path, mc_borders
 
 def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, progress_signal=None, thread=None, use_multiprocessing=True, method="cnmf", mask_points=[]):
     start_time = time.time()
@@ -458,12 +465,14 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
         group_num = group_nums[n]
         paths = [ video_paths[i] for i in range(len(video_paths)) if video_groups[i] == group_num ]
 
-        final_video_path = "final_video_temp.tif"
+        directory = os.path.dirname(paths[0])
+
+        final_video_path = os.path.join(directory, "final_video_temp.tif")
 
         with tifffile.TiffWriter(final_video_path, bigtiff=True) as tif:
             for i in range(len(paths)):
                 video_path = paths[i]
-                new_video_path = "video_temp.tif"
+                new_video_path = os.path.join(directory, "video_temp.tif")
 
                 shutil.copyfile(video_path, new_video_path)
 
@@ -511,7 +520,7 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
 
         final_video = tifffile.memmap(final_video_path).astype(np.uint16)
         if len(final_video.shape) == 5:
-            final_video_path_2 = "final_video_temp_2.tif"
+            final_video_path_2 = os.path.join(directory, "final_video_temp_2.tif")
             tifffile.imsave(final_video_path_2, final_video.reshape((final_video.shape[0]*final_video.shape[1], final_video.shape[2], final_video.shape[3], final_video.shape[4])))
             if os.path.exists(final_video_path):
                 os.remove(final_video_path)
@@ -671,6 +680,13 @@ def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True
                 dview.shutdown()
         cm.stop_server()
 
+    mmap_files = glob.glob(os.path.join(directory, "*.mmap"))
+    for mmap_file in mmap_files:
+        try:
+            os.remove(mmap_file)
+        except:
+            pass
+
     log_files = glob.glob('Yr*_LOG_*')
     for log_file in log_files:
         os.remove(log_file)
@@ -779,7 +795,9 @@ def find_rois_suite2p(video, video_path, params, mc_borders=None, use_multiproce
         return roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints
 
 def filter_rois(video_paths, roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints, params):
-    final_video_path = "final_video_temp.tif"
+    directory = os.path.dirname(video_paths[0])
+
+    final_video_path = os.path.join(directory, "final_video_temp.tif")
 
     with tifffile.TiffWriter(final_video_path, bigtiff=True) as tif:
         for i in range(len(video_paths)):
@@ -797,7 +815,7 @@ def filter_rois(video_paths, roi_spatial_footprints, roi_temporal_footprints, ro
 
     final_video = tifffile.memmap(final_video_path).astype(np.uint16)
     if len(final_video.shape) == 5:
-        final_video_path_2 = "final_video_temp_2.tif"
+        final_video_path_2 = os.path.join(directory, "final_video_temp_2.tif")
         tifffile.imsave(final_video_path_2, final_video.reshape((final_video.shape[0]*final_video.shape[1], final_video.shape[2], final_video.shape[3], final_video.shape[4])))
         if os.path.exists(final_video_path):
             os.remove(final_video_path)
@@ -856,12 +874,26 @@ def filter_rois(video_paths, roi_spatial_footprints, roi_temporal_footprints, ro
                 filtered_out_rois[-1].append(i)
 
         if os.path.exists(video_path):
-            os.remove(video_path)
+            try:
+                os.remove(video_path)
+            except:
+                pass
+
+    del memmap_video
 
     if os.path.exists(final_video_path_2):
         os.remove(final_video_path_2)
-        
-    del memmap_video
+
+    mmap_files = glob.glob(os.path.join(directory, "*.mmap"))
+    for mmap_file in mmap_files:
+        try:
+            os.remove(mmap_file)
+        except:
+            pass
+
+    log_files = glob.glob('Yr*_LOG_*')
+    for log_file in log_files:
+        os.remove(log_file)
 
     return filtered_out_rois
 
