@@ -4,6 +4,7 @@ import tifffile
 import cv2
 import csv
 import scipy
+import platform
 
 import utilities
 import param_window
@@ -61,6 +62,7 @@ class GUIController():
         self.video_max            = 1      # dynamic range of currently loaded video
         self.mask_images          = None
         self.selected_mask        = 0
+        self.play_video_bool      = True
 
     def roi_spatial_footprints(self):
         if len(self.controller.roi_spatial_footprints.keys()) > 0:
@@ -130,7 +132,7 @@ class GUIController():
         return self.controller.params
 
     def selected_video_mean_image(self):
-        return self.mean_images[self.selected_video]
+        return self.mean_images[self.z]
 
     def rois_exist(self):
         return len(self.controller.roi_spatial_footprints.keys()) > 0
@@ -163,6 +165,13 @@ class GUIController():
 
         # import the videos
         if video_paths is not None and len(video_paths) > 0:
+            if len(self.controller.video_paths) == 0:
+                self.play_video_bool = True
+                self.preview_window.play_video_checkbox.setEnabled(True)
+                self.preview_window.play_video_checkbox.setChecked(True)
+                self.param_window.play_video_action.setEnabled(True)
+                self.param_window.play_video_action.setChecked(True)
+
             self.controller.import_videos(video_paths)
 
             if self.video is None:
@@ -174,7 +183,7 @@ class GUIController():
                 if self.z >= self.video.shape[1]:
                     self.z = 0
 
-                self.play_video()
+                self.play_video(update_adjusted=True)
 
                 self.preview_window.reset_zoom()
 
@@ -193,16 +202,18 @@ class GUIController():
         if base_name.endswith('.tif') or base_name.endswith('.tiff'):
             self.video = tifffile.memmap(video_path)
         else:
+            print("Error: Attempted to open a non-TIFF file. Only TIFF files are currently supported.")
             return
 
         if len(self.video.shape) < 3:
             print("Error: Opened file is not a video -- not enough dimensions.")
             return
 
-        print(type(self.video))
+        # print(type(self.video))
 
         # figure out the dynamic range of the video
         max_value = np.amax(self.video)
+
         if max_value > 2047:
             self.video_max = 4095
         elif max_value > 1023:
@@ -265,6 +276,9 @@ class GUIController():
     def adjusted_frame(self, video):
         return utilities.adjust_gamma(utilities.adjust_contrast(video[self.preview_window.frame_num, self.z, :, :], self.controller.params['contrast']), self.controller.params['gamma'])
 
+    def adjusted_mean_image(self):
+        return utilities.adjust_gamma(utilities.adjust_contrast(self.mean_images[self.z], self.controller.params['contrast']), self.controller.params['gamma'])
+
     def video_selected(self, index, force=False):
         if index is not None and (index != self.selected_video or force):
             print("Video #{} selected.".format(index+1))
@@ -277,25 +291,45 @@ class GUIController():
             print(self.selected_video_path())
 
             self.open_video(self.selected_video_path())
-            self.update_adjusted_mean_images()
+
             if group_changed:
                 self.update_mask_images()
 
-            if self.mode in ("loading", "motion_correcting"):
-                self.play_video()
+            if self.play_video_bool:
+                self.play_video(update_adjusted=True, recreate_roi_contours=True)
             else:
-                self.show_roi_image(update_overlay=True)
+                self.show_mean_image(update_adjusted=True, recreate_roi_contours=True)
 
             self.preview_window.plot_tail_angles(self.controller.tail_angles[self.selected_video], self.controller.params['tail_data_fps'], self.controller.params['imaging_fps'])
             self.update_trace_plot()
 
-    def play_video(self):
-        # calculate gamma- and contrast-adjusted video and mean images
-        self.update_adjusted_video()
-        self.update_adjusted_mean_images()
+    def play_video(self, update_adjusted=False, recreate_roi_contours=False, update_overlays=False):
+        print("Playing video.")
+        self.preview_window.timer.stop()
 
-        self.preview_window.play_video(self.adjusted_video, self.selected_video_path(), self.controller.params['fps'])
-        self.preview_window.plot_mean_image(self.adjusted_mean_images[self.z], self.video_max)
+        if update_adjusted or self.adjusted_video is None:
+            # calculate gamma- and contrast-adjusted video and mean images
+            self.update_adjusted_video()
+            self.update_adjusted_mean_images()
+
+        roi_spatial_footprints = self.roi_spatial_footprints()
+        if roi_spatial_footprints is not None:
+            roi_spatial_footprints = roi_spatial_footprints.toarray().reshape((self.video.shape[2], self.video.shape[3], roi_spatial_footprints.shape[-1])).transpose((1, 0, 2))
+
+        if recreate_roi_contours:
+            self.preview_window.compute_contours_and_overlays(self.adjusted_mean_images[self.z].shape, roi_spatial_footprints)
+
+        if update_overlays or recreate_roi_contours:
+            self.preview_window.compute_kept_rois_overlay(roi_spatial_footprints, self.removed_rois())
+            self.preview_window.compute_discarded_rois_overlay(roi_spatial_footprints, self.removed_rois())
+
+            self.preview_window.create_roi_heatmap(roi_spatial_footprints=self.roi_spatial_footprints(), removed_rois=self.removed_rois())
+
+        if self.mode in ("loading", "motion_correcting"):
+            self.preview_window.play_video(self.adjusted_video, self.selected_video_path(), self.controller.params['fps'], play_right=False)
+            self.preview_window.plot_mean_image(self.adjusted_mean_images[self.z], self.video_max)
+        else:
+            self.preview_window.play_video(self.adjusted_video, self.selected_video_path(), self.controller.params['fps'], play_right=True)
         self.preview_window.show_plot()
 
     def videos_rearranged(self, old_indices, groups):
@@ -334,7 +368,7 @@ class GUIController():
             self.preview_window.timer.stop()
 
             # show ROI filtering parameters
-            self.show_roi_filtering_params(update_overlay=True)
+            self.show_roi_filtering_params(recreate_roi_contours=True)
 
     def remove_videos_at_indices(self, indices):
         self.controller.remove_videos_at_indices(indices)
@@ -348,6 +382,12 @@ class GUIController():
             # reset param window & preview window to their initial states
             self.param_window.set_initial_state()
             self.preview_window.set_initial_state()
+
+            self.play_video_bool = True
+            self.preview_window.play_video_checkbox.setEnabled(True)
+            self.preview_window.play_video_checkbox.setChecked(True)
+            self.param_window.play_video_action.setEnabled(True)
+            self.param_window.play_video_action.setChecked(True)
         else:
             # open the newest video at index 0
             self.video_selected(0, force=True)
@@ -496,15 +536,15 @@ class GUIController():
 
     def set_use_mc_video(self, use_mc_video):
         self.controller.use_mc_video = use_mc_video
+        
+        self.param_window.set_video_paths(self.video_paths())
 
         self.open_video(self.selected_video_path())
-        
-        if self.mode in ("loading", "motion_correcting"):
-            self.play_video()
-        else:
-            self.show_roi_image(recreate_roi_images=True)
 
-        self.param_window.set_video_paths(self.video_paths())
+        if self.mode in ("loading", "motion_correcting"):
+            self.play_video(update_adjusted=True)
+        else:
+            self.show_mean_image(update_adjusted=True)
 
     def set_roi_finding_mode(self, mode):
         self.controller.roi_finding_mode = mode
@@ -558,7 +598,10 @@ class GUIController():
         self.preview_window.show_rois_checkbox.setChecked(True)
         self.param_window.save_rois_action.setEnabled(True)
 
-        self.show_roi_image(update_overlay=True)
+        if self.play_video_bool:
+            self.play_video(recreate_roi_contours=True)
+        else:
+            self.show_mean_image(recreate_roi_contours=True)
 
         self.roi_finding_queued = False
 
@@ -571,40 +614,79 @@ class GUIController():
 
         # play the video
         if self.video is not None:
-            self.play_video()
+            if self.play_video_bool:
+                self.play_video()
+            else:
+                self.show_mean_image()
+
+            if self.play_video_bool:
+                self.preview_window.left_label.setText("Video ▼")
+            else:
+                self.preview_window.left_label.setText("Mean Image ▼")
+            self.preview_window.right_label.setText("▼ Mean Image")
 
     def show_motion_correction_params(self):
         self.param_window.tab_widget.setCurrentIndex(1)
 
         self.mode = "motion_correcting"
 
+        # self.preview_window.play_video_checkbox.setChecked(True)
+        # self.preview_window.show_rois_checkbox.setEnabled(False)
+
         self.preview_window.timer.stop()
 
         # play the video
         if self.video is not None:
-            self.play_video()
+            if self.play_video_bool:
+                self.play_video()
+            else:
+                self.show_mean_image()
+
+            if self.play_video_bool:
+                self.preview_window.left_label.setText("Video ▼")
+            else:
+                self.preview_window.left_label.setText("Mean Image ▼")
+            self.preview_window.right_label.setText("▼ Mean Image")
 
     def show_roi_finding_params(self):
         self.param_window.tab_widget.setCurrentIndex(2)
 
         self.mode = "roi_finding"
 
+        # self.preview_window.play_video_checkbox.setChecked(False)
+        # self.preview_window.show_rois_checkbox.setEnabled(True)
+
         self.preview_window.timer.stop()
 
-        self.show_roi_image()
+        # play the video
+        if self.video is not None:
+            if self.play_video_bool:
+                self.play_video()
+            else:
+                self.show_mean_image()
 
-        self.preview_window.setWindowTitle(os.path.basename(self.selected_video_path()))
+            self.preview_window.left_label.setText("Kept ROIs ▼")
+            self.preview_window.right_label.setText("▼ Discarded ROIs")
 
-    def show_roi_filtering_params(self, update_overlay=False):
+    def show_roi_filtering_params(self, recreate_roi_contours=False):
         self.param_window.tab_widget.setCurrentIndex(3)
 
         self.mode = "roi_filtering"
+
+        # self.preview_window.play_video_checkbox.setChecked(False)
+        # self.preview_window.show_rois_checkbox.setEnabled(True)
         
         self.preview_window.timer.stop()
 
-        self.show_roi_image(update_overlay=update_overlay)
+        # play the video
+        if self.video is not None:
+            if self.play_video_bool:
+                self.play_video(recreate_roi_contours=recreate_roi_contours)
+            else:
+                self.show_mean_image(recreate_roi_contours=recreate_roi_contours)
 
-        self.preview_window.setWindowTitle(os.path.basename(self.selected_video_path()))
+            self.preview_window.left_label.setText("Kept ROIs ▼")
+            self.preview_window.right_label.setText("▼ Discarded ROIs")
 
     def close_all(self):
         self.closing = True
@@ -619,7 +701,7 @@ class GUIController():
     def preview_contrast(self, contrast):
         self.controller.params['contrast'] = contrast
 
-        if self.mode in ("loading", "motion_correcting"):
+        if self.play_video_bool:
             self.preview_window.timer.stop()
 
             # calculate a contrast- and gamma-adjusted version of the current frame
@@ -627,13 +709,17 @@ class GUIController():
 
             # show the adjusted frame
             self.preview_window.show_frame(adjusted_frame)
-        elif self.mode in ("roi_finding", "roi_filtering"):
-            self.update_param("contrast", contrast)
+        else:
+            # calculate a contrast- and gamma-adjusted version of the current mean image
+            adjusted_mean_image = self.adjusted_mean_image()
+
+            # show the adjusted mean image
+            self.preview_window.show_frame(adjusted_mean_image)
 
     def preview_gamma(self, gamma):
         self.controller.params['gamma'] = gamma
 
-        if self.mode in ("loading", "motion_correcting"):
+        if self.play_video_bool:
             self.preview_window.timer.stop()
 
             # calculate a contrast- and gamma-adjusted version of the current frame
@@ -641,8 +727,12 @@ class GUIController():
 
             # show the adjusted frame
             self.preview_window.show_frame(adjusted_frame)
-        elif self.mode in ("roi_finding", "roi_filtering"):
-            self.update_param("gamma", gamma)
+        else:
+            # calculate a contrast- and gamma-adjusted version of the current mean image
+            adjusted_mean_image = self.adjusted_mean_image()
+
+            # show the adjusted mean image
+            self.preview_window.show_frame(adjusted_mean_image)
 
     def update_param(self, param, value):
         print("Setting parameter '{}' to {}.".format(param, value))
@@ -653,12 +743,18 @@ class GUIController():
 
         if self.mode in ("loading", "motion_correcting"):
             if param in ("contrast, gamma"):
-                self.preview_window.timer.stop()
-
-                self.play_video()
+                if self.play_video_bool:
+                    self.play_video(update_adjusted=True)
+                else:
+                    self.show_mean_image(update_adjusted=True)
             elif param == "fps":
                 # update the FPS of the preview window
                 self.preview_window.set_fps(self.controller.params['fps'])
+
+                if self.play_video_bool:
+                    self.play_video()
+                else:
+                    self.show_mean_image()
             elif param == "z":
                 self.z = value
 
@@ -672,18 +768,28 @@ class GUIController():
                     self.preview_window.compute_discarded_rois_overlay(roi_spatial_footprints, self.removed_rois())
                 self.update_trace_plot()
 
-                self.preview_window.timer.stop()
-
-                self.play_video()
+                if self.play_video_bool:
+                    self.play_video(update_adjusted=True, recreate_roi_contours=True)
+                else:
+                    self.show_mean_image(update_adjusted=True, recreate_roi_contours=True)
         elif self.mode == "roi_finding":
             if param in ("contrast, gamma"):
-                self.update_adjusted_mean_images()
-
                 # show the ROI image
-                self.show_roi_image()
+                if self.play_video_bool:
+                    self.play_video(update_adjusted=True)
+                else:
+                    self.show_mean_image(update_adjusted=True)
+            elif param == "fps":
+                # update the FPS of the preview window
+                self.preview_window.set_fps(self.controller.params['fps'])
+
+                if self.play_video_bool:
+                    self.play_video()
+                else:
+                    self.show_mean_image()
             elif param == "z":
-                if self.drawing_mask:
-                    self.toggle_mask_mode()
+                # if self.drawing_mask:
+                #     self.toggle_mask_mode()
 
                 self.z = value
 
@@ -692,16 +798,28 @@ class GUIController():
                 self.update_trace_plot()
 
                 # show the ROI image
-                self.show_roi_image(update_overlay=True)
+                if self.play_video_bool:
+                    self.play_video(update_adjusted=True, recreate_roi_contours=True)
+                else:
+                    self.show_mean_image(update_adjusted=True, recreate_roi_contours=True)
         elif self.mode == "roi_filtering":
             if param in ("contrast, gamma"):
-                self.update_adjusted_mean_images()
-
                 # show the ROI image
-                self.show_roi_image()
+                if self.play_video_bool:
+                    self.play_video(update_adjusted=True)
+                else:
+                    self.show_mean_image(update_adjusted=True)
+            elif param == "fps":
+                # update the FPS of the preview window
+                self.preview_window.set_fps(self.controller.params['fps'])
+
+                if self.play_video_bool:
+                    self.play_video()
+                else:
+                    self.show_mean_image()
             if param == "z":
-                if self.drawing_mask:
-                    self.toggle_mask_mode()
+                # if self.drawing_mask:
+                #     self.toggle_mask_mode()
 
                 self.z = value
 
@@ -710,12 +828,18 @@ class GUIController():
                 self.update_trace_plot()
 
                 # show the ROI image
-                self.show_roi_image(update_overlay=True)
+                if self.play_video_bool:
+                    self.play_video(update_adjusted=True, recreate_roi_contours=True)
+                else:
+                    self.show_mean_image(update_adjusted=True, recreate_roi_contours=True)
             elif param in ("min_area", "max_area", "min_circ", "max_circ"):
                 pass
 
     def set_use_multiprocessing(self, use_multiprocessing):
         self.controller.use_multiprocessing = use_multiprocessing
+        self.param_window.loading_widget.use_multiprocessing_checkbox.setChecked(use_multiprocessing)
+        self.param_window.motion_correction_widget.use_multiprocessing_checkbox.setChecked(use_multiprocessing)
+        self.param_window.roi_finding_widget.use_multiprocessing_checkbox.setChecked(use_multiprocessing)
 
     def set_show_rois(self, show_rois):
         print("Setting show ROIs from {} to {}.".format(self.show_rois, show_rois))
@@ -725,33 +849,62 @@ class GUIController():
         self.preview_window.show_rois_checkbox.setChecked(show_rois)
 
         if self.mode not in ["loading", "motion_correcting"]:
-            self.show_roi_image()
+            self.show_mean_image()
+
+    def set_play_video(self, play_video_bool):
+        print("Setting play video from {} to {}.".format(self.play_video_bool, play_video_bool))
+        self.play_video_bool = play_video_bool
+
+        self.param_window.play_video_action.setChecked(play_video_bool)
+        self.preview_window.play_video_checkbox.setChecked(play_video_bool)
 
     def set_show_zscore(self, show_zscore):
         self.show_zscore = show_zscore
 
         if self.show_zscore:
-            self.preview_window.viewbox3.setYRange(-2, 3)
-            self.preview_window.heatmap_plot.setImage(self.preview_window.heatmap, levels=(-2.01, 3.01))
-            self.preview_window.viewbox3.setLabel('left', "Z-Score")
+            self.preview_window.roi_trace_viewbox.setYRange(-2, 3)
+            # self.preview_window.kept_traces_image.setImage(self.preview_window.heatmap, levels=(-2.01, 3.01))
+            self.preview_window.roi_trace_viewbox.setLabel('left', "Z-Score")
         else:
-            self.preview_window.viewbox3.setYRange(0, 1)
-            self.preview_window.heatmap_plot.setImage(self.preview_window.heatmap, levels=(0, 1.01))
-            self.preview_window.viewbox3.setLabel('left', "Fluorescence")
+            self.preview_window.roi_trace_viewbox.setYRange(0, 1)
+            # self.preview_window.kept_traces_image.setImage(self.preview_window.heatmap, levels=(0, 1.01))
+            self.preview_window.roi_trace_viewbox.setLabel('left', "Fluorescence")
 
-        self.show_roi_image()
+        self.preview_window.create_roi_heatmap(roi_spatial_footprints=self.roi_spatial_footprints(), removed_rois=self.removed_rois())
+
+        self.show_mean_image()
 
         self.update_trace_plot()
 
-    def show_roi_image(self, update_overlay=False, recreate_overlays=False, recreate_roi_images=True):
-        self.preview_window.plot_image(self.adjusted_mean_images[self.z], video_max=255.0, show_rois=self.show_rois, update_overlay=update_overlay, recreate_overlays=recreate_overlays, recreate_roi_images=recreate_roi_images)
+    def show_mean_image(self, update_adjusted=False, recreate_roi_contours=False, update_overlays=False):
+        if update_adjusted:
+            # calculate gamma- and contrast-adjusted video and mean images
+            self.update_adjusted_video()
+            self.update_adjusted_mean_images()
+
+        roi_spatial_footprints = self.roi_spatial_footprints()
+        if roi_spatial_footprints is not None:
+            roi_spatial_footprints = roi_spatial_footprints.toarray().reshape((self.video.shape[2], self.video.shape[3], roi_spatial_footprints.shape[-1])).transpose((1, 0, 2))
+
+        if recreate_roi_contours:
+            self.preview_window.compute_contours_and_overlays(self.adjusted_mean_images[self.z].shape, roi_spatial_footprints)
+
+        if update_overlays or recreate_roi_contours:
+            self.preview_window.compute_kept_rois_overlay(roi_spatial_footprints, self.removed_rois())
+            self.preview_window.compute_discarded_rois_overlay(roi_spatial_footprints, self.removed_rois())
+
+            print("video shape: {}".format(self.video.shape))
+
+            self.preview_window.create_roi_heatmap(roi_spatial_footprints=self.roi_spatial_footprints(), removed_rois=self.removed_rois())
+
+        self.preview_window.plot_image(self.adjusted_mean_images[self.z], roi_spatial_footprints=roi_spatial_footprints, video_max=255.0, show_rois=self.show_rois)
 
     def filter_rois(self):
         self.controller.filter_rois(group_num=self.group_num)
 
         self.selected_rois = []
 
-        self.show_roi_image(recreate_overlays=True)
+        self.show_mean_image(update_overlays=True)
 
     def select_roi(self, roi_point, ctrl_held=False):
         if self.mode == "loading" or self.mode == "motion_correcting":
@@ -826,7 +979,7 @@ class GUIController():
         self.preview_window.compute_kept_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
         self.preview_window.compute_discarded_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
 
-        self.show_roi_image(recreate_overlays=True)
+        self.show_mean_image(update_overlays=True)
 
     def discard_all_rois(self):
         self.controller.discarded_rois[self.group_num][self.z] = np.arange(self.controller.roi_spatial_footprints[self.group_num][self.z].shape[1]).tolist()
@@ -839,7 +992,7 @@ class GUIController():
         self.preview_window.compute_kept_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
         self.preview_window.compute_discarded_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
 
-        self.show_roi_image(recreate_overlays=True)
+        self.show_mean_image(update_overlays=True)
 
     def keep_selected_rois(self):
         for roi in self.selected_rois:
@@ -852,7 +1005,7 @@ class GUIController():
         self.preview_window.compute_kept_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
         self.preview_window.compute_discarded_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
 
-        self.show_roi_image(recreate_overlays=True)
+        self.show_mean_image(update_overlays=True)
 
     def merge_selected_rois(self):
         if len(self.selected_rois) > 1:
@@ -938,7 +1091,7 @@ class GUIController():
 
             self.update_trace_plot()
 
-            self.show_roi_image(update_overlay=True)
+            self.show_mean_image(recreate_roi_contours=True)
 
     def update_trace_plot(self):
         temporal_footprints = self.roi_temporal_footprints()
@@ -978,15 +1131,24 @@ class GUIController():
 
         if self.drawing_mask:
             self.param_window.mask_drawing_started()
+            self.preview_window.uncheck_play_video()
+            self.preview_window.play_video_checkbox.setEnabled(False)
+            if platform.system() == "Darwin":
+                key = "⌘"
+            else:
+                key = "Ctrl"
+            self.preview_window.set_default_statusbar_message("Draw masks in the left plot. Hold {} and click to add a mask point. Click a mask to select it, and right click to delete it.".format(key))
         else:
             self.param_window.mask_drawing_ended()
+            self.preview_window.reset_default_statusbar_message()
+            self.preview_window.play_video_checkbox.setEnabled(True)
 
             if self.preview_window.temp_mask_item is not None:
                 if len(self.preview_window.mask_points) >= 3:
                     self.create_mask(self.preview_window.mask_points)
                     mask_item = self.preview_window.create_mask_item(self.preview_window.mask_points)
                     self.preview_window.mask_items.append(mask_item)
-                    self.preview_window.viewbox1.addItem(mask_item)
+                    self.preview_window.left_image_viewbox.addItem(mask_item)
                     self.preview_window.mask_points = []
 
     def create_mask(self, mask_points):

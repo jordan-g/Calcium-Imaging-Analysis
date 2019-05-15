@@ -344,7 +344,11 @@ class Controller():
 
             group_indices = [ i for i in range(len(self.video_paths)) if self.video_groups[i] == group_num ]
             group_lengths = [ self.video_lengths[i] for i in group_indices ]
-            group_paths   = [ self.video_paths[i] for i in group_indices ]
+
+            if self.use_mc_video and len(self.mc_video_paths) > 0:
+                group_paths   = [ self.mc_video_paths[i] for i in group_indices ]
+            else:
+                group_paths   = [ self.video_paths[i] for i in group_indices ]
 
             index = group_paths.index(video_path)
 

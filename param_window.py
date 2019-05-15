@@ -30,13 +30,28 @@ STATUSBAR_STYLESHEET_LIGHT = "background-color: rgba(255, 255, 255, 0.3); border
 STATUSBAR_STYLESHEET_DARK  = "background-color: rgba(255, 255, 255, 0.1); border-top: 1px solid rgba(0, 0, 0, 0.5); font-size: 12px; font-style: italic;"
 rounded_stylesheet         = ROUNDED_STYLESHEET_LIGHT
 statusbar_stylesheet       = STATUSBAR_STYLESHEET_LIGHT
+SHOWING_VIDEO_COLOR_LIGHT  = QColor(255, 220, 0, 60)
+SHOWING_VIDEO_COLOR_DARK   = QColor(255, 220, 0, 30)
+showing_video_color        = SHOWING_VIDEO_COLOR_LIGHT
+SHOW_VIDEO_BUTTON_DISABLED_STYLESHEET_DARK  = "QPushButton{border: none; background-image:url(icons/play_icon_disabled_inverted.png);} QPushButton:hover{background-image:url(icons/play_icon_inverted.png);}"
+SHOW_VIDEO_BUTTON_DISABLED_STYLESHEET_LIGHT = "QPushButton{border: none; background-image:url(icons/play_icon_disabled.png);} QPushButton:hover{background-image:url(icons/play_icon.png);}"
+SHOW_VIDEO_BUTTON_ENABLED_STYLESHEET_DARK  = "QPushButton{border: none; background-image:url(icons/play_icon_enabled_inverted.png);} QPushButton:hover{background-image:url(icons/play_icon_enabled_inverted.png);}"
+SHOW_VIDEO_BUTTON_ENABLED_STYLESHEET_LIGHT = "QPushButton{border: none; background-image:url(icons/play_icon_enabled.png);} QPushButton:hover{background-image:url(icons/play_icon_enabled.png);}"
+show_video_button_disabled_stylesheet = SHOW_VIDEO_BUTTON_DISABLED_STYLESHEET_LIGHT
+show_video_button_enabled_stylesheet  = SHOW_VIDEO_BUTTON_ENABLED_STYLESHEET_LIGHT
+VIDEO_LABEL_SELECTED_COLOR_LIGHT = "QLabel{color: white;}"
+VIDEO_LABEL_SELECTED_COLOR_DARK = "QLabel{color: white;}"
+VIDEO_LABEL_UNSELECTED_COLOR_LIGHT = "QLabel{color: black;}"
+VIDEO_LABEL_UNSELECTED_COLOR_DARK = "QLabel{color: white;}"
+video_label_selected_color   = VIDEO_LABEL_SELECTED_COLOR_LIGHT
+video_label_unselected_color = VIDEO_LABEL_UNSELECTED_COLOR_LIGHT
 
 categoryFont = QFont()
 categoryFont.setBold(True)
 
 class ParamWindow(QMainWindow):
     def __init__(self, controller):
-        global rounded_stylesheet, statusbar_stylesheet
+        global rounded_stylesheet, statusbar_stylesheet, showing_video_color, show_video_button_disabled_stylesheet, show_video_button_enabled_stylesheet, video_label_selected_color, video_label_unselected_color
         QMainWindow.__init__(self)
 
         self.bg_color = (self.palette().color(self.backgroundRole()).red(), self.palette().color(self.backgroundRole()).green(), self.palette().color(self.backgroundRole()).blue())
@@ -44,10 +59,20 @@ class ParamWindow(QMainWindow):
             rounded_stylesheet   = ROUNDED_STYLESHEET_DARK
             list_stylesheet      = LIST_STYLESHEET_DARK
             statusbar_stylesheet = STATUSBAR_STYLESHEET_DARK
+            showing_video_color  = SHOWING_VIDEO_COLOR_DARK
+            show_video_button_disabled_stylesheet = SHOW_VIDEO_BUTTON_DISABLED_STYLESHEET_DARK
+            show_video_button_enabled_stylesheet  = SHOW_VIDEO_BUTTON_ENABLED_STYLESHEET_DARK
+            video_label_selected_color   = VIDEO_LABEL_SELECTED_COLOR_DARK
+            video_label_unselected_color = VIDEO_LABEL_UNSELECTED_COLOR_DARK
         else:
             rounded_stylesheet   = ROUNDED_STYLESHEET_LIGHT
             list_stylesheet      = LIST_STYLESHEET_LIGHT
             statusbar_stylesheet = STATUSBAR_STYLESHEET_LIGHT
+            showing_video_color  = SHOWING_VIDEO_COLOR_LIGHT
+            show_video_button_disabled_stylesheet = SHOW_VIDEO_BUTTON_DISABLED_STYLESHEET_LIGHT
+            show_video_button_enabled_stylesheet  = SHOW_VIDEO_BUTTON_ENABLED_STYLESHEET_LIGHT
+            video_label_selected_color   = VIDEO_LABEL_SELECTED_COLOR_LIGHT
+            video_label_unselected_color = VIDEO_LABEL_UNSELECTED_COLOR_LIGHT
 
         # set controller
         self.controller = controller
@@ -164,7 +189,20 @@ class ParamWindow(QMainWindow):
             item = self.videos_list.item(i)
 
             if item.font() != categoryFont:
-                item.setText(video_paths[video_num])
+                item.setData(100, video_paths[video_num])
+
+                widget = self.videos_list.itemWidget(item)
+                if widget is not None:
+
+                    label = widget.findChild(QLabel)
+
+                    label.setText(video_paths[video_num])
+
+                    button = widget.findChild(HoverButton)
+                    button.clicked.disconnect()
+                    button.clicked.connect(self.make_show_video(video_paths[video_num], button))
+                    
+                    item.setSizeHint(widget.sizeHint())
 
                 video_num += 1
 
@@ -336,6 +374,7 @@ class ParamWindow(QMainWindow):
                 print("Group {} clicked.".format(group_num+1))
 
                 self.loading_widget.remove_videos_button.setDisabled(True)
+                self.show_video_action.setDisabled(True)
                 self.loading_widget.remove_group_button.setDisabled(False)
                 if tab_index == 0:
                     self.remove_videos_action.setEnabled(False)
@@ -343,6 +382,10 @@ class ParamWindow(QMainWindow):
 
                 # self.loading_widget.preview_selected_video_button.setEnabled(False)
             else:
+                if len(selected_items) == 1:
+                    self.show_video_action.setDisabled(False)
+                else:
+                    self.show_video_action.setDisabled(True)
                 self.loading_widget.remove_videos_button.setDisabled(False)
                 self.loading_widget.remove_group_button.setDisabled(True)
                 if tab_index == 0:
@@ -354,6 +397,7 @@ class ParamWindow(QMainWindow):
                 # index = self.controller.video_paths().index(selected_items[0].text())
                 # self.controller.video_selected(index)
         else:
+            self.show_video_action.setDisabled(True)
             self.loading_widget.remove_videos_button.setDisabled(True)
             self.loading_widget.remove_group_button.setDisabled(True)
             if tab_index == 0:
@@ -368,22 +412,28 @@ class ParamWindow(QMainWindow):
                 label = widget.findChild(QLabel)
 
                 if item in selected_items:
-                    label.setStyleSheet("QLabel{color: white;}")
+                    label.setStyleSheet(video_label_selected_color)
                 else:
-                    label.setStyleSheet("QLabel{color: black;}")
+                    label.setStyleSheet(video_label_unselected_color)
 
             # self.loading_widget.preview_selected_video_button.setEnabled(False)
 
             index = None
 
-    def show_video(self, video_path):
-        # selected_items = self.videos_list.selectedItems()
+    def show_selected_video(self):
+        selected_items = self.videos_list.selectedItems()
 
-        # if len(selected_items) > 0:
-        #     if selected_items[0].font() != categoryFont:
-        # print(video_path)
+        if len(selected_items) == 1:
+            if selected_items[0].font() != categoryFont:
+                video_path = selected_items[0].data(100)
+
+                self.show_video(video_path)
+
+    def show_video(self, video_path):
         index = self.controller.video_paths().index(video_path)
         self.controller.video_selected(index)
+
+        print(self.controller.video_paths())
 
         for i in range(self.videos_list.count()):
             item = self.videos_list.item(i)
@@ -394,23 +444,19 @@ class ParamWindow(QMainWindow):
                 button = widget.findChild(HoverButton, "play_button")
 
                 if item.data(100) == video_path:
-                    color = QColor(255, 220, 0, 60)
-                    item.setBackground(QBrush(color, Qt.SolidPattern))
+                    item.setBackground(QBrush(showing_video_color, Qt.SolidPattern))
 
-                    button.setStyleSheet("QPushButton{border: none; background-image:url(icons/play_icon_enabled.png);} QPushButton:hover{background-image:url(icons/play_icon_enabled.png);}")
+                    button.setStyleSheet(show_video_button_enabled_stylesheet)
                 else:
-                    color = QColor(255, 255, 255, 255)
+                    color = QColor(255, 255, 255, 0)
                     item.setBackground(QBrush(color, Qt.SolidPattern))
 
-                    button.setStyleSheet("QPushButton{border: none; background-image:url(icons/play_icon_disabled.png);} QPushButton:hover{background-image:url(icons/play_icon.png);}")
+                    button.setStyleSheet(show_video_button_disabled_stylesheet)
 
     def make_show_video(self, video_path, preview_selected_video_button):
         def show_video():
-            # selected_items = self.videos_list.selectedItems()
+            print(self.controller.video_paths())
 
-            # if len(selected_items) > 0:
-            #     if selected_items[0].font() != categoryFont:
-            # print(video_path)
             index = self.controller.video_paths().index(video_path)
             self.controller.video_selected(index)
 
@@ -423,15 +469,14 @@ class ParamWindow(QMainWindow):
                     button = widget.findChild(HoverButton, "play_button")
 
                     if button == preview_selected_video_button:
-                        color = QColor(255, 220, 0, 60)
-                        item.setBackground(QBrush(color, Qt.SolidPattern))
+                        item.setBackground(QBrush(showing_video_color, Qt.SolidPattern))
 
-                        button.setStyleSheet("QPushButton{border: none; background-image:url(icons/play_icon_enabled.png);} QPushButton:hover{background-image:url(icons/play_icon_enabled.png);}")
+                        button.setStyleSheet(show_video_button_enabled_stylesheet)
                     else:
-                        color = QColor(255, 255, 255, 255)
+                        color = QColor(255, 255, 255, 0)
                         item.setBackground(QBrush(color, Qt.SolidPattern))
 
-                        button.setStyleSheet("QPushButton{border: none; background-image:url(icons/play_icon_disabled.png);} QPushButton:hover{background-image:url(icons/play_icon.png);}")
+                        button.setStyleSheet(show_video_button_disabled_stylesheet)
         return show_video
 
     def create_menus(self):
@@ -441,13 +486,19 @@ class ParamWindow(QMainWindow):
         self.add_videos_action.triggered.connect(self.controller.import_videos)
 
         self.remove_videos_action = QAction('Remove Video', self)
-        self.remove_videos_action.setShortcut('Delete')
+        self.remove_videos_action.setShortcut('Ctrl+D')
         self.remove_videos_action.setStatusTip('Remove the selected video.')
         self.remove_videos_action.setEnabled(False)
         self.remove_videos_action.triggered.connect(self.remove_selected_items)
 
+        self.show_video_action = QAction('Show Selected Video', self)
+        self.show_video_action.setShortcut('S')
+        self.show_video_action.setStatusTip('Show the selected video.')
+        self.show_video_action.setEnabled(False)
+        self.show_video_action.triggered.connect(self.show_selected_video)
+
         self.remove_group_action = QAction('Remove Group', self)
-        self.remove_group_action.setShortcut('Delete')
+        self.remove_group_action.setShortcut('Ctrl+D')
         self.remove_group_action.setStatusTip('Remove the selected group.')
         self.remove_group_action.setEnabled(False)
         self.remove_group_action.triggered.connect(self.remove_selected_group)
@@ -459,6 +510,13 @@ class ParamWindow(QMainWindow):
         self.show_rois_action.setEnabled(False)
         self.show_rois_action.setShortcutContext(Qt.ApplicationShortcut)
 
+        self.play_video_action = QAction('Play Video', self, checkable=True)
+        self.play_video_action.setShortcut('Space')
+        self.play_video_action.setStatusTip('Toggle playing the video.')
+        self.play_video_action.triggered.connect(lambda:self.controller.preview_window.set_play_video(self.play_video_action.isChecked()))
+        self.play_video_action.setEnabled(False)
+        self.play_video_action.setShortcutContext(Qt.ApplicationShortcut)
+
         self.load_rois_action = QAction('Load ROIs...', self)
         self.load_rois_action.setShortcut('Alt+O')
         self.load_rois_action.setStatusTip('Load ROIs from a file.')
@@ -469,7 +527,7 @@ class ParamWindow(QMainWindow):
         self.save_rois_action = QAction('Save ROIs...', self)
         self.save_rois_action.setShortcut('Alt+S')
         self.save_rois_action.setStatusTip('Save the current ROIs.')
-        self.save_rois_action.triggered.connect(self.controller.save_rois)
+        self.save_rois_action.triggered.connect(self.controller.save_all_rois)
         self.save_rois_action.setEnabled(False)
         self.save_rois_action.setShortcutContext(Qt.ApplicationShortcut)
 
@@ -494,7 +552,7 @@ class ParamWindow(QMainWindow):
         self.merge_rois_action.setEnabled(False)
         self.merge_rois_action.setShortcutContext(Qt.ApplicationShortcut)
 
-        self.load_tail_angles_action = QAction('Load Tail Angle Trace', self)
+        self.load_tail_angles_action = QAction('Load Tail Angle Trace...', self)
         self.load_tail_angles_action.setShortcut('Ctrl+T')
         self.load_tail_angles_action.setStatusTip('Load a tail angle CSV.')
         self.load_tail_angles_action.triggered.connect(self.controller.load_tail_angles)
@@ -507,12 +565,17 @@ class ParamWindow(QMainWindow):
         # add menu items
         file_menu = menubar.addMenu('&File')
         file_menu.addAction(self.add_videos_action)
-        file_menu.addAction(self.remove_videos_action)
         file_menu.addAction(self.load_tail_angles_action)
         file_menu.addAction(self.save_rois_action)
 
+        videos_menu = menubar.addMenu('&Videos')
+        videos_menu.addAction(self.remove_videos_action)
+        videos_menu.addAction(self.remove_group_action)
+        videos_menu.addAction(self.show_video_action)
+
         view_menu = menubar.addMenu('&View')
         view_menu.addAction(self.show_rois_action)
+        view_menu.addAction(self.play_video_action)
 
         rois_menu = menubar.addMenu('&ROIs')
         rois_menu.addAction(self.load_rois_action)
@@ -535,12 +598,12 @@ class ParamWindow(QMainWindow):
             button_name = "play_button"
 
             preview_selected_video_button = HoverButton('', self, self.statusBar())
-            preview_selected_video_button.setHoverMessage("Show the selected video.")
+            preview_selected_video_button.setHoverMessage("View the selected video.")
             # preview_selected_video_button.setIcon(QIcon("icons/play_icon.png"))
             # preview_selected_video_button.setIconSize(QSize(13,16))
             preview_selected_video_button.setFixedSize(QSize(13, 16))
             preview_selected_video_button.clicked.connect(self.make_show_video(video_path, preview_selected_video_button))
-            preview_selected_video_button.setStyleSheet("QPushButton{border: none; background-image:url(icons/play_icon_disabled.png);} QPushButton:hover{background-image:url(icons/play_icon.png);}")
+            preview_selected_video_button.setStyleSheet(show_video_button_disabled_stylesheet)
             preview_selected_video_button.setObjectName(button_name)
             widgetButton =  QPushButton()
             layout = QHBoxLayout()
@@ -555,7 +618,7 @@ class ParamWindow(QMainWindow):
             item.setSizeHint(widget.sizeHint())
             item.setText("")
             item.setData(100, video_path)
-            color = QColor(255, 255, 255, 255)
+            color = QColor(255, 255, 255, 0)
             item.setBackground(QBrush(color, Qt.SolidPattern))
             self.videos_list.setItemWidget(item, widget)
 
@@ -603,7 +666,6 @@ class ParamWindow(QMainWindow):
         self.roi_finding_widget.find_rois_button.setEnabled(False)
         self.roi_finding_widget.show_zscore_checkbox.setEnabled(False)
         self.roi_finding_widget.use_multiprocessing_checkbox.setEnabled(False)
-        self.main_param_widget.setEnabled(False)
         self.videos_list_widget.setEnabled(False)
         self.roi_finding_widget.draw_mask_button.setStyleSheet('font-weight: bold;')
         self.roi_finding_widget.draw_mask_button.setText("Done")
@@ -616,7 +678,6 @@ class ParamWindow(QMainWindow):
         self.roi_finding_widget.find_rois_button.setEnabled(True)
         self.roi_finding_widget.show_zscore_checkbox.setEnabled(True)
         self.roi_finding_widget.use_multiprocessing_checkbox.setEnabled(True)
-        self.main_param_widget.setEnabled(True)
         self.videos_list_widget.setEnabled(True)
         self.roi_finding_widget.draw_mask_button.setStyleSheet('font-weight: normal;')
         self.roi_finding_widget.draw_mask_button.setText("Edit Masks...")
@@ -919,7 +980,7 @@ class MotionCorrectionWidget(ParamWidget):
         self.button_layout_2.addWidget(self.use_multiprocessing_checkbox)
 
         self.motion_correct_button = HoverButton('Motion Correct', self.parent_widget, self.parent_widget.statusBar())
-        self.motion_correct_button.setHoverMessage("Perform motion correction on the videos.")
+        self.motion_correct_button.setHoverMessage("Perform motion correction on all videos.")
         self.motion_correct_button.setIcon(QIcon("icons/action_icon.png"))
         self.motion_correct_button.setIconSize(QSize(13,16))
         self.motion_correct_button.setStyleSheet('font-weight: bold;')
@@ -1000,7 +1061,7 @@ class ROIFindingWidget(ParamWidget):
         self.button_layout.addWidget(self.draw_mask_button)
 
         self.find_rois_button = HoverButton('Find ROIs', self.parent_widget, self.parent_widget.statusBar())
-        self.find_rois_button.setHoverMessage("Find ROIs using the watershed algorithm.")
+        self.find_rois_button.setHoverMessage("Find ROIs for all videos.")
         self.find_rois_button.setIcon(QIcon("icons/action_icon.png"))
         self.find_rois_button.setIconSize(QSize(13,16))
         self.find_rois_button.setStyleSheet('font-weight: bold;')
