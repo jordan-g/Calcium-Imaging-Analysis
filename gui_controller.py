@@ -65,31 +65,31 @@ class GUIController():
         self.play_video_bool      = True
 
     def roi_spatial_footprints(self):
-        if len(self.controller.roi_spatial_footprints.keys()) > 0:
+        if self.group_num in self.controller.roi_spatial_footprints.keys():
             return self.controller.roi_spatial_footprints[self.group_num][self.z]
         else:
             return None
 
     def roi_temporal_footprints(self):
-        if len(self.controller.roi_temporal_footprints.keys()) > 0:
+        if self.group_num in self.controller.roi_temporal_footprints.keys():
             return self.controller.roi_temporal_footprints[self.group_num][self.z]
         else:
             return None
 
     def removed_rois(self):
-        if len(self.controller.removed_rois.keys()) > 0:
+        if self.group_num in self.controller.removed_rois.keys():
             return self.controller.removed_rois[self.group_num][self.z]
         else:
             return None
 
     def filtered_out_rois(self):
-        if len(self.controller.filtered_out_rois.keys()) > 0:
+        if self.group_num in self.controller.filtered_out_rois.keys():
             return self.controller.filtered_out_rois[self.group_num][self.z]
         else:
             return None
 
     def bg_temporal_footprints(self):
-        if len(self.controller.bg_temporal_footprints.keys()) > 0:
+        if self.group_num in self.controller.bg_temporal_footprints.keys():
             return self.controller.bg_temporal_footprints[self.group_num][self.z]
         else:
             return None

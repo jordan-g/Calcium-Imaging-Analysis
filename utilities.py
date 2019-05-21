@@ -13,7 +13,7 @@ import peakutils
 
 import caiman as cm
 from caiman.source_extraction.cnmf import cnmf as cnmf
-from caiman.source_extraction.cnmf import estimates as estimates
+# from caiman.source_extraction.cnmf import estimates as estimates
 from caiman.components_evaluation import estimate_components_quality_auto
 from caiman.source_extraction.cnmf.temporal import update_temporal_components
 from caiman.source_extraction.cnmf.pre_processing import preprocess_data
