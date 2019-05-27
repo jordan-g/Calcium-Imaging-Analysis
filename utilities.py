@@ -99,9 +99,6 @@ def perform_cnmf(video, params, roi_spatial_footprints, roi_temporal_footprints,
     else:
         dview = None
 
-    # print("~")
-    # print(roi_spatial_footprints.shape)
-
     video_path = "video_temp.tif"
     tifffile.imsave(video_path, video)
 
@@ -423,7 +420,8 @@ def motion_correct(video_path, max_shift, patch_stride, patch_overlap, use_multi
         mc_video[:, z, :, :] = (images - np.amin(images)).astype(memmap_video.dtype)
 
         del m_orig
-        os.remove(z_video_path)
+        if os.path.exists(z_video_path):
+            os.remove(z_video_path)
 
         try:
             os.remove(mc.fname_tot_rig)
@@ -579,6 +577,10 @@ def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True
     directory = os.path.dirname(full_video_path)
     filename  = os.path.basename(full_video_path)
 
+    new_video_path = os.path.join(directory, "cnmf_video_temp.tif")
+
+    shutil.copyfile(video_path, new_video_path)
+
     memmap_video = tifffile.memmap(video_path)
     print(memmap_video.shape)
 
@@ -608,15 +610,15 @@ def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True
     for z in range(num_z):
         fname = os.path.splitext(filename)[0] + "_masked_z_{}.tif".format(z)
 
-        new_video_path = os.path.join(directory, fname)
+        z_video_path = os.path.join(directory, fname)
 
         if len(memmap_video.shape) == 5:
-            tifffile.imsave(new_video_path, memmap_video[:, :, z, :, :].reshape((-1, memmap_video.shape[3], memmap_video.shape[4])))
+            tifffile.imsave(z_video_path, memmap_video[:, :, z, :, :].reshape((-1, memmap_video.shape[3], memmap_video.shape[4])))
         else:
-            tifffile.imsave(new_video_path, memmap_video[:, z, :, :])
+            tifffile.imsave(z_video_path, memmap_video[:, z, :, :])
 
         # dataset dependent parameters
-        fnames         = [new_video_path]          # filename to be processed
+        fnames         = [z_video_path]          # filename to be processed
         fr             = params['imaging_fps'] # imaging rate in frames per second
         decay_time     = params['decay_time']  # length of a typical transient in seconds
         
@@ -683,10 +685,13 @@ def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True
             bg_spatial_footprints[z]   = cnm2.estimates.b
             bg_temporal_footprints[z]  = cnm2.estimates.f
 
-        if os.path.exists(video_path):
-            os.remove(video_path)
+        if os.path.exists(z_video_path):
+            os.remove(z_video_path)
 
     del memmap_video
+
+    if os.path.exists(new_video_path):
+        os.remove(new_video_path)
 
     if use_multiprocessing:
         if backend == 'multiprocessing':
