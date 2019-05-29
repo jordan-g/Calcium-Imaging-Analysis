@@ -976,8 +976,8 @@ class GUIController():
 
         self.param_window.no_rois_selected()
 
-        self.preview_window.compute_kept_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
-        self.preview_window.compute_discarded_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
+        # self.preview_window.compute_kept_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
+        # self.preview_window.compute_discarded_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
 
         self.show_mean_image(update_overlays=True)
 
@@ -989,8 +989,8 @@ class GUIController():
 
         self.param_window.no_rois_selected()
 
-        self.preview_window.compute_kept_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
-        self.preview_window.compute_discarded_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
+        # self.preview_window.compute_kept_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
+        # self.preview_window.compute_discarded_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
 
         self.show_mean_image(update_overlays=True)
 
@@ -1002,8 +1002,8 @@ class GUIController():
 
         self.param_window.no_rois_selected()
 
-        self.preview_window.compute_kept_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
-        self.preview_window.compute_discarded_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
+        # self.preview_window.compute_kept_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
+        # self.preview_window.compute_discarded_rois_overlay(self.roi_spatial_footprints(), self.removed_rois())
 
         self.show_mean_image(update_overlays=True)
 

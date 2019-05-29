@@ -5,6 +5,8 @@ import pyqtgraph as pg
 from matplotlib import cm
 import scipy
 import matplotlib.pyplot as plt
+from PIL import Image
+from PIL import ImageDraw
 
 import utilities
 
@@ -778,18 +780,23 @@ class PreviewWindow(QMainWindow):
 
         if roi_spatial_footprints is not None:
             kept_rois = [ roi for roi in range(roi_spatial_footprints.shape[-1]) if roi not in removed_rois ]
-
-            denominator = np.count_nonzero(self.roi_overlays[kept_rois], axis=0)
-            denominator[denominator == 0] = 1
-
-            self.kept_rois_overlay = (np.sum(self.roi_overlays[kept_rois], axis=0)/denominator).astype(np.uint8)
+            if len(kept_rois) > 0:
+                a = Image.fromarray(self.roi_overlays[kept_rois[0]])
+                for roi in kept_rois[1:]:
+                    print(self.roi_overlays[roi][:, :, -1])
+                    b = Image.fromarray(self.roi_overlays[roi])
+                    a.alpha_composite(b)
+                self.kept_rois_overlay = np.asarray(a)
 
     def compute_discarded_rois_overlay(self, roi_spatial_footprints, removed_rois):
         if roi_spatial_footprints is not None:
-            denominator = np.count_nonzero(self.roi_overlays[removed_rois], axis=0)
-            denominator[denominator == 0] = 1
-
-            self.discarded_rois_overlay = (np.sum(self.roi_overlays[removed_rois], axis=0)/denominator).astype(np.uint8)
+            if len(removed_rois) > 0:
+                a = Image.fromarray(self.roi_overlays[removed_rois[0]])
+                for roi in removed_rois[1:]:
+                    print(self.roi_overlays[roi][:, :, -1])
+                    b = Image.fromarray(self.roi_overlays[roi])
+                    a.alpha_composite(b)
+                self.discarded_rois_overlay = np.asarray(a)
 
     def create_kept_rois_image(self, image, video_max, roi_spatial_footprints=None, video_dimensions=None, removed_rois=None, selected_rois=None, show_rois=False):
         image = 255.0*image/video_max
