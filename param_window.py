@@ -189,6 +189,8 @@ class ParamWindow(QMainWindow):
             item = self.videos_list.item(i)
 
             if item.font() != categoryFont:
+                print(i, video_num)
+
                 item.setData(100, video_paths[video_num])
 
                 widget = self.videos_list.itemWidget(item)
@@ -233,11 +235,13 @@ class ParamWindow(QMainWindow):
     def single_roi_selected(self, discarded=False):
         if not discarded:
             self.roi_filtering_widget.erase_selected_roi_button.setEnabled(True)
+            self.roi_filtering_widget.discard_selected_roi_button.setEnabled(True)
             self.discard_rois_action.setEnabled(True)
             self.roi_filtering_widget.unerase_selected_roi_button.setEnabled(False)
             self.keep_rois_action.setEnabled(False)
         else:
-            self.roi_filtering_widget.erase_selected_roi_button.setEnabled(False)
+            self.roi_filtering_widget.erase_selected_roi_button.setEnabled(True)
+            self.roi_filtering_widget.discard_selected_roi_button.setEnabled(False)
             self.discard_rois_action.setEnabled(False)
             self.roi_filtering_widget.unerase_selected_roi_button.setEnabled(True)
             self.keep_rois_action.setEnabled(True)
@@ -247,13 +251,15 @@ class ParamWindow(QMainWindow):
     def multiple_rois_selected(self, discarded=False, merge_enabled=True):
         if not discarded:
             self.roi_filtering_widget.erase_selected_roi_button.setEnabled(True)
+            self.roi_filtering_widget.discard_selected_roi_button.setEnabled(True)
             self.discard_rois_action.setEnabled(True)
             self.roi_filtering_widget.unerase_selected_roi_button.setEnabled(False)
             self.keep_rois_action.setEnabled(False)
             self.roi_filtering_widget.merge_rois_button.setEnabled(merge_enabled)
             self.merge_rois_action.setEnabled(merge_enabled)
         else:
-            self.roi_filtering_widget.erase_selected_roi_button.setEnabled(False)
+            self.roi_filtering_widget.erase_selected_roi_button.setEnabled(True)
+            self.roi_filtering_widget.discard_selected_roi_button.setEnabled(False)
             self.discard_rois_action.setEnabled(False)
             self.roi_filtering_widget.unerase_selected_roi_button.setEnabled(True)
             self.keep_rois_action.setEnabled(True)
@@ -262,6 +268,7 @@ class ParamWindow(QMainWindow):
 
     def no_rois_selected(self):
         self.roi_filtering_widget.erase_selected_roi_button.setEnabled(False)
+        self.roi_filtering_widget.discard_selected_roi_button.setEnabled(False)
         self.discard_rois_action.setEnabled(False)
         self.roi_filtering_widget.unerase_selected_roi_button.setEnabled(False)
         self.keep_rois_action.setEnabled(False)
@@ -311,6 +318,8 @@ class ParamWindow(QMainWindow):
         item.setFlags(item.flags() & ~Qt.ItemIsDragEnabled)
         self.videos_list.addItem(item)
         self.group_nums.append(group_num)
+
+        self.controller.add_group(group_num)
 
     def add_new_group(self):
         if len(self.group_nums) > 0:
@@ -545,6 +554,20 @@ class ParamWindow(QMainWindow):
         self.keep_rois_action.setEnabled(False)
         self.keep_rois_action.setShortcutContext(Qt.ApplicationShortcut)
 
+        self.extract_traces_action = QAction('Save Traces of Selected ROIs...', self)
+        self.extract_traces_action.setShortcut('T')
+        self.extract_traces_action.setStatusTip('Save traces of the selected ROIs to a CSV file.')
+        self.extract_traces_action.triggered.connect(self.controller.save_selected_roi_traces)
+        self.extract_traces_action.setEnabled(True)
+        self.extract_traces_action.setShortcutContext(Qt.ApplicationShortcut)
+
+        self.save_roi_images_action = QAction('Save Images of ROIs...', self)
+        self.save_roi_images_action.setShortcut('Q')
+        self.save_roi_images_action.setStatusTip('Save images of current ROIs to a folder.')
+        self.save_roi_images_action.triggered.connect(self.controller.save_roi_images)
+        self.save_roi_images_action.setEnabled(True)
+        self.save_roi_images_action.setShortcutContext(Qt.ApplicationShortcut)
+
         self.merge_rois_action = QAction('Merge Selected ROIs', self)
         self.merge_rois_action.setShortcut('M')
         self.merge_rois_action.setStatusTip('Merge the selected ROIs.')
@@ -583,6 +606,8 @@ class ParamWindow(QMainWindow):
         rois_menu.addAction(self.discard_rois_action)
         rois_menu.addAction(self.keep_rois_action)
         rois_menu.addAction(self.merge_rois_action)
+        rois_menu.addAction(self.extract_traces_action)
+        rois_menu.addAction(self.save_roi_images_action)
 
     def videos_imported(self, video_paths):
         self.add_new_group()
@@ -804,6 +829,9 @@ class ParamWidget(QWidget):
         self.param_sliders            = {}
         self.param_slider_multipliers = {}
         self.param_textboxes          = {}
+        self.param_checkboxes         = {}
+        self.param_choosers           = {}
+        self.param_widgets            = {}
 
     def add_param_slider(self, label_name, name, minimum, maximum, moved, num, multiplier=1, pressed=None, released=None, description=None, int_values=False):
         row = np.floor(num/2)
@@ -861,8 +889,9 @@ class ParamWidget(QWidget):
         self.param_sliders[name]            = slider
         self.param_slider_multipliers[name] = multiplier
         self.param_textboxes[name]          = textbox
+        self.param_widgets[name]            = widget
 
-    def add_param_checkbox(self, label_name, name, clicked, num, description=None):
+    def add_param_checkbox(self, label_name, name, clicked, num, description=None, related_params=[]):
         row = np.floor(num/2)
         col = num % 2
 
@@ -881,8 +910,34 @@ class ParamWidget(QWidget):
         checkbox.setHoverMessage(description)
         checkbox.setChecked(self.controller.params()[name])
         widget.setContentsMargins(0, 0, 5, 0)
-        checkbox.clicked.connect(lambda:clicked(checkbox.isChecked()))
+        checkbox.clicked.connect(lambda:clicked(checkbox.isChecked(), checkbox=checkbox, related_params=related_params))
         layout.addWidget(checkbox)
+
+        self.param_widgets[name]    = widget
+        self.param_checkboxes[name] = checkbox
+
+    def add_param_chooser(self, label_name, name, options, callback, num, description=None):
+        row = np.floor(num/2)
+        col = num % 2
+
+        widget = QWidget(self.param_widget)
+        layout = QHBoxLayout(widget)
+        self.param_layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
+        self.param_layout.addWidget(widget, row, col)
+        label = HoverLabel("{}:".format(label_name), self.parent_widget, self.parent_widget.statusBar())
+        label.setHoverMessage(description)
+        layout.addWidget(label)
+
+        layout.addStretch()
+
+        combobox = QComboBox()
+        combobox.addItems(options)
+        combobox.currentIndexChanged.connect(callback)
+        layout.addWidget(combobox)
+
+        self.param_widgets[name]  = widget
+        self.param_choosers[name] = combobox
 
     def update_textbox_from_slider(self, slider, textbox, multiplier=1, int_values=False):
         if int_values:
@@ -1110,10 +1165,26 @@ class CNMFROIFindingWidget(ParamWidget):
         self.add_param_slider(label_name="Autoregressive Model Order", name="autoregressive_order", minimum=0, maximum=2, moved=self.update_param, num=0, multiplier=1, pressed=self.update_param, released=self.update_param, description="Order of the autoregressive model (0, 1 or 2).", int_values=True)
         self.add_param_slider(label_name="Background Components", name="num_bg_components", minimum=1, maximum=100, moved=self.update_param, num=1, multiplier=1, pressed=self.update_param, released=self.update_param, description="Number of background components.", int_values=True)
         self.add_param_slider(label_name="Merge Threshold", name="merge_threshold", minimum=1, maximum=200, moved=self.update_param, num=2, multiplier=200, pressed=self.update_param, released=self.update_param, description="Merging threshold (maximum correlation allowed before merging two components).", int_values=False)
-        self.add_param_slider(label_name="Components", name="num_components", minimum=1, maximum=5000, moved=self.update_param, num=3, multiplier=1, pressed=self.update_param, released=self.update_param, description="Number of components to start with.", int_values=True)
+        self.add_param_slider(label_name="Components", name="num_components", minimum=1, maximum=5000, moved=self.update_param, num=3, multiplier=1, pressed=self.update_param, released=self.update_param, description="Number of components expected (if using patches, in each patch; otherwise, in the entire FOV).", int_values=True)
         self.add_param_slider(label_name="Neuron Half-Size", name="half_size", minimum=1, maximum=50, moved=self.update_param, num=4, multiplier=1, pressed=self.update_param, released=self.update_param, description="Expected half-size of neurons (pixels).", int_values=True)
-        
+        self.add_param_checkbox(label_name="Use Patches", name="use_patches", clicked=self.toggle_use_patches, description="Whether to use patches when performing CNMF.", num=5, related_params=['cnmf_patch_size', 'cnmf_patch_stride'])
+        self.add_param_slider(label_name="Patch Size", name="cnmf_patch_size", minimum=1, maximum=100, moved=self.update_param, num=6, multiplier=1, pressed=self.update_param, released=self.update_param, description="Size of each patch (pixels).", int_values=True)
+        self.add_param_slider(label_name="Patch Stride", name="cnmf_patch_stride", minimum=1, maximum=100, moved=self.update_param, num=7, multiplier=1, pressed=self.update_param, released=self.update_param, description="Stride for each patch (pixels).", int_values=True)
+        self.add_param_slider(label_name="Max Merge Area", name="max_merge_area", minimum=1, maximum=500, moved=self.update_param, num=8, multiplier=1, pressed=self.update_param, released=self.update_param, description="Maximum area of merged ROI above which ROIs will not be merged (pixels).", int_values=True)
+        self.add_param_chooser(label_name="Initialization Method", name="init_method", options=["Greedy ROI", "Sparse NMF", "PCA/ICA"], callback=self.set_init_method, num=9, description="Method to use to initialize ROI locations.")
         self.main_layout.addStretch()
+
+    def toggle_use_patches(self, boolean, checkbox, related_params=[]):
+        self.controller.params()['use_patches'] = boolean
+
+        if len(related_params) > 0:
+            for related_param in related_params:
+                self.param_widgets[related_param].setEnabled(checkbox.isChecked())
+
+    def set_init_method(self, i):
+        methods = ['greedy_roi', 'sparse_nmf', 'pca_ica']
+
+        self.controller.params()['init_method'] = methods[i]
 
 class Suite2pROIFindingWidget(ParamWidget):
     def __init__(self, parent_widget, controller):
@@ -1146,10 +1217,13 @@ class ROIFilteringWidget(ParamWidget):
         self.add_param_slider(label_name="Decay Time", name="decay_time", minimum=1, maximum=100, moved=self.update_param, num=1, multiplier=100, pressed=self.update_param, released=self.update_param, description="Length of a typical calcium transient (seconds).", int_values=False)
         self.add_param_slider(label_name="Minimum SNR", name="min_snr", minimum=1, maximum=500, moved=self.update_param, num=2, multiplier=100, pressed=self.update_param, released=self.update_param, description="Minimum signal to noise ratio.", int_values=False)
         self.add_param_slider(label_name="Minimum Spatial Correlation", name="min_spatial_corr", minimum=1, maximum=100, moved=self.update_param, num=3, multiplier=100, pressed=self.update_param, released=self.update_param, description="Minimum spatial correlation.", int_values=False)
-        self.add_param_checkbox(label_name="Use CNN", name="use_cnn", clicked=self.toggle_use_cnn, description="Whether to use a convolutional neural network for determining which ROIs are neurons.", num=4)
-        self.add_param_slider(label_name="CNN Threshold", name="cnn_threshold", minimum=1, maximum=100, moved=self.update_param, num=5, multiplier=100, pressed=self.update_param, released=self.update_param, description="Minimum CNN confidence (only relevant if using CNN).", int_values=False)
-        self.add_param_slider(label_name="Minimum Area", name="min_area", minimum=1, maximum=1000, moved=self.update_param, num=6, multiplier=1, pressed=self.update_param, released=self.update_param, description="Minimum area.", int_values=True)
-        self.add_param_slider(label_name="Maximum Area", name="max_area", minimum=1, maximum=1000, moved=self.update_param, num=7, multiplier=1, pressed=self.update_param, released=self.update_param, description="Maximum area.", int_values=True)
+        self.add_param_checkbox(label_name="Use CNN", name="use_cnn", clicked=self.toggle_use_cnn, description="Whether to use a convolutional neural network for determining which ROIs are neurons.", num=4, related_params=['cnn_accept_threshold', 'cnn_reject_threshold'])
+        self.add_param_slider(label_name="CNN Accept Threshold", name="cnn_accept_threshold", minimum=1, maximum=100, moved=self.update_param, num=5, multiplier=100, pressed=self.update_param, released=self.update_param, description="Minimum CNN confidence above which an ROI will automatically be accepted.", int_values=False)
+        self.add_param_slider(label_name="CNN Reject Threshold", name="cnn_reject_threshold", minimum=1, maximum=100, moved=self.update_param, num=6, multiplier=100, pressed=self.update_param, released=self.update_param, description="Minimum CNN confidence below which an ROI will automatically be rejected.", int_values=False)
+        self.add_param_slider(label_name="Minimum Area", name="min_area", minimum=1, maximum=1000, moved=self.update_param, num=7, multiplier=1, pressed=self.update_param, released=self.update_param, description="Minimum area.", int_values=True)
+        self.add_param_slider(label_name="Maximum Area", name="max_area", minimum=1, maximum=1000, moved=self.update_param, num=8, multiplier=1, pressed=self.update_param, released=self.update_param, description="Maximum area.", int_values=True)
+        self.add_param_slider(label_name="Motion Artifact Max Decay Speed", name="artifact_decay_speed", minimum=0, maximum=10, moved=self.update_param, num=9, multiplier=1, pressed=self.update_param, released=self.update_param, description="Maximum decay speed of z-scored traces above which ROIs will be determined to be motion artifacts.", int_values=False)
+        self.add_param_slider(label_name="Minimum DF/F", name="min_df_f", minimum=0, maximum=100, moved=self.update_param, num=10, multiplier=1, pressed=self.update_param, released=self.update_param, description="Minimum DF/F below which ROIs will be discarded.", int_values=False)
 
         self.main_layout.addStretch()
         
@@ -1161,11 +1235,32 @@ class ROIFilteringWidget(ParamWidget):
         self.roi_button_layout.setSpacing(5)
         self.main_layout.addWidget(self.roi_button_widget)
 
-        label = QLabel("Manual Controls")
+        label = QLabel("CNN Training")
         label.setStyleSheet(SUBTITLE_STYLESHEET)
         self.roi_button_layout.addWidget(label)
 
         self.roi_button_layout.addStretch()
+
+        # self.reset_cnn_button = HoverButton('Reset CNN', self.parent_widget, self.parent_widget.statusBar())
+        # self.reset_cnn_button.setHoverMessage("Reset the CNN to its initial untrained state.")
+        # self.reset_cnn_button.setIcon(QIcon("icons/action_icon.png"))
+        # self.reset_cnn_button.setIconSize(QSize(13, 16))
+        # self.reset_cnn_button.clicked.connect(self.controller.reset_cnn)
+        # self.roi_button_layout.addWidget(self.reset_cnn_button)
+
+        self.train_cnn_button = HoverButton('Train CNN...', self.parent_widget, self.parent_widget.statusBar())
+        self.train_cnn_button.setHoverMessage("Label data to train the CNN.")
+        self.train_cnn_button.setIcon(QIcon("icons/action_icon.png"))
+        self.train_cnn_button.setIconSize(QSize(13, 16))
+        self.train_cnn_button.clicked.connect(self.controller.pick_data_to_train_cnn)
+        self.roi_button_layout.addWidget(self.train_cnn_button)
+
+        # self.test_cnn_button = HoverButton('Test CNN', self.parent_widget, self.parent_widget.statusBar())
+        # self.test_cnn_button.setHoverMessage("Test the CNN on the current ROIs.")
+        # self.test_cnn_button.setIcon(QIcon("icons/action_icon.png"))
+        # self.test_cnn_button.setIconSize(QSize(13, 16))
+        # self.test_cnn_button.clicked.connect(self.controller.test_cnn_on_data)
+        # self.roi_button_layout.addWidget(self.test_cnn_button)
 
         self.roi_button_widget_2 = QWidget(self)
         self.roi_button_layout_2 = QHBoxLayout(self.roi_button_widget_2)
@@ -1179,13 +1274,21 @@ class ROIFilteringWidget(ParamWidget):
 
         self.roi_button_layout_2.addStretch()
 
-        self.erase_selected_roi_button = HoverButton('Discard', self.parent_widget, self.parent_widget.statusBar())
-        self.erase_selected_roi_button.setHoverMessage("Discard the selected ROIs.")
+        self.erase_selected_roi_button = HoverButton('Erase', self.parent_widget, self.parent_widget.statusBar())
+        self.erase_selected_roi_button.setHoverMessage("Completely erase the selected ROIs.")
         self.erase_selected_roi_button.setIcon(QIcon("icons/discard_icon.png"))
         self.erase_selected_roi_button.setIconSize(QSize(16, 16))
-        self.erase_selected_roi_button.clicked.connect(self.controller.discard_selected_rois)
+        self.erase_selected_roi_button.clicked.connect(self.controller.erase_selected_rois)
         self.erase_selected_roi_button.setEnabled(False)
         self.roi_button_layout_2.addWidget(self.erase_selected_roi_button)
+
+        self.discard_selected_roi_button = HoverButton('Discard', self.parent_widget, self.parent_widget.statusBar())
+        self.discard_selected_roi_button.setHoverMessage("Discard the selected ROIs.")
+        self.discard_selected_roi_button.setIcon(QIcon("icons/discard_icon.png"))
+        self.discard_selected_roi_button.setIconSize(QSize(16, 16))
+        self.discard_selected_roi_button.clicked.connect(self.controller.discard_selected_rois)
+        self.discard_selected_roi_button.setEnabled(False)
+        self.roi_button_layout_2.addWidget(self.discard_selected_roi_button)
 
         self.erase_all_rois_button = HoverButton('Discard All', self.parent_widget, self.parent_widget.statusBar())
         self.erase_all_rois_button.setHoverMessage("Discard all ROIs.")
@@ -1240,13 +1343,19 @@ class ROIFilteringWidget(ParamWidget):
         self.save_rois_button.clicked.connect(self.controller.save_all_rois)
         self.button_layout.addWidget(self.save_rois_button)
 
+        self.toggle_use_cnn(self.controller.params()['use_cnn'], self.param_checkboxes['use_cnn'], related_params=['cnn_accept_threshold', 'cnn_reject_threshold'])
+
     def toggle_show_zscore(self):
         show_zscore = self.show_zscore_checkbox.isChecked()
 
         self.parent_widget.set_show_zscore(show_zscore)
 
-    def toggle_use_cnn(self, boolean):
+    def toggle_use_cnn(self, boolean, checkbox, related_params=[]):
         self.controller.params()['use_cnn'] = boolean
+
+        if len(related_params) > 0:
+            for related_param in related_params:
+                self.param_widgets[related_param].setEnabled(checkbox.isChecked())
 
 class HoverCheckBox(QCheckBox):
     def __init__(self, text, parent=None, status_bar=None):

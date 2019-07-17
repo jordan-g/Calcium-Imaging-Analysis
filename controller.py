@@ -12,21 +12,29 @@ DEFAULT_PARAMS = {'gamma'                : 1.0,
                   'contrast'             : 1.0,
                   'fps'                  : 60,
                   'z'                    : 0,
+                  'use_patches'          : True,
                   'max_shift'            : 6,
                   'patch_stride'         : 48,
                   'patch_overlap'        : 24,
+                  'cnmf_patch_size'      : 20,
+                  'cnmf_patch_stride'    : 10,
+                  'max_merge_area'       : 150,
                   'imaging_fps'          : 30,
                   'decay_time'           : 0.4,
                   'autoregressive_order' : 0,
                   'num_bg_components'    : 2,
                   'merge_threshold'      : 0.8,
                   'num_components'       : 400,
+                  'init_method'          : 'greedy_roi',
+                  'min_df_f'             : 1,
+                  'artifact_decay_speed' : 1,
                   'half_size'            : 4,
                   'use_cnn'              : False,
                   'min_snr'              : 1.3,
                   'min_spatial_corr'     : 0.8,
                   'use_cnn'              : False,
-                  'cnn_threshold'        : 0.5,
+                  'cnn_accept_threshold' : 0.5,
+                  'cnn_reject_threshold' : 0.1,
                   'min_area'             : 10,
                   'max_area'             : 100,
                   'diameter'             : 10,
@@ -281,7 +289,7 @@ class Controller():
 
     def load_rois(self, load_path, group_num=None, video_path=None):
         # load the saved ROIs
-        roi_data = np.load(load_path)
+        roi_data = np.load(load_path, allow_pickle=True)
 
         # extract the dictionary
         roi_data = roi_data[()]
@@ -388,6 +396,17 @@ class Controller():
         if len(self.video_paths) == 0:
             # reset variables
             self.reset_variables()
+
+    def add_group(self, group_num):
+        if len(self.video_paths) > 0:
+            # get number of z planes
+            video = tifffile.memmap(self.video_paths[0])
+            if len(video.shape) > 3:
+                num_z = video.shape[1]
+            else:
+                num_z = 1
+
+            self.mask_points[group_num] = [ [] for z in range(num_z) ]
 
     def remove_group(self, group):
         if group in self.mc_borders.keys():

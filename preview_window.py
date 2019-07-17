@@ -407,6 +407,52 @@ class PreviewWindow(QMainWindow):
             self.temp_mask_item = None
             self.mask_points = []
 
+    def no_rois_selected(self):
+        self.clear_text_and_outline_items()
+
+    def single_roi_selected(self, roi):
+        self.clear_text_and_outline_items()
+
+        if roi not in self.controller.removed_rois():
+            image = self.kept_rois_image.copy()
+            contours = []
+            for i in [roi]:
+                contours += self.roi_contours[i]
+                x = np.amax([ np.amax(self.roi_contours[i][j][:, 0, 0]) for j in range(len(self.roi_contours[i])) ])
+                y = np.amax([ np.amax(self.roi_contours[i][j][:, 0, 1]) for j in range(len(self.roi_contours[i])) ])
+                
+                color = cmap(i % n_colors)[:3]
+                color = [255*color[0], 255*color[1], 255*color[2]]
+
+                text_item = pg.TextItem("{}".format(i), color=color)
+                text_item.setPos(QPoint(int(y), int(x)))
+                self.text_items.append(text_item)
+                self.left_image_viewbox.addItem(text_item)
+                for j in range(len(self.roi_contours[i])):
+                    outline_item = pg.PlotDataItem(np.concatenate([self.roi_contours[i][j][:, 0, 1], np.array([self.roi_contours[i][j][0, 0, 1]])]), np.concatenate([self.roi_contours[i][j][:, 0, 0], np.array([self.roi_contours[i][j][0, 0, 0]])]), pen=pg.mkPen(color, width=3))
+                    self.outline_items.append(outline_item)
+                    self.left_image_viewbox.addItem(outline_item)
+        else:
+            image = self.discarded_rois_image.copy()
+            contours = []
+            for i in [roi]:
+                contours += self.roi_contours[i]
+                # print([ self.roi_contours[i][j].shape for j in range(len(self.roi_contours[i])) ])
+                x = np.amax([ np.amax(self.roi_contours[i][j][:, 0, 0]) for j in range(len(self.roi_contours[i])) ])
+                y = np.amax([ np.amax(self.roi_contours[i][j][:, 0, 1]) for j in range(len(self.roi_contours[i])) ])
+                
+                color = cmap(i % n_colors)[:3]
+                color = [255*color[0], 255*color[1], 255*color[2]]
+
+                text_item = pg.TextItem("{}".format(i), color=color)
+                text_item.setPos(QPoint(int(y), int(x)))
+                self.text_items.append(text_item)
+                self.right_image_viewbox.addItem(text_item)
+                for j in range(len(self.roi_contours[i])):
+                    outline_item = pg.PlotDataItem(np.concatenate([self.roi_contours[i][j][:, 0, 1], np.array([self.roi_contours[i][j][0, 0, 1]])]), np.concatenate([self.roi_contours[i][j][:, 0, 0], np.array([self.roi_contours[i][j][0, 0, 0]])]), pen=pg.mkPen(color, width=3))
+                    self.outline_items.append(outline_item)
+                    self.right_image_viewbox.addItem(outline_item)
+
     def plot_clicked(self, event):
         if self.controller.mode not in ("loading", "motion_correcting"):
             # get x-y coordinates of where the user clicked
@@ -657,7 +703,6 @@ class PreviewWindow(QMainWindow):
 
     def play_video(self, video, video_path, fps, play_right=False):
         print("Playing video...")
-        print(video.shape)
         self.video_name = os.path.basename(video_path)
 
         self.play_right = play_right
@@ -729,7 +774,10 @@ class PreviewWindow(QMainWindow):
         self.left_image.setImage(image, autoLevels=False)
 
         if show_rois:
-            self.left_image_overlay.setImage(self.kept_rois_overlay, levels=(0, 255))
+            if self.kept_rois_overlay is not None:
+                self.left_image_overlay.setImage(self.kept_rois_overlay, levels=(0, 255))
+            else:
+                self.left_image_overlay.clear()
         else:
             if self.kept_rois_overlay is not None:
                 self.left_image_overlay.setImage(0*self.kept_rois_overlay, levels=(0, 255))
@@ -753,7 +801,6 @@ class PreviewWindow(QMainWindow):
         
         if roi_spatial_footprints is not None:
             self.roi_contours  = [ None for i in range(roi_spatial_footprints.shape[-1]) ]
-            self.flat_contours = []
             
             self.roi_overlays = np.zeros((roi_spatial_footprints.shape[-1], shape[0], shape[1], 4)).astype(np.uint8)
 
@@ -773,27 +820,33 @@ class PreviewWindow(QMainWindow):
                 self.roi_overlays[i] = overlay
 
                 self.roi_contours[i] = contours
-                self.flat_contours += contours
+        else:
+            self.roi_overlays = []
+            self.roi_contours = []
 
     def compute_kept_rois_overlay(self, roi_spatial_footprints, removed_rois):
         print("Computing kept ROIs overlay.")
 
+        self.kept_rois_overlay = None
+
         if roi_spatial_footprints is not None:
             kept_rois = [ roi for roi in range(roi_spatial_footprints.shape[-1]) if roi not in removed_rois ]
+            print("{} kept ROIs.".format(len(kept_rois)))
             if len(kept_rois) > 0:
                 a = Image.fromarray(self.roi_overlays[kept_rois[0]])
                 for roi in kept_rois[1:]:
-                    print(self.roi_overlays[roi][:, :, -1])
                     b = Image.fromarray(self.roi_overlays[roi])
                     a.alpha_composite(b)
                 self.kept_rois_overlay = np.asarray(a)
 
     def compute_discarded_rois_overlay(self, roi_spatial_footprints, removed_rois):
+        self.discarded_rois_overlay = None
+
         if roi_spatial_footprints is not None:
+            print("{} removed ROIs.".format(len(removed_rois)))
             if len(removed_rois) > 0:
                 a = Image.fromarray(self.roi_overlays[removed_rois[0]])
                 for roi in removed_rois[1:]:
-                    print(self.roi_overlays[roi][:, :, -1])
                     b = Image.fromarray(self.roi_overlays[roi])
                     a.alpha_composite(b)
                 self.discarded_rois_overlay = np.asarray(a)
@@ -833,8 +886,6 @@ class PreviewWindow(QMainWindow):
                 heatmap = heatmap[:, :video_lengths[0]]
             else:
                 heatmap = heatmap[:, np.sum(video_lengths[:index]):np.sum(video_lengths[:index+1])]
-
-            print(heatmap.shape)
 
             if heatmap.shape[0] > 0:
                 # heatmap = scipy.ndimage.interpolation.shift(heatmap, (self.controller.z, 0), cval=0)
@@ -935,7 +986,10 @@ class PreviewWindow(QMainWindow):
         self.right_image.setImage(image, autoLevels=False)
 
         if show_rois:
-            self.right_image_overlay.setImage(self.discarded_rois_overlay, levels=(0, 255))
+            if self.discarded_rois_overlay is not None:
+                self.right_image_overlay.setImage(self.discarded_rois_overlay, levels=(0, 255))
+            else:
+                self.right_image_overlay.clear()
         else:
             if self.discarded_rois_overlay is not None:
                 self.right_image_overlay.setImage(0*self.discarded_rois_overlay, levels=(0, 255))

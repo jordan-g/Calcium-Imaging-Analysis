@@ -10,14 +10,24 @@ import shutil
 import h5py
 import scipy
 import peakutils
+import matplotlib.pyplot as plt
+from scipy import sparse
 
 import caiman as cm
 from caiman.source_extraction.cnmf import cnmf as cnmf
+from caiman.source_extraction.cnmf import params as cnmf_params
 # from caiman.source_extraction.cnmf import estimates as estimates
 from caiman.components_evaluation import estimate_components_quality_auto
 from caiman.source_extraction.cnmf.temporal import update_temporal_components
 from caiman.source_extraction.cnmf.pre_processing import preprocess_data
 from caiman.motion_correction import MotionCorrect
+from caiman.paths import caiman_datadir
+from keras.applications import VGG16
+from keras import models
+from keras import layers
+from keras import optimizers
+from keras.preprocessing.image import ImageDataGenerator
+import logging
 
 try:
     import suite2p
@@ -603,9 +613,10 @@ def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True
             backend = 'ipyparallel'
 
         cm.stop_server()
-        c, dview, n_processes = cm.cluster.setup_cluster(backend=backend, n_processes=None, single_thread=False)
+        c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
     else:
         dview = None
+        n_processes = 1
 
     for z in range(num_z):
         fname = os.path.splitext(filename)[0] + "_masked_z_{}.tif".format(z)
@@ -618,7 +629,7 @@ def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True
             tifffile.imsave(z_video_path, memmap_video[:, z, :, :])
 
         # dataset dependent parameters
-        fnames         = [z_video_path]          # filename to be processed
+        fnames         = [z_video_path]        # filename to be processed
         fr             = params['imaging_fps'] # imaging rate in frames per second
         decay_time     = params['decay_time']  # length of a typical transient in seconds
         
@@ -626,20 +637,25 @@ def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True
         p              = params['autoregressive_order']             # order of the autoregressive system
         gnb            = params['num_bg_components']                # number of global background components
         merge_thresh   = params['merge_threshold']                  # merging threshold, max correlation allowed
-        rf             = None                                       # half-size of the patches in pixels. e.g., if rf=25, patches are 50x50
-        stride_cnmf    = 6                                          # amount of overlap between the patches in pixels
+        if params['use_patches']:
+            rf             = params['cnmf_patch_size']
+            stride         = params['cnmf_patch_stride']
+        else:
+            rf             = None                                       # half-size of the patches in pixels. e.g., if rf=25, patches are 50x50
+            stride         = None                                       # amount of overlap between the patches in pixels
         K              = params['num_components']                   # number of components per patch
         gSig           = [params['half_size'], params['half_size']] # expected half size of neurons
-        init_method    = 'greedy_roi'                               # initialization method (if analyzing dendritic data using 'sparse_nmf')
-        rolling_sum    = True
-        rolling_length = 50
+        init_method    = params['init_method']                               # initialization method (if analyzing dendritic data using 'sparse_nmf')
+        # rolling_sum    = True
+        # rolling_length = 50
         is_dendrites   = False                                      # flag for analyzing dendritic data
         alpha_snmf     = None                                       # sparsity penalty for dendritic data analysis through sparse NMF
 
         # parameters for component evaluation
         min_SNR        = params['min_snr']          # signal to noise ratio for accepting a component
         rval_thr       = params['min_spatial_corr'] # space correlation threshold for accepting a component
-        cnn_thr        = params['cnn_threshold']    # threshold for CNN based classifier
+        # cnn_thr        = params['cnn_threshold']    # threshold for CNN based classifier
+        max_merge_area = params['max_merge_area']
 
         if mc_borders is not None:
             border_pix = mc_borders[z]
@@ -653,24 +669,49 @@ def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True
         d1, d2 = dims
         images = np.reshape(Yr.T, [T] + list(dims), order='F')
 
-        cnm = cnmf.CNMF(n_processes=1, k=K, gSig=gSig, merge_thresh= merge_thresh, 
-                        p = p,  dview=dview, rf=rf, stride=stride_cnmf, memory_fact=1,
-                        method_init=init_method, alpha_snmf=alpha_snmf, rolling_sum=rolling_sum,
-                        only_init_patch = False, gnb = gnb, border_pix = border_pix, ssub=1, ssub_B=1, tsub=1)
+        params_dict = {'fnames': fnames,
+                       'fr': fr,
+                       'decay_time': decay_time,
+                       'rf': rf,
+                       'stride': stride,
+                       'K': K,
+                       'gSig': gSig,
+                       'merge_thr': merge_thresh,
+                       'p': p,
+                       'nb': gnb,
+                       'init_method': init_method,
+                       'dims': memmap_video.shape[-2:],
+                       'max_merge_area': max_merge_area}
 
-        cnm = cnm.fit(images)
+        # cnm = cnmf.CNMF(n_processes=1, k=K, gSig=gSig, merge_thresh= merge_thresh, 
+        #                 p = p,  dview=dview, rf=rf, stride=stride_cnmf, memory_fact=1,
+        #                 method_init=init_method, alpha_snmf=alpha_snmf, rolling_sum=rolling_sum,
+        #                 only_init_patch = False, gnb = gnb, border_pix = border_pix, ssub=1, ssub_B=1, tsub=1)
 
-        try:
-            A_in, C_in, b_in, f_in = cnm.A, cnm.C, cnm.b, cnm.f
-        except:
-            A_in, C_in, b_in, f_in = cnm.estimates.A, cnm.estimates.C, cnm.estimates.b, cnm.estimates.f
+        # cnm = cnm.fit(images)
 
-        cnm2 = cnmf.CNMF(n_processes=1, k=A_in.shape[-1], gSig=gSig, p=p, dview=dview,
-                        merge_thresh=merge_thresh,  Ain=A_in, Cin=C_in, b_in = b_in,
-                        f_in=f_in, rf = None, stride = None, gnb = gnb, 
-                        method_deconvolution='oasis', check_nan = True)
+        opts = cnmf_params.CNMFParams(params_dict=params_dict)
+        # %% Now RUN CaImAn Batch (CNMF)
+        cnm = cnmf.CNMF(n_processes, params=opts, dview=dview)
+        cnm = cnm.fit_file()
 
-        cnm2 = cnm2.fit(images)
+        # %% load memory mapped file
+        Yr, dims, T = cm.load_memmap(cnm.mmap_file)
+        images = np.reshape(Yr.T, [T] + list(dims), order='F')
+
+        # try:
+        #     A_in, C_in, b_in, f_in = cnm.A, cnm.C, cnm.b, cnm.f
+        # except:
+        #     A_in, C_in, b_in, f_in = cnm.estimates.A, cnm.estimates.C, cnm.estimates.b, cnm.estimates.f
+
+        # cnm2 = cnmf.CNMF(n_processes=1, k=A_in.shape[-1], gSig=gSig, p=p, dview=dview,
+        #                 merge_thresh=merge_thresh,  Ain=A_in, Cin=C_in, b_in = b_in,
+        #                 f_in=f_in, rf = None, stride = None, gnb = gnb, 
+        #                 method_deconvolution='oasis', check_nan = True)
+
+        # cnm2 = cnm2.fit(images)
+
+        cnm2 = cnm.refit(images, dview=dview)
 
         try:
             roi_spatial_footprints[z]  = cnm2.A
@@ -875,9 +916,9 @@ def filter_rois(video_paths, roi_spatial_footprints, roi_temporal_footprints, ro
         video_path = os.path.join(directory, fname)
 
         if len(memmap_video.shape) == 5:
-            tifffile.imsave(video_path, memmap_video[:, :, z, :, :].reshape((-1, memmap_video.shape[3], memmap_video.shape[4])).transpose([1, 2, 0]).reshape(-1, memmap_video.shape[0]).astype(np.float32))
+            tifffile.imsave(video_path, memmap_video[:, :, z, :, :].reshape((-1, memmap_video.shape[3], memmap_video.shape[4])).transpose([1, 2, 0]).astype(np.float32))
         else:
-            tifffile.imsave(video_path, memmap_video[:, z, :, :].transpose([1, 2, 0]).reshape(-1, memmap_video.shape[0]).astype(np.float32))
+            tifffile.imsave(video_path, memmap_video[:, z, :, :].transpose([1, 2, 0]).astype(np.float32))
 
         video = tifffile.memmap(video_path)
 
@@ -887,24 +928,62 @@ def filter_rois(video_paths, roi_spatial_footprints, roi_temporal_footprints, ro
 
         # e = e.filter_components(video, )
 
+        dims = video.shape[:2]
+
+        print("dims", dims)
+
         idx_components, idx_components_bad, SNR_comp, r_values, cnn_preds = \
                 estimate_components_quality_auto(video, roi_spatial_footprints[z], roi_temporal_footprints[z], bg_spatial_footprints[z], bg_temporal_footprints[z], 
-                                                 roi_temporal_residuals[z], params['imaging_fps']/num_z, params['decay_time'], params['half_size'], (video.shape[-2], video.shape[-1]), 
+                                                 roi_temporal_residuals[z], params['imaging_fps']/num_z, params['decay_time'], [params['half_size'], params['half_size']], dims, 
                                                  dview = None, min_SNR=params['min_snr'], 
                                                  r_values_min = params['min_spatial_corr'], use_cnn = params['use_cnn'], 
-                                                 thresh_cnn_lowest = params['cnn_threshold'], gSig_range=[ (i, i) for i in range(max(1, params['half_size']-5), params['half_size']+5) ])
+                                                 thresh_cnn_min = params['cnn_accept_threshold'], thresh_cnn_lowest=params['cnn_reject_threshold'], gSig_range=[ (i, i) for i in range(max(1, params['half_size']-2), params['half_size']+2) ])
 
-        filtered_out_rois.append(list(idx_components_bad))
+        # gSig_range=[ (i, i) for i in range(max(1, params['half_size']-5), params['half_size']+5) ]
+
+        # filtered_out_rois.append(list(idx_components_bad))
+
+        print(idx_components_bad.shape)
 
         if isinstance(roi_spatial_footprints[z], scipy.sparse.coo_matrix):
             f = roi_spatial_footprints[z].toarray()
         else:
             f = roi_spatial_footprints[z]
 
-        for i in range(f.shape[-1]):
-            area = np.sum(f[:, i] > 0)
-            if (area < params['min_area'] or area > params['max_area']) and i not in filtered_out_rois[-1]:
-                filtered_out_rois[-1].append(i)
+        size_neurons_gt = (f > 0).sum(0)
+        neurons_to_discard = np.where((size_neurons_gt < params['min_area']) | (size_neurons_gt > params['max_area']))[0]
+
+        print(neurons_to_discard.shape)
+
+        # for i in range(f.shape[-1]):
+        #     area = np.sum(f[:, i] > 0)
+        #     if (area < params['min_area'] or area > params['max_area']) and i not in filtered_out_rois[-1]:
+        #         filtered_out_rois[-1].append(i)
+
+        idx_components_bad = np.union1d(idx_components_bad, neurons_to_discard)
+
+        zscores = (roi_temporal_footprints[z] - np.mean(roi_temporal_footprints[z], axis=1)[:, np.newaxis])/np.std(roi_temporal_footprints[z], axis=1)[:, np.newaxis]
+        zscore_diffs = np.diff(zscores, axis=0)
+        min_zscore_diffs = np.amin(zscore_diffs, axis=1)
+
+        neurons_to_discard = np.where(min_zscore_diffs < -params['artifact_decay_speed'])[0]
+
+        print(neurons_to_discard.shape)
+
+        idx_components_bad = np.union1d(idx_components_bad, neurons_to_discard)
+
+        abs_traces = np.abs(roi_temporal_footprints[z])
+        df_f = np.abs(np.amax(roi_temporal_footprints[z], axis=1) - np.amin(roi_temporal_footprints[z], axis=1))/np.mean(abs_traces[:, :10])
+        print(df_f)
+        neurons_to_discard = np.where(df_f < params['min_df_f'])[0]
+
+        idx_components_bad = np.union1d(idx_components_bad, neurons_to_discard)
+
+        print(idx_components_bad)
+
+        filtered_out_rois.append(list(idx_components_bad))
+
+        print(filtered_out_rois)
 
         if os.path.exists(video_path):
             try:
@@ -947,6 +1026,8 @@ def get_roi_containing_point(spatial_footprints, roi_point, video_shape):
         roi = np.argmax(spatial_footprints[flattened_point, :])
         
         if spatial_footprints[flattened_point, roi] != 0:
+
+            print(np.sum(spatial_footprints[:, roi] > 0))
             return roi
     else:
         return None
@@ -1007,3 +1088,395 @@ def calculate_tail_beat_frequency(fps, tail_angle_array):
     freqs_array = (low_freqs_array + high_freqs_array)/2
 
     return fps*freqs_array
+
+def add_data_to_dataset(roi_spatial_footprints, mean_image, positive_rois, negative_rois, half_size, dataset_filename="zebrafish_gcamp_dataset.h5"):
+    num_total_rois = len(positive_rois) + len(negative_rois)
+
+    # make sure ROI and non-ROI training data are the same size
+    if len(negative_rois) == 0 or len(positive_rois) == 0:
+        return
+
+    num_negative_rois = len(negative_rois)
+    num_positive_rois = len(positive_rois)
+
+    num_samples_of_each = np.minimum(num_negative_rois, num_positive_rois)
+
+    positive_roi_spatial_footprints = roi_spatial_footprints[:, positive_rois[:num_samples_of_each]]
+    negative_roi_spatial_footprints = roi_spatial_footprints[:, negative_rois[:num_samples_of_each]]
+
+    # generate labels for each set of training data
+
+    positive_roi_labels = np.zeros((num_samples_of_each, 2))
+    positive_roi_labels[:, 0] = 1
+    negative_roi_labels = np.zeros((num_samples_of_each, 2))
+    negative_roi_labels[:, 1] = 1
+
+    print(positive_roi_spatial_footprints.shape, negative_roi_spatial_footprints.shape)
+
+    print(positive_roi_labels.shape, negative_roi_labels.shape)
+
+    # final_roi_spatial_footprints = np.concatenate([positive_roi_spatial_footprints, negative_roi_spatial_footprints], axis=-1)
+
+    final_roi_spatial_footprints = sparse.hstack([positive_roi_spatial_footprints, negative_roi_spatial_footprints])
+    final_roi_labels = np.concatenate([positive_roi_labels, negative_roi_labels], axis=0).T
+    # final_roi_labels = sparse.hstack([positive_roi_labels, negative_roi_labels])
+
+    # shuffle data
+    final_roi_spatial_footprints, final_roi_labels = shuffle_arrays(final_roi_spatial_footprints, final_roi_labels)
+
+    input_data, _ = preprocess_spatial_footprints(final_roi_spatial_footprints, mean_image, half_size)
+
+    existing_images, existing_labels = load_dataset(dataset_filename)
+
+    # print(existing_images)
+    # print(type(existing_images))
+
+    if existing_images.shape[0] > 1 or np.sum(existing_images) != 0:
+        print("Adding to existing dataset.")
+        final_images = np.concatenate([existing_images, input_data], axis=0)
+        final_labels = np.concatenate([existing_labels, final_roi_labels.T], axis=0)
+    else:
+        final_images = input_data
+        final_labels = final_roi_labels.T
+
+    print(final_images.shape)
+    print(final_labels.shape)
+
+    save_dataset(final_images, final_labels, dataset_filename)
+
+def train_cnn_on_data(roi_spatial_footprints, mean_image, positive_rois, negative_rois, half_size, lr=1e-4):
+    loaded_model = load_model()
+
+    loaded_model.compile(loss='categorical_crossentropy', optimizer=optimizers.RMSprop(lr=lr), metrics=['acc'])
+
+    # num_total_rois = len(positive_rois) + len(negative_rois)
+
+    # # make sure ROI and non-ROI training data are the same size
+    # if len(negative_rois) == 0 or len(positive_rois) == 0:
+    #     return
+
+    # num_negative_rois = len(negative_rois)
+    # num_positive_rois = len(positive_rois)
+
+    # num_samples_of_each = np.minimum(num_negative_rois, num_positive_rois)
+
+    # positive_roi_spatial_footprints = roi_spatial_footprints[:, positive_rois[:num_samples_of_each]]
+    # negative_roi_spatial_footprints = roi_spatial_footprints[:, negative_rois[:num_samples_of_each]]
+
+    # # generate labels for each set of training data
+
+    # positive_roi_labels = np.zeros((num_samples_of_each, 2))
+    # positive_roi_labels[:, 0] = 1
+    # negative_roi_labels = np.zeros((num_samples_of_each, 2))
+    # negative_roi_labels[:, 1] = 1
+
+    # print(positive_roi_spatial_footprints.shape, negative_roi_spatial_footprints.shape)
+
+    # print(positive_roi_labels.shape, negative_roi_labels.shape)
+
+    # # final_roi_spatial_footprints = np.concatenate([positive_roi_spatial_footprints, negative_roi_spatial_footprints], axis=-1)
+
+    # final_roi_spatial_footprints = sparse.hstack([positive_roi_spatial_footprints, negative_roi_spatial_footprints])
+    # final_roi_labels = np.concatenate([positive_roi_labels, negative_roi_labels], axis=0).T
+    # # final_roi_labels = sparse.hstack([positive_roi_labels, negative_roi_labels])
+
+    # # shuffle data
+    # final_roi_spatial_footprints, final_roi_labels = shuffle_arrays(final_roi_spatial_footprints, final_roi_labels)
+
+    # input_data, _ = preprocess_spatial_footprints(final_roi_spatial_footprints, mean_image, half_size)
+    
+    # plot_sample_data(input_data, final_roi_labels.T, None)
+
+    input_data, final_roi_labels = load_dataset(filename="zebrafish_gcamp_dataset.h5")
+
+    datagen = ImageDataGenerator(
+        featurewise_center=True,
+        featurewise_std_normalization=True,
+        rotation_range=90,
+        width_shift_range=0.2,
+        height_shift_range=0.2,
+        horizontal_flip=True,
+        vertical_flip=True,
+        fill_mode='nearest',
+        )
+
+    # datagen = ImageDataGenerator(
+    #     featurewise_center=True,
+    #     featurewise_std_normalization=True,
+    #     rotation_range=20,
+    #     width_shift_range=0.2,
+    #     height_shift_range=0.2,
+    #     horizontal_flip=True,
+    #     vertical_flip=True)
+
+    datagen.fit(input_data)
+
+    # validation_datagen = ImageDataGenerator()
+
+    # train_generator = datagen.flow(input_data, final_roi_labels.T, batch_size=32, shuffle=True, subset="training")
+     
+    # validation_generator = datagen.flow(input_data, final_roi_labels.T, batch_size=32, shuffle=False, subset="validation")
+
+    # fit the model
+    # loaded_model.fit(input_data, final_roi_labels.T, nb_epoch=5, batch_size=1, validation_split=0.15, verbose=1)
+
+    print("Training...")
+
+    loaded_model.fit_generator(datagen.flow(input_data, final_roi_labels, batch_size=32), steps_per_epoch=input_data.shape[0] / 32, epochs=5, verbose=1)
+
+    # history = loaded_model.fit_generator(
+    #       train_generator,
+    #       steps_per_epoch=input_data.shape[0]/32,
+    #       epochs=50,
+    #       validation_data=validation_generator,
+    #       validation_steps=input_data.shape[0]/32,
+    #       verbose=1)
+
+    # save the new model
+    save_model(loaded_model)
+
+def shuffle_arrays(*args):
+    '''
+    Shuffle multiple arrays using the same random permutation.
+    Arguments:
+        args (tuple of ndarrays) : Arrays to shuffle.
+    Returns:
+        results (tuple of ndarrays) : Shuffled arrays.
+    '''
+
+    p = np.random.permutation(args[0].shape[1])
+    results = (a[:, p] for a in args)
+    return results
+
+def preprocess_spatial_footprints(roi_spatial_footprints, mean_image, half_size, roi_overlays=None):
+    dims = mean_image.shape
+
+    half_crop = (half_size * 2 + 1, half_size * 2 + 1)
+
+    dims = np.array(dims)
+    coms = [scipy.ndimage.center_of_mass(
+        mm.toarray().reshape(dims, order='F')) for mm in roi_spatial_footprints.tocsc().T]
+    coms = np.maximum(coms, half_crop)
+    coms = np.array([np.minimum(cms, dims - half_crop)
+                     for cms in coms]).astype(np.int)
+
+    crop_imgs = [mm.toarray().reshape(dims, order='F')[com[0] - half_crop[0]:com[0] + half_crop[0],
+                                                       com[1] - half_crop[1]:com[1] + half_crop[1]] for mm, com in zip(roi_spatial_footprints.tocsc().T, coms)]
+
+    # crop mean image instead of using just the ROI spatial footprint
+    mean_image_crops = [mean_image[com[0] - half_crop[0]:com[0] + half_crop[0],
+                            com[1] - half_crop[1]:com[1] + half_crop[1]] for com in coms]
+
+    if roi_overlays is not None:
+        overlay_crops = [roi_overlays[i, coms[i][0] - half_crop[0]:coms[i][0] + half_crop[0],
+                                coms[i][1] - half_crop[1]:coms[i][1] + half_crop[1], :] for i in range(len(coms))]
+
+    final_crops = np.array([cv2.resize(
+        im / np.linalg.norm(im), (50, 50)) for im in crop_imgs])[:, :, :, np.newaxis]
+
+    final_crops = np.repeat(final_crops, 3, -1)
+
+    mean_image_crops = np.array([cv2.resize(
+        im / np.linalg.norm(im), (50, 50)) for im in mean_image_crops])[:, :, :, np.newaxis]
+
+    mean_image_crops = np.repeat(mean_image_crops, 3, -1)
+
+    final_crops[:, :, :, :2] = mean_image_crops[:, :, :, :2]
+
+    if roi_overlays is not None:
+        overlay_crops = np.array([cv2.resize(
+            im, (50, 50)) for im in overlay_crops])
+
+        overlay_crops = np.array(overlay_crops)
+
+    if roi_overlays is not None:
+        return final_crops, mean_image_crops, overlay_crops
+    else:
+        return final_crops, mean_image_crops
+
+
+def load_model(model_filename="vggz_model.h5", reset=False):
+
+    if os.path.exists(model_filename) and not reset:
+        print("Loading model from file...")
+
+        model = models.load_model(model_filename)
+    else:
+        print("Creating a new model...")
+
+        # load in pre-trained VGG model without the fully-connected layers
+        vgg_conv = VGG16(weights='imagenet', include_top=False, input_shape=(50, 50, 3))
+
+        # freeze the layers except the last 4 layers
+        for layer in vgg_conv.layers[:-4]:
+            layer.trainable = False
+
+        # create the model
+        model = models.Sequential()
+         
+        # add the vgg convolutional base model
+        model.add(vgg_conv)
+         
+        # add new layers
+        model.add(layers.Flatten())
+        model.add(layers.Dense(1024, activation='relu'))
+        model.add(layers.Dropout(0.5))
+        model.add(layers.Dense(2, activation='softmax'))
+
+        # save the model
+        model.save(model_filename)
+
+    print(model.layers[0].summary())
+    print(model.summary())
+
+    for layer in model.layers[0].layers:
+        print(layer, layer.trainable)
+
+    for layer in model.layers[1:]:
+        print(layer, layer.trainable)
+
+    # plot_conv_weights(model.layers[0], 'block1_conv2')
+    # plot_conv_weights(model.layers[0], 'block2_conv2')
+    # plot_conv_weights(model.layers[0], 'block3_conv3')
+    # plot_conv_weights(model.layers[0], 'block4_conv3')
+    # plot_conv_weights(model.layers[0], 'block5_conv3')
+
+    print("Done.")
+
+    return model
+
+def save_model(model, model_filename="vggz_model.h5"):
+    print("Saving model...")
+
+    model.save(model_filename)
+
+    print("Done.")
+
+def test_cnn_on_data(roi_spatial_footprints, mean_image, discarded_rois, half_size):
+    loaded_model = load_model()
+
+    loaded_model.compile(loss='categorical_crossentropy', optimizer=optimizers.RMSprop(lr=1e-4), metrics=['acc'])
+
+    input_data, _ = preprocess_spatial_footprints(roi_spatial_footprints, mean_image, half_size)
+
+    datagen = ImageDataGenerator(
+        featurewise_center=True,
+        featurewise_std_normalization=True,
+        )
+
+    datagen.fit(input_data)
+
+    datagen.standardize(input_data)
+
+    kept_rois = [ roi for roi in range(roi_spatial_footprints.shape[-1]) if roi not in discarded_rois ]
+
+    print("{} kept ROIs, {} discarded ROIs.".format(len(kept_rois), len(discarded_rois)))
+
+    roi_labels = np.zeros((roi_spatial_footprints.shape[-1], 2))
+    roi_labels[kept_rois, 0] = 1
+    roi_labels[discarded_rois, 1] = 1
+
+    # scores = loaded_model.evaluate(input_data, roi_labels, verbose=1)
+
+    # print("{}: {:.2f}%".format(loaded_model.metrics_names[1], scores[1]*100))
+    
+    predictions = loaded_model.predict(input_data, batch_size=32, verbose=1)
+
+    # plot_sample_data(input_data, roi_labels, predictions)
+
+    return predictions, input_data
+
+def plot_sample_data(input_data, roi_labels, predictions=None):
+    categories = ["Y", "N"]
+    fig, axes = plt.subplots(5, 5, figsize=(8, 8))
+    axes = axes.ravel()
+    indices = np.random.choice(list(range(input_data.shape[0])), 25).astype(int)
+    for i in range(25):
+        axes[i].imshow(input_data[indices[i], :, :, 0])
+        if predictions is not None:
+            axes[i].set_title("{} | {:.1f}%, {:.1f}%.".format(categories[np.argmax(roi_labels[indices[i]])], 100*predictions[indices[i], 0], 100*predictions[indices[i], 1]))
+        else:
+            axes[i].set_title("{}".format(categories[np.argmax(roi_labels[indices[i]])]))
+
+    plt.tight_layout()
+    plt.show()
+
+def plot_conv_weights(model, layer):
+    W = model.get_layer(name=layer).get_weights()[0]
+    if len(W.shape) == 4:
+        W = np.squeeze(W)
+        W = W.reshape((W.shape[0], W.shape[1], W.shape[2]*W.shape[3])) 
+        fig, axs = plt.subplots(5,5, figsize=(8,8))
+        fig.subplots_adjust(hspace = .5, wspace=.001)
+        axs = axs.ravel()
+        for i in range(25):
+            axs[i].imshow(W[:,:,i])
+            axs[i].set_title(str(i))
+
+        plt.show()
+
+def load_dataset(filename="zebrafish_gcamp_dataset.h5", reset=False):
+    if os.path.exists(filename) and not reset:
+        print("Loading dataset from file...")
+
+        f = h5py.File(filename, "r")
+
+        images = f["images"].value
+        labels = f["labels"].value
+
+        f.close()
+    else:
+        print("Creating a new dataset...")
+
+        f = h5py.File(filename, "w")
+
+        images = f.create_dataset("images", data=np.zeros((1, 50, 50, 3))).value
+        labels = f.create_dataset("labels", data=np.zeros((1, 2))).value
+
+        f.close()
+
+    return images, labels
+
+def save_dataset(images, labels, filename="zebrafish_gcamp_dataset.h5"):
+    print("Saving dataset...")
+
+    f = h5py.File(filename, "w")
+
+    f.create_dataset("images", data=images)
+    f.create_dataset("labels", data=labels)
+
+    f.close()
+
+    print("Done.")
+
+def create_dataset_subset(images, labels, kept_rois):
+
+    final_images = images[kept_rois]
+    final_labels = labels[kept_rois]
+    # num_total_rois = len(positive_rois) + len(negative_rois)
+
+    # print(num_total_rois)
+
+    # # make sure ROI and non-ROI training data are the same size
+    # if len(negative_rois) == 0 or len(positive_rois) == 0:
+    #     return
+
+    # num_negative_rois = len(negative_rois)
+    # num_positive_rois = len(positive_rois)
+
+    # num_samples_of_each = np.minimum(num_negative_rois, num_positive_rois)
+
+    # # generate labels for each set of training data
+
+    # positive_roi_labels = np.zeros((num_samples_of_each, 2))
+    # positive_roi_labels[:, 0] = 1
+    # negative_roi_labels = np.zeros((num_samples_of_each, 2))
+    # negative_roi_labels[:, 1] = 1
+
+    # labels = np.concatenate([positive_roi_labels, negative_roi_labels], axis=0)
+
+    # positive_images = images[positive_rois[:num_samples_of_each]]
+    # negative_images = images[negative_rois[:num_samples_of_each]]
+    # final_images = np.concatenate([positive_images, negative_images], axis=0)
+
+    return final_images, labels
