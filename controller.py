@@ -110,6 +110,8 @@ class Controller():
         else:
             group_num = 0
 
+        print(group_num, self.video_groups)
+
         # store video lengths and group numbers
         for video_path in video_paths:
             video = tifffile.memmap(video_path)
@@ -122,7 +124,11 @@ class Controller():
             else:
                 num_z = 1
 
+            print(num_z, video.shape)
+
         self.mask_points[group_num] = [ [] for z in range(num_z) ]
+
+        print(self.mask_points)
 
     def save_rois(self, save_path, group_num=None, video_path=None):
         if group_num is None:
@@ -398,9 +404,13 @@ class Controller():
             self.reset_variables()
 
     def add_group(self, group_num):
-        if len(self.video_paths) > 0:
+        print("Adding group {}.".format(group_num))
+
+        video_paths = [ self.video_paths[i] for i in range(len(self.video_paths)) if self.video_groups[i] == group_num ]
+
+        if len(video_paths) > 0:
             # get number of z planes
-            video = tifffile.memmap(self.video_paths[0])
+            video = tifffile.memmap(video_paths[0])
             if len(video.shape) > 3:
                 num_z = video.shape[1]
             else:
@@ -432,8 +442,15 @@ class Controller():
         if group in self.locked_rois.keys():
             del self.locked_rois[group]
 
+        video_indices = self.video_indices_in_group(self.video_paths, group)
+
+        self.remove_videos_at_indices(video_indices)
+
     def video_paths_in_group(self, video_paths, group_num):
         return [ video_paths[i] for i in range(len(video_paths)) if self.video_groups[i] == group_num ]
+
+    def video_indices_in_group(self, video_paths, group_num):
+        return [ i for i in range(len(video_paths)) if self.video_groups[i] == group_num ]
 
     def motion_correct(self):
         mc_videos, mc_borders = utilities.motion_correct_multiple_videos(self.video_paths, self.video_groups, self.params['max_shift'], self.params['patch_stride'], self.params['patch_overlap'], use_multiprocessing=self.use_multiprocessing)
@@ -469,10 +486,10 @@ class Controller():
         self.roi_temporal_residuals  = roi_temporal_residuals
         self.bg_spatial_footprints   = bg_spatial_footprints
         self.bg_temporal_footprints  = bg_temporal_footprints
-        self.filtered_out_rois       = { group_num: [ [] for z in range(len(roi_spatial_footprints[0])) ] for group_num in np.unique(self.video_groups) }
-        self.discarded_rois          = { group_num: [ [] for z in range(len(roi_spatial_footprints[0])) ] for group_num in np.unique(self.video_groups) }
-        self.removed_rois            = { group_num: [ [] for z in range(len(roi_spatial_footprints[0])) ] for group_num in np.unique(self.video_groups) }
-        self.locked_rois             = { group_num: [ [] for z in range(len(roi_spatial_footprints[0])) ] for group_num in np.unique(self.video_groups) }
+        self.filtered_out_rois       = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.video_groups) }
+        self.discarded_rois          = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.video_groups) }
+        self.removed_rois            = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.video_groups) }
+        self.locked_rois             = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.video_groups) }
 
     def filter_rois(self, group_num):
         # set video paths

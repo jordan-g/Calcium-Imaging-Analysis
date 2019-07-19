@@ -25,7 +25,6 @@ except:
 class GUIController():
     def __init__(self, controller):
         self.controller = controller
-        self.show_zscore = True
 
         # initialize variables
         self.reset_variables()
@@ -62,9 +61,10 @@ class GUIController():
         self.selected_video       = 0      # which video is selected
         self.group_num            = 0      # group number of currently loaded video
         self.video_max            = 1      # dynamic range of currently loaded video
-        self.mask_images          = None
-        self.selected_mask        = 0
-        self.play_video_bool      = True
+        self.mask_images          = None   # mask images for each z plane in the currently-previewed video
+        self.selected_mask        = 0      # which mask is currently selected
+        self.play_video_bool      = True   # whether to play the video or show the mean image
+        self.show_zscore          = True   # whether to show z-scored traces
 
     def roi_spatial_footprints(self):
         if self.group_num in self.controller.roi_spatial_footprints.keys():
@@ -167,6 +167,15 @@ class GUIController():
 
         # import the videos
         if video_paths is not None and len(video_paths) > 0:
+            video = tifffile.memmap(video_paths[0])
+            num_z = video.shape[1]
+
+            for video_path in video_paths[1:]:
+                video = tifffile.memmap(video_path)
+                if video.shape[1] != num_z:
+                    print("All videos imported together must have the same number of z planes.")
+                    return
+
             if len(self.controller.video_paths) == 0:
                 self.play_video_bool = True
                 self.preview_window.play_video_checkbox.setEnabled(True)
@@ -211,8 +220,6 @@ class GUIController():
             print("Error: Opened file is not a video -- not enough dimensions.")
             return
 
-        # print(type(self.video))
-
         # figure out the dynamic range of the video
         max_value = np.amax(self.video)
 
@@ -241,11 +248,6 @@ class GUIController():
         # flip video 90 degrees to match what is shown in Fiji
         self.video = self.video.transpose((0, 1, 3, 2))
 
-        print(type(self.video))
-
-        # remove NaNs
-        # self.video = np.nan_to_num(self.video)
-
         print("Opened video with shape {}.".format(self.video.shape))
 
         # calculate mean images
@@ -263,6 +265,8 @@ class GUIController():
 
     def update_mask_images(self):
         self.mask_images = [ [] for z in range(self.video.shape[1]) ]
+
+        print(self.controller.mask_points)
 
         if self.group_num in self.controller.mask_points.keys():
             for z in range(self.video.shape[1]):
@@ -285,14 +289,19 @@ class GUIController():
         if index is not None and (index != self.selected_video or force):
             print("Video #{} selected.".format(index+1))
 
+            print(self.controller.mask_points)
+
             group_changed = self.group_num != self.controller.video_groups[index]
 
             self.selected_video = index
             self.group_num      = self.controller.video_groups[self.selected_video]
 
-            print(self.selected_video_path())
-
             self.open_video(self.selected_video_path())
+
+            if self.z >= self.video.shape[1]:
+                self.z = 0
+
+                self.param_window.main_param_widget.update_param_slider_and_textbox("z", self.z)
 
             if group_changed:
                 self.update_mask_images()
@@ -397,6 +406,25 @@ class GUIController():
 
     def remove_group(self, group):
         self.controller.remove_group(group)
+
+        if len(self.controller.video_paths) == 0:
+            print("All videos removed.")
+
+            # reset variables
+            self.reset_variables()
+
+            # reset param window & preview window to their initial states
+            self.param_window.set_initial_state()
+            self.preview_window.set_initial_state()
+
+            self.play_video_bool = True
+            self.preview_window.play_video_checkbox.setEnabled(True)
+            self.preview_window.play_video_checkbox.setChecked(True)
+            self.param_window.play_video_action.setEnabled(True)
+            self.param_window.play_video_action.setChecked(True)
+        else:
+            # open the newest video at index 0
+            self.video_selected(0, force=True)
 
     def add_group(self, group):
         self.controller.add_group(group)
@@ -527,6 +555,7 @@ class GUIController():
 
         mc_video_paths, mc_borders = utilities.motion_correct_multiple_videos(self.controller.video_paths, self.controller.video_groups, int(self.controller.params["max_shift"]), int(self.controller.params["patch_stride"]), int(self.controller.params["patch_overlap"]), progress_signal=None, thread=None, use_multiprocessing=self.controller.use_multiprocessing)
 
+        print(mc_video_paths)
         self.motion_correction_ended(mc_video_paths, mc_borders)
 
     def motion_correction_progress(self, group_num):
@@ -594,10 +623,10 @@ class GUIController():
         self.controller.roi_temporal_residuals  = roi_temporal_residuals
         self.controller.bg_spatial_footprints   = bg_spatial_footprints
         self.controller.bg_temporal_footprints  = bg_temporal_footprints
-        self.controller.filtered_out_rois       = { group_num: [ [] for z in range(self.video.shape[1]) ] for group_num in np.unique(self.controller.video_groups) }
-        self.controller.discarded_rois          = { group_num: [ [] for z in range(self.video.shape[1]) ] for group_num in np.unique(self.controller.video_groups) }
-        self.controller.removed_rois            = { group_num: [ [] for z in range(self.video.shape[1]) ] for group_num in np.unique(self.controller.video_groups) }
-        self.controller.locked_rois             = { group_num: [ [] for z in range(self.video.shape[1]) ] for group_num in np.unique(self.controller.video_groups) }
+        self.controller.filtered_out_rois       = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.controller.video_groups) }
+        self.controller.discarded_rois          = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.controller.video_groups) }
+        self.controller.removed_rois            = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.controller.video_groups) }
+        self.controller.locked_rois             = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.controller.video_groups) }
 
         # notify the param window
         self.param_window.roi_finding_ended()

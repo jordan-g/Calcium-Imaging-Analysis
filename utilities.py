@@ -212,9 +212,25 @@ def calculate_temporal_components(video_paths, roi_spatial_footprints, roi_tempo
 def motion_correct_multiple_videos(video_paths, video_groups, max_shift, patch_stride, patch_overlap, progress_signal=None, thread=None, use_multiprocessing=True):
     start_time = time.time()
 
+    mc_video_paths = []
     mc_videos  = []
     mc_borders = {}
-    
+
+    if use_multiprocessing:
+        if os.name == 'nt':
+            backend = 'multiprocessing'
+        else:
+            # backend = 'ipyparallel'
+            backend = 'multiprocessing'
+
+        # Create the cluster
+        cm.stop_server()
+        c, dview, n_processes = cm.cluster.setup_cluster(backend=backend, n_processes=None, single_thread=False)
+    else:
+        c           = None
+        dview       = None
+        n_processes = None
+
     group_nums = np.unique(video_groups)
 
     for n in range(len(group_nums)):
@@ -268,11 +284,10 @@ def motion_correct_multiple_videos(video_paths, video_groups, max_shift, patch_s
 
         del final_video
 
-        mc_video, new_video_path, mc_borders[group_num] = motion_correct(final_video_path_2, max_shift, patch_stride, patch_overlap, use_multiprocessing=use_multiprocessing)
+        mc_video, new_video_path, mc_borders[group_num] = motion_correct(final_video_path_2, max_shift, patch_stride, patch_overlap, use_multiprocessing=use_multiprocessing, c=c, dview=dview, n_processes=n_processes)
         
         mc_video = mc_video.transpose((0, 1, 3, 2))
 
-        mc_video_paths = []
         for i in range(len(paths)):
             video_path    = paths[i]
             directory     = os.path.dirname(video_path)
@@ -295,31 +310,29 @@ def motion_correct_multiple_videos(video_paths, video_groups, max_shift, patch_s
 
         del mc_video
 
+    if use_multiprocessing:
+        if backend == 'multiprocessing':
+            dview.close()
+        else:
+            try:
+                dview.terminate()
+            except:
+                dview.shutdown()
+        cm.stop_server()
+
     end_time = time.time()
 
     print("---- Motion correction finished. Elapsed time: {} s.".format(end_time - start_time))
             
     return mc_video_paths, mc_borders
 
-def motion_correct(video_path, max_shift, patch_stride, patch_overlap, use_multiprocessing=True):
+def motion_correct(video_path, max_shift, patch_stride, patch_overlap, use_multiprocessing=True, c=None, dview=None, n_processes=None):
     full_video_path = video_path
 
     directory = os.path.dirname(full_video_path)
     filename  = os.path.basename(full_video_path)
 
     memmap_video = tifffile.memmap(video_path)
-
-    if use_multiprocessing:
-        if os.name == 'nt':
-            backend = 'multiprocessing'
-        else:
-            backend = 'ipyparallel'
-
-        # Create the cluster
-        cm.stop_server()
-        c, dview, n_processes = cm.cluster.setup_cluster(backend=backend, n_processes=None, single_thread=False)
-    else:
-        dview = None
 
     z_range = list(range(memmap_video.shape[1]))
 
@@ -441,16 +454,6 @@ def motion_correct(video_path, max_shift, patch_stride, patch_overlap, use_multi
 
         counter += 1
 
-    if use_multiprocessing:
-        if backend == 'multiprocessing':
-            dview.close()
-        else:
-            try:
-                dview.terminate()
-            except:
-                dview.shutdown()
-        cm.stop_server()
-
     mmap_files = glob.glob(os.path.join(directory, '*.mmap'))
     for mmap_file in mmap_files:
         try:
@@ -468,6 +471,21 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
     start_time = time.time()
 
     group_nums = np.unique(video_groups)
+
+    if use_multiprocessing and method == "cnmf":
+        if os.name == 'nt':
+            backend = 'multiprocessing'
+        else:
+            # backend = 'ipyparallel'
+            backend = 'multiprocessing'
+
+        # Create the cluster
+        cm.stop_server()
+        c, dview, n_processes = cm.cluster.setup_cluster(backend=backend, n_processes=None, single_thread=False)
+    else:
+        c           = None
+        dview       = None
+        n_processes = None
 
     new_roi_spatial_footprints  = {}
     new_roi_temporal_footprints = {}
@@ -557,7 +575,7 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
             borders = None
 
         if method == "cnmf":
-            roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = find_rois_cnmf(final_video_path_2, params, mc_borders=borders, use_multiprocessing=use_multiprocessing)
+            roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = find_rois_cnmf(final_video_path_2, params, mc_borders=borders, use_multiprocessing=use_multiprocessing, c=c, dview=dview, n_processes=n_processes)
         else:
             roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = find_rois_suite2p(final_video_path_2, params, mc_borders=borders, use_multiprocessing=use_multiprocessing)
 
@@ -575,13 +593,23 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
         if progress_signal is not None:
             progress_signal.emit(n)
 
+    if use_multiprocessing and method == "cnmf":
+        if backend == 'multiprocessing':
+            dview.close()
+        else:
+            try:
+                dview.terminate()
+            except:
+                dview.shutdown()
+        cm.stop_server()
+
     end_time = time.time()
 
     print("---- ROI finding finished. Elapsed time: {} s.".format(end_time - start_time))
 
     return new_roi_spatial_footprints, new_roi_temporal_footprints, new_roi_temporal_residuals, new_bg_spatial_footprints, new_bg_temporal_footprints
 
-def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True):
+def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True, c=None, dview=None, n_processes=None):
     full_video_path = video_path
 
     directory = os.path.dirname(full_video_path)
@@ -604,19 +632,6 @@ def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True
     roi_temporal_residuals  = [ None for i in range(num_z) ]
     bg_spatial_footprints   = [ None for i in range(num_z) ]
     bg_temporal_footprints  = [ None for i in range(num_z) ]
-
-    # Create the cluster
-    if use_multiprocessing:
-        if os.name == 'nt':
-            backend = 'multiprocessing'
-        else:
-            backend = 'ipyparallel'
-
-        cm.stop_server()
-        c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
-    else:
-        dview = None
-        n_processes = 1
 
     for z in range(num_z):
         fname = os.path.splitext(filename)[0] + "_masked_z_{}.tif".format(z)
@@ -733,16 +748,6 @@ def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True
 
     if os.path.exists(new_video_path):
         os.remove(new_video_path)
-
-    if use_multiprocessing:
-        if backend == 'multiprocessing':
-            dview.close()
-        else:
-            try:
-                dview.terminate()
-            except:
-                dview.shutdown()
-        cm.stop_server()
 
     mmap_files = glob.glob(os.path.join(directory, "*.mmap"))
     for mmap_file in mmap_files:

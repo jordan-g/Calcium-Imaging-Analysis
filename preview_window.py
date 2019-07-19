@@ -238,6 +238,8 @@ class PreviewWindow(QMainWindow):
         self.set_initial_state()
 
         self.item_hovered = False
+        self.play_right   = False
+        self.frame_offset = 0
 
         # set up the status bar
         self.statusBar().setStyleSheet(STATUSBAR_STYLESHEET)
@@ -269,11 +271,15 @@ class PreviewWindow(QMainWindow):
         self.video_name             = ""   # name of the currently showing video
         self.mask_points            = []
         self.mask                   = None
-        self.frame_offset           = 0
         self.heatmap                = None
         self.selected_rois          = []
         self.roi_temporal_footprints = None
-        self.play_right             = False
+
+        self.left_image.clear()
+        self.left_image_overlay.clear()
+        self.right_image.clear()
+        self.right_image_overlay.clear()
+        self.kept_traces_image.clear()
 
         self.show_rois_checkbox.setEnabled(False)
         self.pg_widget.hide()
