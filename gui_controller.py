@@ -400,51 +400,52 @@ class GUIController():
         if roi_spatial_footprints is not None:
             kept_rois = [ roi for roi in range(roi_spatial_footprints.shape[-1]) if roi not in self.removed_rois() ]
 
-            heatmap = self.roi_temporal_footprints()[kept_rois]
-            
-            video_lengths = self.selected_group_video_lengths()
+            if len(kept_rois) > 0:
+                heatmap = self.roi_temporal_footprints()[kept_rois]
+                
+                video_lengths = self.selected_group_video_lengths()
 
-            index = self.current_group_video_paths().index(self.loaded_video_path())
+                index = self.current_group_video_paths().index(self.loaded_video_path())
 
-            if index == 0:
-                heatmap = heatmap[:, :video_lengths[0]]
-            else:
-                heatmap = heatmap[:, np.sum(video_lengths[:index]):np.sum(video_lengths[:index+1])]
-
-            if heatmap.shape[0] > 0:
-                if self.show_zscore:
-                    heatmap = (heatmap - np.mean(heatmap, axis=1)[:, np.newaxis])/np.std(heatmap, axis=1)[:, np.newaxis]
-
-                    if heatmap.shape[0] > 2:
-                        correlations = np.corrcoef(heatmap)
-                        i, j = np.unravel_index(correlations.argmin(), correlations.shape)
-                    
-                        heatmap_sorted = heatmap.copy()
-                        heatmap_sorted[0]  = heatmap[i]
-                        heatmap_sorted[-1] = heatmap[j]
-                        
-                        remaining_indices = [ index for index in range(heatmap.shape[0]) if index not in (i, j) ]
-                        for k in range(1, heatmap.shape[0]-1):
-                            corrs_1 = [ correlations[i, index] for index in remaining_indices ]
-                            corrs_2 = [ correlations[j, index] for index in remaining_indices ]
-                            
-                            difference = [ corrs_1[l] - corrs_2[l] for l in range(len(remaining_indices)) ]
-                            l = np.argmax(difference)
-                            index = remaining_indices[l]
-                            
-                            heatmap_sorted[k] = heatmap[index]
-                            
-                            del remaining_indices[l]
-
-                        heatmap = heatmap_sorted
+                if index == 0:
+                    heatmap = heatmap[:, :video_lengths[0]]
                 else:
-                    heatmap = heatmap/np.amax(heatmap)
+                    heatmap = heatmap[:, np.sum(video_lengths[:index]):np.sum(video_lengths[:index+1])]
 
-                if self.show_zscore:
-                    heatmap[heatmap > 3]  = 3
-                    heatmap[heatmap < -2] = -2
+                if heatmap.shape[0] > 0:
+                    if self.show_zscore:
+                        heatmap = (heatmap - np.mean(heatmap, axis=1)[:, np.newaxis])/np.std(heatmap, axis=1)[:, np.newaxis]
 
-                self.heatmap = heatmap.T
+                        if heatmap.shape[0] > 2:
+                            correlations = np.corrcoef(heatmap)
+                            i, j = np.unravel_index(correlations.argmin(), correlations.shape)
+                        
+                            heatmap_sorted = heatmap.copy()
+                            heatmap_sorted[0]  = heatmap[i]
+                            heatmap_sorted[-1] = heatmap[j]
+                            
+                            remaining_indices = [ index for index in range(heatmap.shape[0]) if index not in (i, j) ]
+                            for k in range(1, heatmap.shape[0]-1):
+                                corrs_1 = [ correlations[i, index] for index in remaining_indices ]
+                                corrs_2 = [ correlations[j, index] for index in remaining_indices ]
+                                
+                                difference = [ corrs_1[l] - corrs_2[l] for l in range(len(remaining_indices)) ]
+                                l = np.argmax(difference)
+                                index = remaining_indices[l]
+                                
+                                heatmap_sorted[k] = heatmap[index]
+                                
+                                del remaining_indices[l]
+
+                            heatmap = heatmap_sorted
+                    else:
+                        heatmap = heatmap/np.amax(heatmap)
+
+                    if self.show_zscore:
+                        heatmap[heatmap > 3]  = 3
+                        heatmap[heatmap < -2] = -2
+
+                    self.heatmap = heatmap.T
 
         self.preview_window.update_heatmap_plot(self.heatmap)
 
@@ -1249,35 +1250,35 @@ class GUIController():
             # self.controller.bg_spatial_footprints[self.group_num][self.z]   = bg_spatial_footprints
             # self.controller.bg_temporal_footprints[self.group_num][self.z]  = bg_temporal_footprints
 
-            # all_removed_rois      = np.array(self.controller.all_removed_rois[self.group_num][self.z])
-            # locked_rois           = np.array(self.controller.locked_rois[self.group_num][self.z])
-            # manually_removed_rois = np.array(self.controller.manually_removed_rois[self.group_num][self.z])
-            # filtered_out_rois     = np.array(self.controller.filtered_out_rois[self.group_num][self.z])
+            all_removed_rois      = np.array(self.controller.all_removed_rois[self.group_num][self.z])
+            locked_rois           = np.array(self.controller.locked_rois[self.group_num][self.z])
+            manually_removed_rois = np.array(self.controller.manually_removed_rois[self.group_num][self.z])
+            filtered_out_rois     = np.array(self.controller.filtered_out_rois[self.group_num][self.z])
 
-            # # update removed ROIs
-            # for i in sorted(self.selected_rois):
-            #     all_removed_rois[all_removed_rois > i]           -= 1
-            #     locked_rois[locked_rois > i]                     -= 1
-            #     manually_removed_rois[manually_removed_rois > i] -= 1
-            #     filtered_out_rois[filtered_out_rois > i]         -= 1
+            # update removed ROIs
+            for i in sorted(self.selected_rois):
+                all_removed_rois[all_removed_rois > i]           -= 1
+                locked_rois[locked_rois > i]                     -= 1
+                manually_removed_rois[manually_removed_rois > i] -= 1
+                filtered_out_rois[filtered_out_rois > i]         -= 1
 
-            #     if i in all_removed_rois:
-            #         index = np.where(all_removed_rois == i)[0][0]
-            #         all_removed_rois = np.delete(all_removed_rois, index)
-            #     if i in locked_rois:
-            #         index = np.where(locked_rois == i)[0][0]
-            #         locked_rois = np.delete(locked_rois, index)
-            #     if i in manually_removed_rois:
-            #         index = np.where(manually_removed_rois == i)[0][0]
-            #         manually_removed_rois = np.delete(manually_removed_rois, index)
-            #     if i in filtered_out_rois:
-            #         index = np.where(filtered_out_rois == i)[0][0]
-            #         filtered_out_rois = np.delete(filtered_out_rois, index)
+                if i in all_removed_rois:
+                    index = np.where(all_removed_rois == i)[0][0]
+                    all_removed_rois = np.delete(all_removed_rois, index)
+                if i in locked_rois:
+                    index = np.where(locked_rois == i)[0][0]
+                    locked_rois = np.delete(locked_rois, index)
+                if i in manually_removed_rois:
+                    index = np.where(manually_removed_rois == i)[0][0]
+                    manually_removed_rois = np.delete(manually_removed_rois, index)
+                if i in filtered_out_rois:
+                    index = np.where(filtered_out_rois == i)[0][0]
+                    filtered_out_rois = np.delete(filtered_out_rois, index)
 
-            # self.controller.all_removed_rois[self.group_num][self.z]      = list(all_removed_rois)
-            # self.controller.locked_rois[self.group_num][self.z]       = list(locked_rois)
-            # self.controller.manually_removed_rois[self.group_num][self.z]    = list(manually_removed_rois)
-            # self.controller.filtered_out_rois[self.group_num][self.z] = list(filtered_out_rois)
+            self.controller.all_removed_rois[self.group_num][self.z]      = list(all_removed_rois)
+            self.controller.locked_rois[self.group_num][self.z]       = list(locked_rois)
+            self.controller.manually_removed_rois[self.group_num][self.z]    = list(manually_removed_rois)
+            self.controller.filtered_out_rois[self.group_num][self.z] = list(filtered_out_rois)
 
             video_paths = self.controller.video_paths_in_group(self.video_paths(), self.group_num)
 
