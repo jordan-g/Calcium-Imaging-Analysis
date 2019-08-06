@@ -86,7 +86,7 @@ class DatasetEditingWindow(QMainWindow):
             self.form_layouts.append(form_layout)
 
         group_box.setLayout(hbox_layout)
-        scroll_area = QScrollArea()
+        scroll_area = QScrollArea(self)
         scroll_area.setFrameStyle(0)
         scroll_area.setWidget(group_box)
         scroll_area.setWidgetResizable(True)
@@ -100,8 +100,9 @@ class DatasetEditingWindow(QMainWindow):
         button_layout.addStretch()
 
         save_dataset_button = QPushButton("Save Dataset")
-        save_dataset_button.setIcon(QIcon("icons/action_icon.png"))
+        save_dataset_button.setIcon(QIcon("icons/save_icon.png"))
         save_dataset_button.setIconSize(QSize(13, 16))
+        save_dataset_button.setStyleSheet('font-weight: bold;')
         save_dataset_button.clicked.connect(self.save_dataset)
         button_layout.addWidget(save_dataset_button)
 
@@ -145,7 +146,7 @@ class DatasetEditingWindow(QMainWindow):
             self.right_buttons[i].disconnect()
 
         for i in range(len(self.form_layouts)):
-            for j in range(self.form_layouts[i].rowCount(), -1, -1):
+            for j in range(self.form_layouts[i].rowCount()-1, -1, -1):
                 self.form_layouts[i].removeRow(j)
 
         self.image_list = []

@@ -47,13 +47,15 @@ video_label_unselected_color = VIDEO_LABEL_UNSELECTED_COLOR_LIGHT
 categoryFont = QFont()
 categoryFont.setBold(True)
 
+subheading_font = QFont()
+subheading_font.setBold(True)
+subheading_font.setPointSize(13)
+
 class CNNTrainingWindow(QMainWindow):
     def __init__(self, controller):
         QMainWindow.__init__(self)
 
         self.controller = controller
-
-        self.dataset_editing_window = DatasetEditingWindow(controller)
 
         # set window title
         self.setWindowTitle("Label ROIs and Train CNN")
@@ -80,59 +82,104 @@ class CNNTrainingWindow(QMainWindow):
             self.form_layouts.append(form_layout)
 
         group_box.setLayout(hbox_layout)
-        scroll_area = QScrollArea()
+        scroll_area = QScrollArea(self)
         scroll_area.setFrameStyle(0)
         scroll_area.setWidget(group_box)
         scroll_area.setWidgetResizable(True)
         # scroll_area.setFixedHeight(400)
         self.main_layout.addWidget(scroll_area)
 
+        param_widget = QWidget()
+        param_layout = QHBoxLayout(param_widget)
+        self.main_layout.addWidget(param_widget)
+
+        label = QLabel("Crop size:")
+        param_layout.addWidget(label)
+
+        self.crop_size = self.controller.controller.params['half_size']*2 + 1
+
+        self.crop_size_slider = QSlider(Qt.Horizontal)
+        self.crop_size_slider.setFocusPolicy(Qt.StrongFocus)
+        self.crop_size_slider.setTickPosition(QSlider.NoTicks)
+        self.crop_size_slider.setTickInterval(1)
+        self.crop_size_slider.setSingleStep(1)
+        self.crop_size_slider.setMinimum(1)
+        self.crop_size_slider.setMaximum(125)
+        self.crop_size_slider.setValue(self.crop_size)
+        self.crop_size_slider.sliderMoved.connect(self.change_crop_size)
+        param_layout.addWidget(self.crop_size_slider)
+
         button_widget = QWidget()
         button_layout = QHBoxLayout(button_widget)
         self.main_layout.addWidget(button_widget)
 
-        self.show_rois_checkbox = QCheckBox("Show spatial footprints")
-        self.show_rois_checkbox.setChecked(True)
-        self.show_rois_checkbox.clicked.connect(self.toggle_show_rois)
-        button_layout.addWidget(self.show_rois_checkbox)
+        label = QLabel("CNN Controls")
+        label.setFont(subheading_font)
+        button_layout.addWidget(label)
 
         button_layout.addStretch()
 
-        auto_label_button = QPushButton("Auto-Label")
-        auto_label_button.setIcon(QIcon("icons/action_icon.png"))
-        auto_label_button.setIconSize(QSize(13, 16))
-        auto_label_button.clicked.connect(self.auto_label)
-        button_layout.addWidget(auto_label_button)
-
-        reset_button = QPushButton("Reset CNN")
-        reset_button.setIcon(QIcon("icons/action_icon.png"))
+        reset_button = HoverButton("Reset CNN...", self, self.statusBar())
+        reset_button.setHoverMessage("Reset the CNN to an untrained state.")
+        reset_button.setIcon(QIcon("icons/cnn_icon.png"))
         reset_button.setIconSize(QSize(13, 16))
         reset_button.clicked.connect(self.controller.reset_cnn)
         button_layout.addWidget(reset_button)
 
-        test_button = QPushButton("Test CNN")
+        train_button = HoverButton("Train CNN...", self, self.statusBar())
+        train_button.setHoverMessage("Train the CNN on the current dataset. To view and edit the dataset, click 'Edit Dataset...'")
+        train_button.setIcon(QIcon("icons/cnn_icon.png"))
+        train_button.setIconSize(QSize(13, 16))
+        train_button.clicked.connect(self.train_cnn)
+        button_layout.addWidget(train_button)
+
+        test_button = HoverButton("Test CNN", self, self.statusBar())
+        test_button.setHoverMessage("Test the CNN on the current ROIs. Buttons next to an ROI will be outlined based on how the CNN classifies it.")
         test_button.setIcon(QIcon("icons/action_icon.png"))
         test_button.setIconSize(QSize(13, 16))
         test_button.clicked.connect(self.test_cnn)
         button_layout.addWidget(test_button)
 
-        train_button = QPushButton("Train CNN")
-        train_button.setIcon(QIcon("icons/action_icon.png"))
-        train_button.setIconSize(QSize(13, 16))
-        train_button.clicked.connect(self.train_cnn)
-        button_layout.addWidget(train_button)
+        button_widget_2 = QWidget()
+        button_layout_2 = QHBoxLayout(button_widget_2)
+        self.main_layout.addWidget(button_widget_2)
+
+        label = QLabel("Dataset Editing Controls")
+        label.setFont(subheading_font)
+        button_layout_2.addWidget(label)
+
+        button_layout_2.addStretch()
+
+        auto_label_button = HoverButton("Auto-Label", self, self.statusBar())
+        auto_label_button.setHoverMessage("Automatically label ROIs based on whether they are in the 'kept' or 'discarded' groups.")
+        auto_label_button.setIcon(QIcon("icons/auto_label_icon.png"))
+        auto_label_button.setIconSize(QSize(21, 16))
+        auto_label_button.clicked.connect(self.auto_label)
+        button_layout_2.addWidget(auto_label_button)
 
         add_to_dataset_button = QPushButton("Add to Dataset")
-        add_to_dataset_button.setIcon(QIcon("icons/action_icon.png"))
+        add_to_dataset_button.setIcon(QIcon("icons/add_icon.png"))
         add_to_dataset_button.setIconSize(QSize(13, 16))
+        add_to_dataset_button.setStyleSheet('font-weight: bold;')
         add_to_dataset_button.clicked.connect(self.add_to_dataset)
-        button_layout.addWidget(add_to_dataset_button)
+        button_layout_2.addWidget(add_to_dataset_button)
 
-        edit_dataset_button = QPushButton("Edit Dataset...")
-        edit_dataset_button.setIcon(QIcon("icons/action_icon.png"))
+        edit_dataset_button = QPushButton("View/Edit Dataset...")
+        edit_dataset_button.setIcon(QIcon("icons/dataset_icon.png"))
         edit_dataset_button.setIconSize(QSize(13, 16))
         edit_dataset_button.clicked.connect(self.edit_dataset)
-        button_layout.addWidget(edit_dataset_button)
+        button_layout_2.addWidget(edit_dataset_button)
+
+        button_widget_3 = QWidget()
+        button_layout_3 = QHBoxLayout(button_widget_3)
+        self.main_layout.addWidget(button_widget_3)
+
+        self.show_rois_checkbox = QCheckBox("Show spatial footprints")
+        self.show_rois_checkbox.setChecked(True)
+        self.show_rois_checkbox.clicked.connect(self.toggle_show_rois)
+        button_layout_3.addWidget(self.show_rois_checkbox)
+
+        button_layout_3.addStretch()
 
         # set main widget to be the central widget
         self.setCentralWidget(self.main_widget)
@@ -143,16 +190,29 @@ class CNNTrainingWindow(QMainWindow):
         else:
             self.setWindowFlags(Qt.CustomizeWindowHint | Qt.WindowCloseButtonHint | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint)
 
-        self.image_list = []
-        self.widget_list = []
-        self.left_buttons = []
+        self.image_list    = []
+        self.widget_list   = []
+        self.left_buttons  = []
         self.right_buttons = []
 
-        self.roi_images = None
-        self.mean_images = None
+        self.cropped_overlays = None
+        self.cropped_images = None
+
+        self.default_statusbar_message = ""
+
+        self.statusBar().showMessage(self.default_statusbar_message)
+
+    def change_crop_size(self):
+        self.crop_size = self.crop_size_slider.sliderPosition()
+
+        print(self.crop_size)
+
+        cropped_images, cropped_overlays = self.controller.create_cropped_images_and_overlays(self.crop_size)
+
+        self.refresh(cropped_images, cropped_overlays, show_rois=self.controller.show_rois)
 
     def edit_dataset(self):
-        self.dataset_editing_window.show()
+        self.controller.edit_dataset()
 
     def add_to_dataset(self):
         positive_rois = []
@@ -164,13 +224,13 @@ class CNNTrainingWindow(QMainWindow):
             elif self.right_buttons[i].isChecked():
                 negative_rois.append(i)
 
-        utilities.add_data_to_dataset(self.controller.roi_spatial_footprints(), self.controller.adjusted_mean_images[self.controller.z], positive_rois, negative_rois, self.controller.controller.params['half_size'])
+        utilities.add_data_to_dataset(self.controller.roi_spatial_footprints(), self.controller.adjusted_mean_image, positive_rois, negative_rois, self.controller.controller.params['half_size'])
 
-        self.dataset_editing_window.refresh()
+        self.controller.dataset_editing_window.refresh()
 
-    def refresh(self, roi_images, mean_images, show_rois=True):
-        self.roi_images = roi_images
-        self.mean_images = mean_images
+    def refresh(self, cropped_images, cropped_overlays, show_rois=True):
+        self.cropped_overlays = cropped_overlays
+        self.cropped_images = cropped_images
 
         self.show_rois_checkbox.setChecked(show_rois)
 
@@ -179,7 +239,7 @@ class CNNTrainingWindow(QMainWindow):
             self.right_buttons[i].disconnect()
 
         for i in range(len(self.form_layouts)):
-            for j in range(self.form_layouts[i].rowCount(), -1, -1):
+            for j in range(self.form_layouts[i].rowCount()-1, -1, -1):
                 self.form_layouts[i].removeRow(j)
 
         self.image_list = []
@@ -187,15 +247,15 @@ class CNNTrainingWindow(QMainWindow):
         self.left_buttons = []
         self.right_buttons = []
 
-        print(np.amin(self.mean_images), np.amax(self.mean_images))
+        print(np.amin(self.cropped_images), np.amax(self.cropped_images))
 
-        for i in range(roi_images.shape[0]):
+        for i in range(cropped_overlays.shape[0]):
             col = i % 5
             form_layout = self.form_layouts[col]
 
-            image = (255*mean_images[i]).astype(np.uint8)
+            image = (255*cropped_images[i]).astype(np.uint8)
             if self.show_rois_checkbox.isChecked():
-                image = utilities.blend_transparent(image, roi_images[i])
+                image = utilities.blend_transparent(image, cropped_overlays[i])
 
             image = np.transpose(image, axes=(1, 0, 2))
 
@@ -275,9 +335,9 @@ class CNNTrainingWindow(QMainWindow):
         self.show_rois_checkbox.setChecked(show_rois)
 
         for i in range(len(self.image_list)):
-            image = (255*self.mean_images[i]).astype(np.uint8)
+            image = (255*self.cropped_images[i]).astype(np.uint8)
             if self.show_rois_checkbox.isChecked():
-                image = utilities.blend_transparent(image, self.roi_images[i])
+                image = utilities.blend_transparent(image, self.cropped_overlays[i])
 
             qimage = QImage(image.copy(), image.shape[1], image.shape[0], 3*50, QImage.Format_RGB888)                                                                                                                                                                 
             pixmap = QPixmap(qimage)
@@ -343,3 +403,23 @@ class CNNTrainingWindow(QMainWindow):
 
                 self.left_buttons[i].setChecked(True)
                 self.left_buttons[i].setStyleSheet("background-color: rgba(0, 255, 0, 0.5); border-radius: 5px;")
+
+class HoverButton(QPushButton):
+    def __init__(self, text, parent=None, status_bar=None):
+        QPushButton.__init__(self, text, parent)
+        self.setMouseTracking(True)
+
+        self.parent        = parent
+        self.status_bar    = status_bar
+        self.hover_message = ""
+
+    def setHoverMessage(self, message):
+        self.hover_message = message
+
+    def enterEvent(self, event):
+        if self.status_bar is not None:
+            self.status_bar.showMessage(self.hover_message)
+
+    def leaveEvent(self, event):
+        if self.status_bar is not None:
+            self.status_bar.showMessage(self.parent.default_statusbar_message)

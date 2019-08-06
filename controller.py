@@ -8,18 +8,14 @@ import csv
 import utilities
 
 # set default parameters dictionary
-DEFAULT_PARAMS = {'gamma'                : 1.0,
-                  'contrast'             : 1.0,
-                  'fps'                  : 60,
-                  'z'                    : 0,
-                  'use_patches'          : True,
+DEFAULT_PARAMS = {'use_patches'          : True,
                   'max_shift'            : 6,
                   'patch_stride'         : 48,
                   'patch_overlap'        : 24,
                   'cnmf_patch_size'      : 20,
                   'cnmf_patch_stride'    : 10,
                   'max_merge_area'       : 150,
-                  'imaging_fps'          : 30,
+                  'imaging_fps'          : 3,
                   'decay_time'           : 0.4,
                   'autoregressive_order' : 0,
                   'num_bg_components'    : 2,
@@ -44,7 +40,6 @@ DEFAULT_PARAMS = {'gamma'                : 1.0,
                   'neuropil_radius_ratio': 3,
                   'inner_neuropil_radius': 2,
                   'min_neuropil_pixels'  : 350,
-                  'tail_data_fps'        : 200,
                   'invert_masks'         : False
                   }
 
@@ -69,7 +64,6 @@ class Controller():
         self.video_paths   = [] # paths of all videos to process
         self.video_lengths = [] # lengths (# of frames) of all videos
         self.video_groups  = [] # groups that videos belong to
-        self.tail_angles   = [] # tail angle traces for all videos
 
         # initialize all variables
         self.reset_variables()
@@ -96,8 +90,8 @@ class Controller():
         self.mask_points             = {}
 
     def reset_roi_filtering_variables(self):
-        self.discarded_rois = {}
-        self.removed_rois   = {}
+        self.manually_removed_rois = {}
+        self.all_removed_rois   = {}
         self.locked_rois    = {}
 
     def import_videos(self, video_paths):
@@ -115,7 +109,6 @@ class Controller():
             video = tifffile.memmap(video_path)
             self.video_lengths.append(video.shape[0])
             self.video_groups.append(group_num)
-            self.tail_angles.append(None)
 
             if len(video.shape) > 3:
                 num_z = video.shape[1]
@@ -139,8 +132,8 @@ class Controller():
                         'bg_spatial_footprints'  : self.bg_spatial_footprints,
                         'bg_temporal_footprints' : self.bg_temporal_footprints,
                         'filtered_out_rois'      : self.filtered_out_rois,
-                        'discarded_rois'         : self.discarded_rois,
-                        'removed_rois'           : self.removed_rois,
+                        'manually_removed_rois'  : self.manually_removed_rois,
+                        'all_removed_rois'       : self.all_removed_rois,
                         'locked_rois'            : self.locked_rois,
                         'video_paths'            : video_paths,
                         'masks'                  : self.mask_points}
@@ -154,8 +147,8 @@ class Controller():
             roi_spatial_footprints = self.roi_spatial_footprints[group_num]
             bg_spatial_footprints  = self.bg_spatial_footprints[group_num]
             filtered_out_rois      = self.filtered_out_rois[group_num]
-            discarded_rois         = self.discarded_rois[group_num]
-            removed_rois           = self.removed_rois[group_num]
+            manually_removed_rois         = self.manually_removed_rois[group_num]
+            all_removed_rois           = self.all_removed_rois[group_num]
             locked_rois            = self.locked_rois[group_num]
             masks                  = self.mask_points[group_num]
             if index == 0:
@@ -173,8 +166,8 @@ class Controller():
                         'bg_spatial_footprints'  : bg_spatial_footprints,
                         'bg_temporal_footprints' : bg_temporal_footprints,
                         'filtered_out_rois'      : filtered_out_rois,
-                        'discarded_rois'         : discarded_rois,
-                        'removed_rois'           : removed_rois,
+                        'manually_removed_rois'  : manually_removed_rois,
+                        'all_removed_rois'       : all_removed_rois,
                         'locked_rois'            : locked_rois,
                         'video_paths'            : [video_path],
                         'masks'                  : masks}
@@ -215,16 +208,16 @@ class Controller():
             bg_spatial_footprints   = self.bg_spatial_footprints[group_num]
             bg_temporal_footprints  = self.bg_temporal_footprints[group_num]
             
-            discarded_rois = self.discarded_rois[group_num]
-            removed_rois   = self.removed_rois[group_num]
-            locked_rois    = self.locked_rois[group_num]
+            manually_removed_rois = self.manually_removed_rois[group_num]
+            all_removed_rois      = self.all_removed_rois[group_num]
+            locked_rois           = self.locked_rois[group_num]
 
             # save centroids & traces
             for z in range(video.shape[1]):
                 print("Calculating ROI activities for z={}...".format(z))
 
                 centroids = np.zeros((roi_spatial_footprints[z].shape[-1], 2))
-                kept_rois = [ roi for roi in range(roi_spatial_footprints[z].shape[-1]) if (roi not in removed_rois[z]) or (roi in locked_rois[z]) ]
+                kept_rois = [ roi for roi in range(roi_spatial_footprints[z].shape[-1]) if (roi not in all_removed_rois[z]) or (roi in locked_rois[z]) ]
 
                 footprints_2d = roi_spatial_footprints[z].toarray().reshape((video.shape[2], video.shape[3], roi_spatial_footprints[z].shape[-1]))
 
@@ -302,11 +295,17 @@ class Controller():
             self.bg_spatial_footprints   = roi_data['bg_spatial_footprints']
             self.bg_temporal_footprints  = roi_data['bg_temporal_footprints']
             self.filtered_out_rois       = roi_data['filtered_out_rois']
-            self.discarded_rois          = roi_data['discarded_rois']
-            self.removed_rois            = roi_data['removed_rois']
-            self.locked_rois             = roi_data['locked_rois']
+            if 'manually_removed_rois' in roi_data.keys():
+                self.manually_removed_rois = roi_data['manually_removed_rois']
+            else:
+                self.manually_removed_rois = roi_data['discarded_rois']
+            if 'all_removed_rois' in roi_data.keys():
+                self.all_removed_rois      = roi_data['all_removed_rois']
+            else:
+                self.all_removed_rois      = roi_data['removed_rois']
+            self.locked_rois = roi_data['locked_rois']
             if 'masks' in roi_data.keys():
-                self.mask_points             = roi_data['masks']
+                self.mask_points = roi_data['masks']
             else:
                 self.mask_points = {}
                 if len(self.video_paths) > 0:
@@ -326,11 +325,17 @@ class Controller():
             bg_spatial_footprints   = roi_data['bg_spatial_footprints']
             bg_temporal_footprints  = roi_data['bg_temporal_footprints']
             filtered_out_rois       = roi_data['filtered_out_rois']
-            discarded_rois          = roi_data['discarded_rois']
-            removed_rois            = roi_data['removed_rois']
-            locked_rois             = roi_data['locked_rois']
+            if 'manually_removed_rois' in roi_data.keys():
+                manually_removed_rois = roi_data['manually_removed_rois']
+            else:
+                manually_removed_rois = roi_data['discarded_rois']
+            if 'all_removed_rois' in roi_data.keys():
+                all_removed_rois = roi_data['all_removed_rois']
+            else:
+                all_removed_rois = roi_data['removed_rois']
+            locked_rois = roi_data['locked_rois']
             if 'masks' in roi_data.keys():
-                masks                   = roi_data['masks']
+                masks = roi_data['masks']
             else:
                 if len(self.video_paths) > 0:
                     # get number of z planes
@@ -345,8 +350,8 @@ class Controller():
             self.roi_spatial_footprints[group_num] = roi_spatial_footprints
             self.bg_spatial_footprints[group_num]  = bg_spatial_footprints
             self.filtered_out_rois[group_num]      = filtered_out_rois
-            self.discarded_rois[group_num]         = discarded_rois
-            self.removed_rois[group_num]           = removed_rois
+            self.manually_removed_rois[group_num]         = manually_removed_rois
+            self.all_removed_rois[group_num]           = all_removed_rois
             self.locked_rois[group_num]            = locked_rois
             self.mask_points[group_num]            = masks
 
@@ -385,10 +390,14 @@ class Controller():
         for i in range(len(indices)-1, -1, -1):
             # remove the video paths, lengths and groups at the indices, in reverse order
             index = indices[i]
+
+            if self.video_groups.count(self.video_groups[index]) == 1:
+                # if this is the last video in the group, remove the group
+                self.remove_group(self.video_groups[index])
+
             del self.video_paths[index]
             del self.video_lengths[index]
             del self.video_groups[index]
-            del self.tail_angles[index]
 
             if len(self.mc_video_paths) > 0:
                 del self.mc_video_paths[index]
@@ -396,6 +405,9 @@ class Controller():
         if len(self.video_paths) == 0:
             # reset variables
             self.reset_variables()
+            self.reset_motion_correction_variables()
+            self.reset_roi_finding_variables()
+            self.reset_roi_filtering_variables()
 
     def add_group(self, group_num):
         if len(self.video_paths) > 0:
@@ -425,10 +437,10 @@ class Controller():
             del self.filtered_out_rois[group]
         if group in self.mask_points.keys():
             del self.mask_points[group]
-        if group in self.discarded_rois.keys():
-            del self.discarded_rois[group]
-        if group in self.removed_rois.keys():
-            del self.removed_rois[group]
+        if group in self.manually_removed_rois.keys():
+            del self.manually_removed_rois[group]
+        if group in self.all_removed_rois.keys():
+            del self.all_removed_rois[group]
         if group in self.locked_rois.keys():
             del self.locked_rois[group]
 
@@ -470,11 +482,11 @@ class Controller():
         self.bg_spatial_footprints   = bg_spatial_footprints
         self.bg_temporal_footprints  = bg_temporal_footprints
         self.filtered_out_rois       = { group_num: [ [] for z in range(len(roi_spatial_footprints[0])) ] for group_num in np.unique(self.video_groups) }
-        self.discarded_rois          = { group_num: [ [] for z in range(len(roi_spatial_footprints[0])) ] for group_num in np.unique(self.video_groups) }
-        self.removed_rois            = { group_num: [ [] for z in range(len(roi_spatial_footprints[0])) ] for group_num in np.unique(self.video_groups) }
+        self.manually_removed_rois   = { group_num: [ [] for z in range(len(roi_spatial_footprints[0])) ] for group_num in np.unique(self.video_groups) }
+        self.all_removed_rois        = { group_num: [ [] for z in range(len(roi_spatial_footprints[0])) ] for group_num in np.unique(self.video_groups) }
         self.locked_rois             = { group_num: [ [] for z in range(len(roi_spatial_footprints[0])) ] for group_num in np.unique(self.video_groups) }
 
-    def filter_rois(self, group_num):
+    def filter_rois(self, mean_images, group_num):
         # set video paths
         if self.use_mc_video and len(self.mc_video_paths) > 0:
             video_paths = self.mc_video_paths
@@ -485,18 +497,18 @@ class Controller():
         video_paths = self.video_paths_in_group(video_paths, group_num)
 
         # filter out ROIs and update the removed ROIs
-        self.filtered_out_rois[group_num] = utilities.filter_rois(video_paths, self.roi_spatial_footprints[group_num], self.roi_temporal_footprints[group_num], self.roi_temporal_residuals[group_num], self.bg_spatial_footprints[group_num], self.bg_temporal_footprints[group_num], self.params)
+        self.filtered_out_rois[group_num] = utilities.filter_rois(video_paths, self.roi_spatial_footprints[group_num], self.roi_temporal_footprints[group_num], self.roi_temporal_residuals[group_num], self.bg_spatial_footprints[group_num], self.bg_temporal_footprints[group_num], mean_images, self.params)
         
         # keep locked ROIs
         for z in range(len(self.filtered_out_rois[group_num])):
-            self.discarded_rois[group_num][z] = []
+            self.manually_removed_rois[group_num][z] = []
             self.filtered_out_rois[group_num][z] = [ roi for roi in self.filtered_out_rois[group_num][z] if roi not in self.locked_rois[group_num][z] ]
-            self.removed_rois[group_num][z]      = self.filtered_out_rois[group_num][z] + self.discarded_rois[group_num][z]
+            self.all_removed_rois[group_num][z]      = self.filtered_out_rois[group_num][z] + self.manually_removed_rois[group_num][z]
 
     def discard_roi(self, roi, z, group_num):
         # add to discarded ROIs list
-        self.discarded_rois[group_num][z].append(roi)
-        self.removed_rois[group_num][z] = self.filtered_out_rois[group_num][z] + self.discarded_rois[group_num][z]
+        self.manually_removed_rois[group_num][z].append(roi)
+        self.all_removed_rois[group_num][z] = self.filtered_out_rois[group_num][z] + self.manually_removed_rois[group_num][z]
 
         # remove from locked ROIs if it's there
         if roi in self.locked_rois[group_num][z]:
@@ -505,9 +517,9 @@ class Controller():
 
     def keep_roi(self, roi, z, group_num):
         # remove from discared ROIs or filtered out ROIs list if it's there
-        if roi in self.discarded_rois[group_num][z]:
-            i = self.discarded_rois[group_num][z].index(roi)
-            del self.discarded_rois[group_num][z][i]
+        if roi in self.manually_removed_rois[group_num][z]:
+            i = self.manually_removed_rois[group_num][z].index(roi)
+            del self.manually_removed_rois[group_num][z][i]
         elif roi in self.filtered_out_rois[group_num][z]:
             i = self.filtered_out_rois[group_num][z].index(roi)
             del self.filtered_out_rois[group_num][z][i]
@@ -516,7 +528,7 @@ class Controller():
         if roi not in self.locked_rois[group_num][z]:
             self.locked_rois[group_num][z].append(roi)
 
-        self.removed_rois[group_num][z] = self.filtered_out_rois[group_num][z] + self.discarded_rois[group_num][z]
+        self.all_removed_rois[group_num][z] = self.filtered_out_rois[group_num][z] + self.manually_removed_rois[group_num][z]
 
     def add_mask(self, mask_points, z, num_z, group_num):
         if len(mask_points) >= 3:
