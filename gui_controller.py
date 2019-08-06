@@ -140,13 +140,13 @@ class GUIController():
         if self.group_num in self.controller.filtered_out_rois.keys():
             return self.controller.filtered_out_rois[self.group_num][self.z]
         else:
-            return None
+            return []
 
     def removed_rois(self):
         if self.group_num in self.controller.all_removed_rois.keys():
             return self.controller.all_removed_rois[self.group_num][self.z]
         else:
-            return None
+            return []
 
     def current_group_video_nums(self):
         return [ i for i in range(len(self.controller.video_paths)) if self.controller.video_groups[i] == self.group_num ]
@@ -779,10 +779,10 @@ class GUIController():
         self.controller.bg_spatial_footprints   = bg_spatial_footprints
         self.controller.bg_temporal_footprints  = bg_temporal_footprints
 
-        self.controller.filtered_out_rois       = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.controller.video_groups) }
-        self.controller.discarded_rois          = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.controller.video_groups) }
-        self.controller.removed_rois            = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.controller.video_groups) }
-        self.controller.locked_rois             = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.controller.video_groups) }
+        self.controller.filtered_out_rois     = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.controller.video_groups) }
+        self.controller.manually_removed_rois = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.controller.video_groups) }
+        self.controller.all_removed_rois      = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.controller.video_groups) }
+        self.controller.locked_rois           = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.controller.video_groups) }
 
         # notify the param window
         self.param_window.roi_finding_ended()

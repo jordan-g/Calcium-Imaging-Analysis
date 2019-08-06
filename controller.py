@@ -91,8 +91,8 @@ class Controller():
 
     def reset_roi_filtering_variables(self):
         self.manually_removed_rois = {}
-        self.all_removed_rois   = {}
-        self.locked_rois    = {}
+        self.all_removed_rois      = {}
+        self.locked_rois           = {}
 
     def import_videos(self, video_paths):
         # add the new video paths to the currently loaded video paths
@@ -499,10 +499,10 @@ class Controller():
         self.bg_spatial_footprints   = bg_spatial_footprints
         self.bg_temporal_footprints  = bg_temporal_footprints
 
-        self.filtered_out_rois       = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.video_groups) }
-        self.discarded_rois          = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.video_groups) }
-        self.removed_rois            = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.video_groups) }
-        self.locked_rois             = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.video_groups) }
+        self.filtered_out_rois     = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.video_groups) }
+        self.manually_removed_rois = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.video_groups) }
+        self.all_removed_rois      = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.video_groups) }
+        self.locked_rois           = { group_num: [ [] for z in range(len(roi_spatial_footprints[group_num])) ] for group_num in np.unique(self.video_groups) }
 
     def filter_rois(self, mean_images, group_num):
         # set video paths
