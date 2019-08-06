@@ -137,6 +137,13 @@ class ParamWindow(QMainWindow):
         self.roi_filtering_widget.update_param_slider_and_textbox('imaging_fps', imaging_fps, multiplier=1, int_values=True)
 
     def set_video_paths(self, video_paths):
+        video_items = [ self.videos_list.item(i) for i in range(self.videos_list.count()) if self.videos_list.item(i).font() != categoryFont ]
+
+        print(video_paths)
+
+        if len(video_paths) != len(video_items):
+            raise ValueError("Attempted to change the paths in the video list, but {} paths were provided, while {} videos are loaded.".format(len(video_paths), len(video_items)))
+
         video_num = 0
 
         for i in range(self.videos_list.count()):

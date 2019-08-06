@@ -228,6 +228,7 @@ class PreviewWindow(QMainWindow):
         self.set_initial_state()
 
         self.item_hovered = False
+        self.play_right   = False
 
         # set up the status bar
         self.statusBar().setStyleSheet(STATUSBAR_STYLESHEET)
@@ -253,10 +254,14 @@ class PreviewWindow(QMainWindow):
         self.video_name             = ""   # name of the currently showing video
         self.mask_points            = []
         self.mask                   = None
-        self.frame_offset           = 0
         self.selected_rois          = []
         self.roi_temporal_footprints = None
-        self.play_right             = False
+
+        self.left_image.clear()
+        self.left_image_overlay.clear()
+        self.right_image.clear()
+        self.right_image_overlay.clear()
+        self.kept_traces_image.clear()
 
         self.show_rois_checkbox.setEnabled(False)
         self.pg_widget.hide()
@@ -268,10 +273,10 @@ class PreviewWindow(QMainWindow):
 
     def update_frame_offset(self):
         try:
-            self.frame_offset = int(float(self.frame_offset_textbox.text()))
+            self.controller.frame_offset = int(float(self.frame_offset_textbox.text()))
 
             if self.controller.heatmap is not None:
-                self.kept_traces_image.setRect(QRectF(self.frame_offset + self.controller.z/self.controller.video.shape[1], 0, self.controller.heatmap.shape[0], self.controller.heatmap.shape[1]))
+                self.kept_traces_image.setRect(QRectF(self.controller.frame_offset + self.controller.z/self.controller.video.shape[1], 0, self.controller.heatmap.shape[0], self.controller.heatmap.shape[1]))
 
             if self.roi_temporal_footprints is not None:
                 self.plot_traces(self.roi_temporal_footprints, self.selected_rois)
@@ -329,13 +334,13 @@ class PreviewWindow(QMainWindow):
 
         if tail_angles is not None:
             one_frame    = (1.0/imaging_fps_one_plane)*tail_data_fps
-            total_frames = int(np.floor(one_frame*self.controller.video.shape[0] + self.frame_offset + 1))
+            total_frames = int(np.floor(one_frame*self.controller.video.shape[0] + self.controller.frame_offset + 1))
 
             # print(tail_angles.shape)
             # print(total_frames)
 
             if total_frames < tail_angles.shape[0]:
-                x = np.linspace(0, self.controller.video.shape[0]+self.frame_offset+1, total_frames)
+                x = np.linspace(0, self.controller.video.shape[0]+self.controller.frame_offset+1, total_frames)
 
                 self.tail_angle_viewbox.plot(x, tail_angles[:total_frames], pen=pg.mkPen((255, 255, 0), width=2))
 
@@ -359,7 +364,7 @@ class PreviewWindow(QMainWindow):
             else:
                 max_value = np.amax(roi_temporal_footprints)
 
-            x = np.arange(roi_temporal_footprints.shape[1]) + self.controller.z/self.controller.video.shape[1] + self.frame_offset
+            x = np.arange(roi_temporal_footprints.shape[1]) + self.controller.z/self.controller.video.shape[1] + self.controller.frame_offset
             for i in range(len(selected_rois)):
                 roi = selected_rois[i]
 
@@ -618,9 +623,9 @@ class PreviewWindow(QMainWindow):
         else:
             self.controller.show_mean_image()
 
-            self.current_frame_line_1.setValue(self.frame_offset)
-            self.current_frame_line_2.setValue(self.frame_offset)
-            self.current_frame_line_3.setValue(self.frame_offset)
+            self.current_frame_line_1.setValue(self.controller.frame_offset)
+            self.current_frame_line_2.setValue(self.controller.frame_offset)
+            self.current_frame_line_3.setValue(self.controller.frame_offset)
 
         self.controller.set_play_video(play_video_bool)
 
@@ -674,9 +679,9 @@ class PreviewWindow(QMainWindow):
             self.frame_num += 1
             self.frame_num = self.frame_num % self.n_frames
 
-            self.current_frame_line_1.setValue(self.frame_num + self.frame_offset)
-            self.current_frame_line_2.setValue(self.frame_num + self.frame_offset)
-            self.current_frame_line_3.setValue(self.frame_num + self.frame_offset)
+            self.current_frame_line_1.setValue(self.frame_num + self.controller.frame_offset)
+            self.current_frame_line_2.setValue(self.frame_num + self.controller.frame_offset)
+            self.current_frame_line_3.setValue(self.frame_num + self.controller.frame_offset)
 
             if not self.item_hovered:
                 # update status bar
