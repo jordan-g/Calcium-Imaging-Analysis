@@ -399,7 +399,7 @@ class Controller():
 
             if self.video_groups.count(self.video_groups[index]) == 1:
                 # if this is the last video in the group, remove the group
-                self.remove_group(self.video_groups[index])
+                self.remove_group(self.video_groups[index], remove_videos=False)
 
             del self.video_paths[index]
             del self.video_lengths[index]
@@ -430,7 +430,7 @@ class Controller():
 
             self.mask_points[group_num] = [ [] for z in range(num_z) ]
 
-    def remove_group(self, group):
+    def remove_group(self, group, remove_videos=True):
         if group in self.mc_borders.keys():
             del self.mc_borders[group]
         if group in self.roi_spatial_footprints.keys():
@@ -454,9 +454,10 @@ class Controller():
         if group in self.locked_rois.keys():
             del self.locked_rois[group]
 
-        video_indices = self.video_indices_in_group(self.video_paths, group)
+        if remove_videos:
+	        video_indices = self.video_indices_in_group(self.video_paths, group)
 
-        self.remove_videos_at_indices(video_indices)
+	        self.remove_videos_at_indices(video_indices)
 
     def video_paths_in_group(self, video_paths, group_num):
         return [ video_paths[i] for i in range(len(video_paths)) if self.video_groups[i] == group_num ]
