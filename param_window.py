@@ -355,8 +355,6 @@ class ParamWindow(QMainWindow):
                 if tab_index == 0:
                     self.remove_videos_action.setEnabled(False)
                     self.remove_group_action.setEnabled(True)
-
-                # self.loading_widget.preview_selected_video_button.setEnabled(False)
             else:
                 if len(selected_items) == 1:
                     self.show_video_action.setDisabled(False)
@@ -367,11 +365,6 @@ class ParamWindow(QMainWindow):
                 if tab_index == 0:
                     self.remove_videos_action.setEnabled(True)
                     self.remove_group_action.setEnabled(False)
-
-                # self.loading_widget.preview_selected_video_button.setEnabled(True)
-
-                # index = self.controller.video_paths().index(selected_items[0].text())
-                # self.controller.video_selected(index)
         else:
             self.show_video_action.setDisabled(True)
             self.loading_widget.remove_videos_button.setDisabled(True)
@@ -386,13 +379,6 @@ class ParamWindow(QMainWindow):
             widget = self.videos_list.itemWidget(item)
             if widget is not None:
                 label = widget.findChild(QLabel)
-
-                # if item in selected_items:
-                #     label.setStyleSheet(video_label_selected_color)
-                # else:
-                #     label.setStyleSheet(video_label_unselected_color)
-
-            # self.loading_widget.preview_selected_video_button.setEnabled(False)
 
             index = None
 
@@ -431,8 +417,6 @@ class ParamWindow(QMainWindow):
 
     def make_show_video(self, video_path, preview_selected_video_button):
         def show_video():
-            # print(self.controller.video_paths())
-
             index = self.controller.video_paths().index(video_path)
             self.controller.load_video(index)
 
@@ -440,7 +424,6 @@ class ParamWindow(QMainWindow):
                 item = self.videos_list.item(i)
 
                 widget = self.videos_list.itemWidget(item)
-                # print(i, item, widget)
                 if widget is not None:
                     button = widget.findChild(HoverButton, "play_button")
 
@@ -591,7 +574,6 @@ class ParamWindow(QMainWindow):
         item = self.videos_list.findItems(video_path, Qt.MatchFlag.MatchExactly)[0]
         widget = QWidget()
         label =  QLabel(video_path)
-        # widget.setStyleSheet(LIST_ITEM_STYLESHEET_LIGHT)
 
         button_name = "play_button"
 
@@ -607,7 +589,6 @@ class ParamWindow(QMainWindow):
         layout.setSpacing(5)
         layout.addWidget(preview_selected_video_button)
         layout.addWidget(label)
-        # layout.addStretch()
 
         layout.setSizeConstraint(QLayout.SetFixedSize)
         widget.setLayout(layout)  
@@ -677,7 +658,6 @@ class ParamWindow(QMainWindow):
         self.roi_finding_widget.show_zscore_checkbox.setEnabled(False)
         self.roi_finding_widget.use_multiprocessing_checkbox.setEnabled(False)
         self.videos_list_widget.setEnabled(False)
-        # self.roi_finding_widget.draw_mask_button.setStyleSheet('font-weight: bold;')
         self.roi_finding_widget.draw_mask_button.setText("Done")
 
     def mask_drawing_ended(self):
@@ -689,7 +669,6 @@ class ParamWindow(QMainWindow):
         self.roi_finding_widget.show_zscore_checkbox.setEnabled(True)
         self.roi_finding_widget.use_multiprocessing_checkbox.setEnabled(True)
         self.videos_list_widget.setEnabled(True)
-        # self.roi_finding_widget.draw_mask_button.setStyleSheet('font-weight: normal;')
         self.roi_finding_widget.draw_mask_button.setText("Edit Masks...")
 
     def update_motion_correction_progress(self, group_num):
@@ -840,7 +819,6 @@ class ParamWidget(QWidget):
         layout.addWidget(label)
 
         slider = QSlider(Qt.Horizontal)
-        # slider.setFixedWidth(300)
         slider.setObjectName(name)
         slider.setFocusPolicy(Qt.StrongFocus)
         slider.setTickPosition(QSlider.NoTicks)
@@ -861,7 +839,6 @@ class ParamWidget(QWidget):
 
         # make textbox & add to layout
         textbox = QLineEdit()
-        # textbox.setStyleSheet(ROUNDED_STYLESHEET)
         textbox.setAlignment(Qt.AlignHCenter)
         textbox.setObjectName(name)
         textbox.setFixedWidth(60)
@@ -1105,7 +1082,6 @@ class ROIFindingWidget(ParamWidget):
         self.find_rois_button.setHoverMessage("Find ROIs for all videos.")
         self.find_rois_button.setIcon(QIcon("icons/action_icon.png"))
         self.find_rois_button.setIconSize(QSize(13,16))
-        # self.find_rois_button.setStyleSheet('font-weight: bold;')
         self.find_rois_button.clicked.connect(self.controller.find_rois)
         self.button_layout.addWidget(self.find_rois_button)
 
@@ -1145,7 +1121,6 @@ class CNMFROIFindingWidget(ParamWidget):
     def __init__(self, parent_widget, controller):
         ParamWidget.__init__(self, parent_widget, controller, "CNMF Parameters")
 
-        # self.parent_widget = parent_widget
         self.controller = controller
 
         self.add_param_slider(label_name="Autoregressive Model Order", name="autoregressive_order", minimum=0, maximum=2, value=self.controller.params()['autoregressive_order'], moved=self.update_param, num=0, multiplier=1, pressed=self.update_param, released=self.update_param, description="Order of the autoregressive model (0, 1 or 2).", int_values=True)
@@ -1176,7 +1151,6 @@ class Suite2pROIFindingWidget(ParamWidget):
     def __init__(self, parent_widget, controller):
         ParamWidget.__init__(self, parent_widget, controller, "Suite2p Parameters")
 
-        # self.parent_widget = parent_widget
         self.controller = controller
 
         self.add_param_slider(label_name="Diameter", name="diameter", minimum=1, maximum=100, value=self.controller.params()['diameter'], moved=self.update_param, num=0, multiplier=1, pressed=self.update_param, released=self.update_param, description="Order of the autoregressive model (0, 1 or 2).", int_values=True)
@@ -1186,8 +1160,7 @@ class Suite2pROIFindingWidget(ParamWidget):
         self.add_param_slider(label_name="Neuropil Radius Ratio", name="neuropil_radius_ratio", minimum=1, maximum=50, value=self.controller.params()['neuropil_radius_ratio'], moved=self.update_param, num=4, multiplier=1, pressed=self.update_param, released=self.update_param, description="Order of the autoregressive model (0, 1 or 2).", int_values=True)
         self.add_param_slider(label_name="Inner Neropil Radius", name="inner_neuropil_radius", minimum=1, maximum=50, value=self.controller.params()['inner_neuropil_radius'], moved=self.update_param, num=5, multiplier=1, pressed=self.update_param, released=self.update_param, description="Order of the autoregressive model (0, 1 or 2).", int_values=True)
         self.add_param_slider(label_name="Min. Neuropil Pixels", name="min_neuropil_pixels", minimum=1, maximum=500, value=self.controller.params()['min_neuropil_pixels'], moved=self.update_param, num=6, multiplier=1, pressed=self.update_param, released=self.update_param, description="Order of the autoregressive model (0, 1 or 2).", int_values=True)
-        # self.add_param_slider(label_name="Diameter", name="diameter", minimum=1, maximum=50, moved=self.update_param, num=0, multiplier=1, pressed=self.update_param, released=self.update_param, description="Order of the autoregressive model (0, 1 or 2).", int_values=True)
- 
+        
         self.main_layout.addStretch()
 
     def toggle_connected(self, boolean):
@@ -1386,7 +1359,5 @@ def HLine():
     frame = QFrame()
     frame.setFrameShape(QFrame.HLine)
     frame.setFrameShadow(QFrame.Plain)
-
-    # frame.setStyleSheet("color: rgba(0, 0, 0, 0.2);")
 
     return frame
