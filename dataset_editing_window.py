@@ -16,13 +16,8 @@ import utilities
 import matplotlib.pyplot as plt
 import cv2
 
-def get_cmap(n, name='hsv'):
-    '''Returns a function that maps each index in 0, 1, ..., n-1 to a distinct 
-    RGB color; the keyword argument name must be a standard mpl colormap name.'''
-    return plt.cm.get_cmap(name, n)
-
 n_colors = 20
-cmap = get_cmap(n_colors)
+cmap = utilities.get_cmap(n_colors)
 
 # set styles of title and subtitle labels
 TITLE_STYLESHEET           = "font-size: 16px; font-weight: bold;"

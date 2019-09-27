@@ -72,8 +72,8 @@ class Controller():
         self.reset_roi_filtering_variables()
 
     def reset_variables(self):
-        self.use_mc_video        = False # whether to use the motion-corrected video for finding ROIs
-        self.use_multiprocessing = True  # whether to use multi-processing
+        self.use_mc_video        = False  # whether to use the motion-corrected video for finding ROIs
+        self.use_multiprocessing = True   # whether to use multi-processing
         self.roi_finding_mode    = "cnmf" # which algorithm to use to find ROIs -- "cnmf" / "suite2p"
 
     def reset_motion_correction_variables(self):
@@ -104,8 +104,6 @@ class Controller():
         else:
             group_num = 0
 
-        print(group_num, self.video_groups)
-
         # store video lengths and group numbers
         for video_path in video_paths:
             video = tifffile.memmap(video_path)
@@ -117,11 +115,8 @@ class Controller():
             else:
                 num_z = 1
 
-            print(num_z, video.shape)
-
+        # initialize mask points list
         self.mask_points[group_num] = [ [] for z in range(num_z) ]
-
-        print(self.mask_points)
 
     def save_rois(self, save_path, group_num=None, video_path=None):
         if group_num is None:
@@ -153,8 +148,8 @@ class Controller():
             roi_spatial_footprints = self.roi_spatial_footprints[group_num]
             bg_spatial_footprints  = self.bg_spatial_footprints[group_num]
             filtered_out_rois      = self.filtered_out_rois[group_num]
-            manually_removed_rois         = self.manually_removed_rois[group_num]
-            all_removed_rois           = self.all_removed_rois[group_num]
+            manually_removed_rois  = self.manually_removed_rois[group_num]
+            all_removed_rois       = self.all_removed_rois[group_num]
             locked_rois            = self.locked_rois[group_num]
             masks                  = self.mask_points[group_num]
             if index == 0:
@@ -306,9 +301,9 @@ class Controller():
             else:
                 self.manually_removed_rois = roi_data['discarded_rois']
             if 'all_removed_rois' in roi_data.keys():
-                self.all_removed_rois      = roi_data['all_removed_rois']
+                self.all_removed_rois = roi_data['all_removed_rois']
             else:
-                self.all_removed_rois      = roi_data['removed_rois']
+                self.all_removed_rois = roi_data['removed_rois']
             self.locked_rois = roi_data['locked_rois']
             if 'masks' in roi_data.keys():
                 self.mask_points = roi_data['masks']
@@ -356,8 +351,8 @@ class Controller():
             self.roi_spatial_footprints[group_num] = roi_spatial_footprints
             self.bg_spatial_footprints[group_num]  = bg_spatial_footprints
             self.filtered_out_rois[group_num]      = filtered_out_rois
-            self.manually_removed_rois[group_num]         = manually_removed_rois
-            self.all_removed_rois[group_num]           = all_removed_rois
+            self.manually_removed_rois[group_num]  = manually_removed_rois
+            self.all_removed_rois[group_num]       = all_removed_rois
             self.locked_rois[group_num]            = locked_rois
             self.mask_points[group_num]            = masks
 
@@ -365,9 +360,9 @@ class Controller():
             group_lengths = [ self.video_lengths[i] for i in group_indices ]
 
             if self.use_mc_video and len(self.mc_video_paths) > 0:
-                group_paths   = [ self.mc_video_paths[i] for i in group_indices ]
+                group_paths = [ self.mc_video_paths[i] for i in group_indices ]
             else:
-                group_paths   = [ self.video_paths[i] for i in group_indices ]
+                group_paths = [ self.video_paths[i] for i in group_indices ]
 
             index = group_paths.index(video_path)
 

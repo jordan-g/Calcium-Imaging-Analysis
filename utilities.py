@@ -29,17 +29,13 @@ from keras import optimizers
 from keras.preprocessing.image import ImageDataGenerator
 import logging
 
+# see if suite2p is available
 try:
     import suite2p
     from suite2p.run_s2p import run_s2p
     suite2p_enabled = True
 except:
     suite2p_enabled = False
-
-if sys.version_info[0] < 3:
-    python_version = 2
-else:
-    python_version = 3
 
 def get_cmap(n, name='hsv'):
     '''Returns a function that maps each index in 0, 1, ..., n-1 to a distinct 
@@ -49,170 +45,11 @@ def get_cmap(n, name='hsv'):
 def mean(movie, z=0):
     return np.mean(movie[:, z, :, :], axis=0)
 
-def correlation(movie, z=0):
-    return np.abs(cm.local_correlations_fft(movie[:, z, :, :], swap_dim=False))
-
 def adjust_contrast(image, contrast):
     return image*contrast
 
 def adjust_gamma(image, gamma):
     return skimage.exposure.adjust_gamma(image, gamma)
-
-def calculate_adjusted_image(image, contrast, gamma):
-    return adjust_gamma(adjust_contrast(image, contrast), gamma)
-
-def update_temporal_traces_multiple_videos(video_paths, video_groups, params, roi_spatial_footprints, bg_spatial_footprints, use_multiprocessing=True):
-    group_nums = np.unique(video_groups)
-
-    new_roi_spatial_footprints  = {}
-    new_roi_temporal_footprints = {}
-    new_roi_temporal_residuals  = {}
-    new_bg_spatial_footprints   = {}
-    new_bg_temporal_footprints  = {}
-
-    for n in range(len(group_nums)):
-        group_num = group_nums[n]
-        paths = [ video_paths[i] for i in range(len(video_paths)) if video_groups[i] == group_num ]
-
-        for i in range(len(paths)):
-            video_path = paths[i]
-
-            video = tifffile.imread(video_path)
-                
-            if len(video.shape) == 3:
-                # add a z dimension
-                video = video[:, np.newaxis, :, :]
-
-            # flip video 90 degrees to match what is shown in Fiji
-            video = video.transpose((0, 1, 3, 2))
-                
-            if i == 0:
-                final_video = video
-            else:
-                final_video = np.concatenate([final_video, video], axis=0)
-
-        for z in range(final_video.shape[1]):
-            roi_spatial_footprints_z, roi_temporal_footprints_z, roi_temporal_residuals_z, bg_spatial_footprints_z, bg_temporal_footprints_z = perform_cnmf(final_video[:, z, :, :], params, roi_spatial_footprints[z], np.ones((roi_spatial_footprints[z].shape[1], final_video.shape[0])), np.ones((roi_spatial_footprints[z].shape[1], final_video.shape[0])), bg_spatial_footprints[z], np.ones((bg_spatial_footprints[z].shape[1], final_video.shape[0])), use_multiprocessing=use_multiprocessing)
-
-            new_roi_spatial_footprints[group_num][z]  = roi_spatial_footprints_z
-            new_roi_temporal_footprints[group_num][z] = roi_temporal_footprints_z
-            new_roi_temporal_residuals[group_num][z]  = roi_temporal_residuals_z
-            new_bg_spatial_footprints[group_num][z]   = bg_spatial_footprints_z
-            new_bg_temporal_footprints[group_num][z]  = bg_temporal_footprints_z
-
-        # calculate temporal components based on spatial components
-        new_roi_temporal_footprints[group_num], new_roi_temporal_residuals[group_num], new_bg_temporal_footprints[group_num] = calculate_temporal_components(paths, new_roi_spatial_footprints[group_num], new_roi_temporal_footprints[group_num], new_roi_temporal_residuals[group_num], new_bg_spatial_footprints[group_num], new_bg_temporal_footprints[group_num])
-    
-    return new_roi_spatial_footprints, new_roi_temporal_footprints, new_roi_temporal_residuals, new_bg_spatial_footprints, new_bg_temporal_footpri
-
-def perform_cnmf(video, params, roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints, use_multiprocessing=True):
-    if use_multiprocessing:
-        backend = 'multiprocessing'
-
-        cm.stop_server()
-        c, dview, n_processes = cm.cluster.setup_cluster(backend=backend, n_processes=None, single_thread=False)
-    else:
-        dview = None
-
-    video_path = "video_temp.tif"
-    tifffile.imsave(video_path, video)
-
-    # dataset dependent parameters
-    fnames         = [video_path]          # filename to be processed
-    fr             = params['imaging_fps'] # imaging rate in frames per second
-    decay_time     = params['decay_time']  # length of a typical transient in seconds
-    
-    # parameters for source extraction and deconvolution
-    p              = params['autoregressive_order']             # order of the autoregressive system
-    gnb            = params['num_bg_components']                # number of global background components
-    merge_thresh   = params['merge_threshold']                  # merging threshold, max correlation allowed
-    rf             = None                                       # half-size of the patches in pixels. e.g., if rf=25, patches are 50x50
-    stride_cnmf    = 6                                          # amount of overlap between the patches in pixels
-    K              = roi_spatial_footprints.shape[1]                   # number of components per patch
-    gSig           = [params['half_size'], params['half_size']] # expected half size of neurons
-    init_method    = 'greedy_roi'                               # initialization method (if analyzing dendritic data using 'sparse_nmf')
-    rolling_sum    = True
-    rolling_length = 50
-    is_dendrites   = False                                      # flag for analyzing dendritic data
-    alpha_snmf     = None                                       # sparsity penalty for dendritic data analysis through sparse NMF
-
-    # parameters for component evaluation
-    min_SNR        = params['min_snr']          # signal to noise ratio for accepting a component
-    rval_thr       = params['min_spatial_corr'] # space correlation threshold for accepting a component
-    cnn_thr        = params['cnn_threshold']    # threshold for CNN based classifier
-
-    border_pix = 0
-
-    fname_new = cm.save_memmap(fnames, base_name='memmap_', order='C') # exclude borders
-
-    # now load the file
-    Yr, dims, T = cm.load_memmap(fname_new)
-    d1, d2 = dims
-    images = np.reshape(Yr.T, [T] + list(dims), order='F')
-
-
-    cnm = cnmf.CNMF(n_processes=8, k=K, gSig=gSig, merge_thresh= merge_thresh, 
-                    p = p,  dview=dview, rf=rf, stride=stride_cnmf, memory_fact=1,
-                    method_init=init_method, alpha_snmf=alpha_snmf, rolling_sum=rolling_sum,
-                    only_init_patch = True, skip_refinement=True, gnb = gnb, border_pix = border_pix, ssub=1, ssub_B=1, tsub=1, Ain=roi_spatial_footprints, Cin=roi_temporal_footprints, b_in=bg_spatial_footprints, f_in=bg_temporal_footprints, do_merge=False)
-
-    cnm = cnm.fit(images)
-
-    roi_spatial_footprints  = cnm.A
-    roi_temporal_footprints = cnm.C
-    roi_temporal_residuals  = cnm.YrA
-    bg_spatial_footprints   = cnm.b
-    bg_temporal_footprints  = cnm.f
-
-    if use_multiprocessing:
-        if backend == 'multiprocessing':
-            dview.close()
-        else:
-            try:
-                dview.terminate()
-            except:
-                dview.shutdown()
-        cm.stop_server()
-
-    return roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints
-
-def calculate_temporal_components(video_paths, roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints):
-    for i in range(len(video_paths)):
-        video_path = video_paths[i]
-
-        video = tifffile.imread(video_path)
-        if len(video.shape) == 3:
-            # add a z dimension
-            video = video[:, np.newaxis, :, :]
-
-        if i == 0:
-            final_video = video.copy()
-        else:
-            final_video = np.concatenate([final_video, video], axis=0)
-
-    roi_temporal_footprints = [ None for i in range(final_video.shape[1]) ]
-    roi_temporal_residuals  = [ None for i in range(final_video.shape[1]) ]
-    bg_temporal_footprints  = [ None for i in range(final_video.shape[1]) ]
-
-    for z in range(final_video.shape[1]):
-        final_video_path = "video_concatenated_z_{}.tif".format(z)
-        tifffile.imsave(final_video_path, final_video[:, z, :, :])
-
-        fname_new = cm.save_memmap([final_video_path], base_name='memmap_z_{}'.format(z), order='C') # exclude borders
-
-        # # now load the file
-        Yr, dims, T = cm.load_memmap(fname_new)
-
-        images = final_video[:, z, :, :].transpose((1, 2, 0)).reshape((final_video.shape[2]*final_video.shape[3], final_video.shape[0]))
-
-        Cin = np.zeros((roi_spatial_footprints[z].shape[1], final_video.shape[0]))
-        fin = np.zeros((bg_spatial_footprints[z].shape[1], final_video.shape[0]))
-
-        Yr, sn, g, psx = preprocess_data(Yr, dview=None)
-
-        roi_temporal_footprints[z], _, _, bg_temporal_footprints[z], _, _, _, _, _, roi_temporal_residuals[z], _ = update_temporal_components(images, roi_spatial_footprints[z], bg_spatial_footprints[z], Cin, fin, bl=None, c1=None, g=g, sn=sn, nb=2, ITER=2, block_size=5000, num_blocks_per_run=20, debug=False, dview=None, p=0, method='cvx')
-
-    return roi_temporal_footprints, roi_temporal_residuals, bg_temporal_footprints
 
 def motion_correct_multiple_videos(video_paths, video_groups, max_shift, patch_stride, patch_overlap, progress_signal=None, thread=None, use_multiprocessing=True):
     start_time = time.time()
@@ -222,11 +59,7 @@ def motion_correct_multiple_videos(video_paths, video_groups, max_shift, patch_s
     mc_borders = {}
 
     if use_multiprocessing:
-        if os.name == 'nt':
-            backend = 'multiprocessing'
-        else:
-            # backend = 'ipyparallel'
-            backend = 'multiprocessing'
+        backend = 'multiprocessing'
 
         # Create the cluster
         cm.stop_server()
@@ -250,7 +83,6 @@ def motion_correct_multiple_videos(video_paths, video_groups, max_shift, patch_s
 
         with tifffile.TiffWriter(final_video_path) as tif:
             for i in range(len(paths)):
-                print(i)
                 video_path = paths[i]
                 new_video_path = os.path.join(directory, "video_temp.tif")
 
@@ -276,8 +108,6 @@ def motion_correct_multiple_videos(video_paths, video_groups, max_shift, patch_s
                     os.remove(new_video_path)
 
         final_video = tifffile.memmap(final_video_path)
-
-        print("final video shape: {}".format(final_video.shape))
 
         if len(final_video.shape) == 5:
             final_video_path_2 = os.path.join(directory, "final_video_temp_2.tif")
@@ -424,8 +254,7 @@ def motion_correct(video_path, max_shift, patch_stride, patch_overlap, use_multi
 
         # # Save elastic shift border
         bord_px_els = np.ceil(np.maximum(np.max(np.abs(mc.x_shifts_els)),
-                                 np.max(np.abs(mc.y_shifts_els)))).astype(np.int)  
-        # np.savez(mc.fname_tot_els + "_bord_px_els.npz", bord_px_els)
+                                 np.max(np.abs(mc.y_shifts_els)))).astype(np.int)
 
         fnames = mc.fname_tot_els   # name of the pw-rigidly corrected file.
         border_to_0 = bord_px_els     # number of pixels to exclude
@@ -438,12 +267,6 @@ def motion_correct(video_path, max_shift, patch_stride, patch_overlap, use_multi
         images = np.reshape(Yr.T, [T] + list(dims), order='F') 
 
         mc_borders[z] = bord_px_els
-
-        # images += np.amin(images)
-
-        # print(np.amax(images))
-        # print(np.amin(images))
-        # print(type(images))
 
         mc_video[:, z, :, :] = (images - np.amin(images)).astype(memmap_video.dtype)
 
@@ -478,11 +301,7 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
     group_nums = np.unique(video_groups)
 
     if use_multiprocessing and method == "cnmf":
-        if os.name == 'nt':
-            backend = 'multiprocessing'
-        else:
-            # backend = 'ipyparallel'
-            backend = 'multiprocessing'
+        backend = 'multiprocessing'
 
         # Create the cluster
         cm.stop_server()
@@ -507,7 +326,6 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
         final_video_path = os.path.join(directory, "final_video_temp.tif")
 
         with tifffile.TiffWriter(final_video_path, bigtiff=False) as tif:
-            print("# videos: {}".format(len(paths)))
             for i in range(len(paths)):
                 video_path = paths[i]
                 new_video_path = os.path.join(directory, "video_temp.tif")
@@ -516,15 +334,11 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
 
                 video = tifffile.memmap(new_video_path)
 
-                print("memmap shape", video.shape)
-
                 if len(video.shape) == 3:
                     # add a z dimension
                     video = video[:, np.newaxis, :, :]
 
                 video = video.transpose((0, 1, 3, 2))
-
-                print("video shape: {}".format(video.shape))
 
                 if len(mask_points) > 0 and n in mask_points.keys():
                     mask = np.zeros(video.shape[1:]).astype(np.uint8)
@@ -533,8 +347,6 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
                             for p in mask_points[n][z]:
                                 # create mask image
                                 p = np.fliplr(np.array(p + [p[0]])).astype(int)
-
-                                # print(p.shape)
 
                                 cv2.fillConvexPoly(mask[z, :, :], p, 1)
 
@@ -548,7 +360,6 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
 
                     mask = np.repeat(mask[np.newaxis, :, :, :], video.shape[0], axis=0)
 
-
                     video[mask] = 0
 
                 for k in range(video.shape[0]):
@@ -561,11 +372,9 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
 
         final_video = tifffile.memmap(final_video_path).astype(np.uint16)
 
-        print("final video shape: {}".format(final_video.shape))
-
         if len(final_video.shape) == 5:
             final_video_path_2 = os.path.join(directory, "final_video_temp_2.tif")
-            print("final video shape: {}".format(final_video.reshape((final_video.shape[0]*final_video.shape[1], final_video.shape[2], final_video.shape[3], final_video.shape[4])).shape))
+            
             tifffile.imsave(final_video_path_2, final_video.reshape((final_video.shape[0]*final_video.shape[1], final_video.shape[2], final_video.shape[3], final_video.shape[4])))
             if os.path.exists(final_video_path):
                 os.remove(final_video_path)
@@ -583,8 +392,6 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
             roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = find_rois_cnmf(final_video_path_2, params, mc_borders=borders, use_multiprocessing=use_multiprocessing, c=c, dview=dview, n_processes=n_processes)
         else:
             roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = find_rois_suite2p(final_video_path_2, params, mc_borders=borders, use_multiprocessing=use_multiprocessing)
-
-        print("temporal footprints shape: {}".format(roi_temporal_footprints[0].shape))
 
         new_roi_spatial_footprints[group_num]  = roi_spatial_footprints
         new_roi_temporal_footprints[group_num] = roi_temporal_footprints
@@ -625,7 +432,6 @@ def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True
     shutil.copyfile(video_path, new_video_path)
 
     memmap_video = tifffile.memmap(video_path)
-    print(memmap_video.shape)
 
     if len(memmap_video.shape) == 5:
         num_z = memmap_video.shape[2]
@@ -649,32 +455,29 @@ def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True
             tifffile.imsave(z_video_path, memmap_video[:, z, :, :])
 
         # dataset dependent parameters
-        fnames         = [z_video_path]        # filename to be processed
-        fr             = params['imaging_fps'] # imaging rate in frames per second
-        decay_time     = params['decay_time']  # length of a typical transient in seconds
+        fnames     = [z_video_path]        # filename to be processed
+        fr         = params['imaging_fps'] # imaging rate in frames per second
+        decay_time = params['decay_time']  # length of a typical transient in seconds
         
         # parameters for source extraction and deconvolution
         p              = params['autoregressive_order']             # order of the autoregressive system
         gnb            = params['num_bg_components']                # number of global background components
         merge_thresh   = params['merge_threshold']                  # merging threshold, max correlation allowed
         if params['use_patches']:
-            rf             = params['cnmf_patch_size']
-            stride         = params['cnmf_patch_stride']
+            rf     = params['cnmf_patch_size']
+            stride = params['cnmf_patch_stride']
         else:
-            rf             = None                                       # half-size of the patches in pixels. e.g., if rf=25, patches are 50x50
-            stride         = None                                       # amount of overlap between the patches in pixels
+            rf     = None # half-size of the patches in pixels. e.g., if rf=25, patches are 50x50
+            stride = None # amount of overlap between the patches in pixels
         K              = params['num_components']                   # number of components per patch
         gSig           = [params['half_size'], params['half_size']] # expected half size of neurons
-        init_method    = params['init_method']                               # initialization method (if analyzing dendritic data using 'sparse_nmf')
-        # rolling_sum    = True
-        # rolling_length = 50
+        init_method    = params['init_method']                      # initialization method (if analyzing dendritic data using 'sparse_nmf')
         is_dendrites   = False                                      # flag for analyzing dendritic data
         alpha_snmf     = None                                       # sparsity penalty for dendritic data analysis through sparse NMF
 
         # parameters for component evaluation
         min_SNR        = params['min_snr']          # signal to noise ratio for accepting a component
         rval_thr       = params['min_spatial_corr'] # space correlation threshold for accepting a component
-        # cnn_thr        = params['cnn_threshold']    # threshold for CNN based classifier
         max_merge_area = params['max_merge_area']
 
         if mc_borders is not None:
@@ -703,33 +506,13 @@ def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True
                        'dims': memmap_video.shape[-2:],
                        'max_merge_area': max_merge_area}
 
-        # cnm = cnmf.CNMF(n_processes=1, k=K, gSig=gSig, merge_thresh= merge_thresh, 
-        #                 p = p,  dview=dview, rf=rf, stride=stride_cnmf, memory_fact=1,
-        #                 method_init=init_method, alpha_snmf=alpha_snmf, rolling_sum=rolling_sum,
-        #                 only_init_patch = False, gnb = gnb, border_pix = border_pix, ssub=1, ssub_B=1, tsub=1)
-
-        # cnm = cnm.fit(images)
-
         opts = cnmf_params.CNMFParams(params_dict=params_dict)
-        # %% Now RUN CaImAn Batch (CNMF)
+
         cnm = cnmf.CNMF(n_processes, params=opts, dview=dview)
         cnm = cnm.fit_file()
 
-        # %% load memory mapped file
         Yr, dims, T = cm.load_memmap(cnm.mmap_file)
         images = np.reshape(Yr.T, [T] + list(dims), order='F')
-
-        # try:
-        #     A_in, C_in, b_in, f_in = cnm.A, cnm.C, cnm.b, cnm.f
-        # except:
-        #     A_in, C_in, b_in, f_in = cnm.estimates.A, cnm.estimates.C, cnm.estimates.b, cnm.estimates.f
-
-        # cnm2 = cnmf.CNMF(n_processes=1, k=A_in.shape[-1], gSig=gSig, p=p, dview=dview,
-        #                 merge_thresh=merge_thresh,  Ain=A_in, Cin=C_in, b_in = b_in,
-        #                 f_in=f_in, rf = None, stride = None, gnb = gnb, 
-        #                 method_deconvolution='oasis', check_nan = True)
-
-        # cnm2 = cnm2.fit(images)
 
         cnm2 = cnm.refit(images, dview=dview)
 
@@ -845,7 +628,7 @@ def find_rois_suite2p(video_path, params, mc_borders=None, use_multiprocessing=T
                 'h5py_key': 'data',
                 'look_one_level_down': False, # whether to look in ALL subfolders when searching for tiffs
                 'data_path': [], # a list of folders with tiffs 
-                                                     # (or folder of folders with tiffs if look_one_level_down is True, or subfolders is not empty)
+                                 # (or folder of folders with tiffs if look_one_level_down is True, or subfolders is not empty)
                 'subfolders': [] # choose subfolders of 'data_path' to look in (optional)
             }
 
@@ -932,15 +715,7 @@ def filter_rois(video_paths, roi_spatial_footprints, roi_temporal_footprints, ro
 
         video = tifffile.memmap(video_path)
 
-        print(video.shape)
-
-        # e = estimates.Estimates(A=roi_spatial_footprints[z], b=bg_spatial_footprints[z], C=roi_temporal_footprints[z], f=bg_temporal_footprints[z], R=roi_temporal_residuals[z])
-
-        # e = e.filter_components(video, )
-
         dims = video.shape[:2]
-
-        print("dims", dims)
 
         idx_components, idx_components_bad, SNR_comp, r_values, cnn_preds = \
                 estimate_components_quality_auto(video, roi_spatial_footprints[z], roi_temporal_footprints[z], bg_spatial_footprints[z], bg_temporal_footprints[z], 
@@ -948,12 +723,6 @@ def filter_rois(video_paths, roi_spatial_footprints, roi_temporal_footprints, ro
                                                  dview = None, min_SNR=params['min_snr'], 
                                                  r_values_min = params['min_spatial_corr'], use_cnn = False, 
                                                  thresh_cnn_min = params['cnn_accept_threshold'], thresh_cnn_lowest=params['cnn_reject_threshold'], gSig_range=[ (i, i) for i in range(max(1, params['half_size']-2), params['half_size']+2) ])
-
-        # gSig_range=[ (i, i) for i in range(max(1, params['half_size']-5), params['half_size']+5) ]
-
-        # filtered_out_rois.append(list(idx_components_bad))
-
-        print(idx_components_bad.shape)
 
         if isinstance(roi_spatial_footprints[z], scipy.sparse.coo_matrix):
             f = roi_spatial_footprints[z].toarray()
@@ -963,13 +732,6 @@ def filter_rois(video_paths, roi_spatial_footprints, roi_temporal_footprints, ro
         size_neurons_gt = (f > 0).sum(0)
         neurons_to_discard = np.where((size_neurons_gt < params['min_area']) | (size_neurons_gt > params['max_area']))[0]
 
-        print(neurons_to_discard.shape)
-
-        # for i in range(f.shape[-1]):
-        #     area = np.sum(f[:, i] > 0)
-        #     if (area < params['min_area'] or area > params['max_area']) and i not in filtered_out_rois[-1]:
-        #         filtered_out_rois[-1].append(i)
-
         idx_components_bad = np.union1d(idx_components_bad, neurons_to_discard)
 
         zscores = (roi_temporal_footprints[z] - np.mean(roi_temporal_footprints[z], axis=1)[:, np.newaxis])/np.std(roi_temporal_footprints[z], axis=1)[:, np.newaxis]
@@ -978,13 +740,11 @@ def filter_rois(video_paths, roi_spatial_footprints, roi_temporal_footprints, ro
 
         neurons_to_discard = np.where(min_zscore_diffs < -params['artifact_decay_speed'])[0]
 
-        print(neurons_to_discard.shape)
-
         idx_components_bad = np.union1d(idx_components_bad, neurons_to_discard)
 
         abs_traces = np.abs(roi_temporal_footprints[z])
         df_f = np.abs(np.amax(roi_temporal_footprints[z], axis=1) - np.amin(roi_temporal_footprints[z], axis=1))/np.mean(abs_traces[:, :10])
-        print(df_f)
+
         neurons_to_discard = np.where(df_f < params['min_df_f'])[0]
 
         idx_components_bad = np.union1d(idx_components_bad, neurons_to_discard)
@@ -1000,11 +760,7 @@ def filter_rois(video_paths, roi_spatial_footprints, roi_temporal_footprints, ro
 
             idx_components_bad = [ i for i in idx_components_bad if i not in neurons_to_keep ]
 
-        print(idx_components_bad)
-
         filtered_out_rois.append(list(idx_components_bad))
-
-        print(filtered_out_rois)
 
         if os.path.exists(video_path):
             try:
@@ -1132,15 +888,8 @@ def add_data_to_dataset(roi_spatial_footprints, mean_image, positive_rois, negat
     negative_roi_labels = np.zeros((num_samples_of_each, 2))
     negative_roi_labels[:, 1] = 1
 
-    print(positive_roi_spatial_footprints.shape, negative_roi_spatial_footprints.shape)
-
-    print(positive_roi_labels.shape, negative_roi_labels.shape)
-
-    # final_roi_spatial_footprints = np.concatenate([positive_roi_spatial_footprints, negative_roi_spatial_footprints], axis=-1)
-
     final_roi_spatial_footprints = sparse.hstack([positive_roi_spatial_footprints, negative_roi_spatial_footprints])
     final_roi_labels = np.concatenate([positive_roi_labels, negative_roi_labels], axis=0).T
-    # final_roi_labels = sparse.hstack([positive_roi_labels, negative_roi_labels])
 
     # shuffle data
     final_roi_spatial_footprints, final_roi_labels = shuffle_arrays(final_roi_spatial_footprints, final_roi_labels)
@@ -1148,9 +897,6 @@ def add_data_to_dataset(roi_spatial_footprints, mean_image, positive_rois, negat
     input_data, _ = preprocess_spatial_footprints(final_roi_spatial_footprints, mean_image, half_size)
 
     existing_images, existing_labels = load_dataset(dataset_filename)
-
-    # print(existing_images)
-    # print(type(existing_images))
 
     if existing_images.shape[0] > 1 or np.sum(existing_images) != 0:
         print("Adding to existing dataset.")
@@ -1160,53 +906,12 @@ def add_data_to_dataset(roi_spatial_footprints, mean_image, positive_rois, negat
         final_images = input_data
         final_labels = final_roi_labels.T
 
-    print(final_images.shape)
-    print(final_labels.shape)
-
     save_dataset(final_images, final_labels, dataset_filename)
 
 def train_cnn_on_data(roi_spatial_footprints, mean_image, positive_rois, negative_rois, half_size, learning_rate=1e-4, weight_decay=0):
     loaded_model = load_model()
 
     loaded_model.compile(loss='categorical_crossentropy', optimizer=optimizers.RMSprop(lr=learning_rate), metrics=['acc'])
-
-    # num_total_rois = len(positive_rois) + len(negative_rois)
-
-    # # make sure ROI and non-ROI training data are the same size
-    # if len(negative_rois) == 0 or len(positive_rois) == 0:
-    #     return
-
-    # num_negative_rois = len(negative_rois)
-    # num_positive_rois = len(positive_rois)
-
-    # num_samples_of_each = np.minimum(num_negative_rois, num_positive_rois)
-
-    # positive_roi_spatial_footprints = roi_spatial_footprints[:, positive_rois[:num_samples_of_each]]
-    # negative_roi_spatial_footprints = roi_spatial_footprints[:, negative_rois[:num_samples_of_each]]
-
-    # # generate labels for each set of training data
-
-    # positive_roi_labels = np.zeros((num_samples_of_each, 2))
-    # positive_roi_labels[:, 0] = 1
-    # negative_roi_labels = np.zeros((num_samples_of_each, 2))
-    # negative_roi_labels[:, 1] = 1
-
-    # print(positive_roi_spatial_footprints.shape, negative_roi_spatial_footprints.shape)
-
-    # print(positive_roi_labels.shape, negative_roi_labels.shape)
-
-    # # final_roi_spatial_footprints = np.concatenate([positive_roi_spatial_footprints, negative_roi_spatial_footprints], axis=-1)
-
-    # final_roi_spatial_footprints = sparse.hstack([positive_roi_spatial_footprints, negative_roi_spatial_footprints])
-    # final_roi_labels = np.concatenate([positive_roi_labels, negative_roi_labels], axis=0).T
-    # # final_roi_labels = sparse.hstack([positive_roi_labels, negative_roi_labels])
-
-    # # shuffle data
-    # final_roi_spatial_footprints, final_roi_labels = shuffle_arrays(final_roi_spatial_footprints, final_roi_labels)
-
-    # input_data, _ = preprocess_spatial_footprints(final_roi_spatial_footprints, mean_image, half_size)
-    
-    # plot_sample_data(input_data, final_roi_labels.T, None)
 
     input_data, final_roi_labels = load_dataset(filename="zebrafish_gcamp_dataset.h5")
 
@@ -1221,37 +926,11 @@ def train_cnn_on_data(roi_spatial_footprints, mean_image, positive_rois, negativ
         fill_mode='nearest',
         )
 
-    # datagen = ImageDataGenerator(
-    #     featurewise_center=True,
-    #     featurewise_std_normalization=True,
-    #     rotation_range=20,
-    #     width_shift_range=0.2,
-    #     height_shift_range=0.2,
-    #     horizontal_flip=True,
-    #     vertical_flip=True)
-
     datagen.fit(input_data)
-
-    # validation_datagen = ImageDataGenerator()
-
-    # train_generator = datagen.flow(input_data, final_roi_labels.T, batch_size=32, shuffle=True, subset="training")
-     
-    # validation_generator = datagen.flow(input_data, final_roi_labels.T, batch_size=32, shuffle=False, subset="validation")
-
-    # fit the model
-    # loaded_model.fit(input_data, final_roi_labels.T, nb_epoch=5, batch_size=1, validation_split=0.15, verbose=1)
 
     print("Training...")
 
     loaded_model.fit_generator(datagen.flow(input_data, final_roi_labels, batch_size=32), steps_per_epoch=input_data.shape[0] / 32, epochs=5, verbose=1)
-
-    # history = loaded_model.fit_generator(
-    #       train_generator,
-    #       steps_per_epoch=input_data.shape[0]/32,
-    #       epochs=50,
-    #       validation_data=validation_generator,
-    #       validation_steps=input_data.shape[0]/32,
-    #       verbose=1)
 
     # save the new model
     save_model(loaded_model)
@@ -1315,9 +994,7 @@ def preprocess_spatial_footprints(roi_spatial_footprints, mean_image, crop_size,
     else:
         return final_crops, mean_image_crops
 
-
 def load_model(model_filename="vggz_model.h5", reset=False):
-
     if os.path.exists(model_filename) and not reset:
         print("Loading model from file...")
 
@@ -1347,14 +1024,14 @@ def load_model(model_filename="vggz_model.h5", reset=False):
         # save the model
         model.save(model_filename)
 
-    print(model.layers[0].summary())
-    print(model.summary())
+    # print(model.layers[0].summary())
+    # print(model.summary())
 
-    for layer in model.layers[0].layers:
-        print(layer, layer.trainable)
+    # for layer in model.layers[0].layers:
+    #     print(layer, layer.trainable)
 
-    for layer in model.layers[1:]:
-        print(layer, layer.trainable)
+    # for layer in model.layers[1:]:
+    #     print(layer, layer.trainable)
 
     # plot_conv_weights(model.layers[0], 'block1_conv2')
     # plot_conv_weights(model.layers[0], 'block2_conv2')
@@ -1388,22 +1065,8 @@ def test_cnn_on_data(roi_spatial_footprints, mean_image, half_size):
     datagen.fit(input_data)
 
     datagen.standardize(input_data)
-
-    # kept_rois = [ roi for roi in range(roi_spatial_footprints.shape[-1]) if roi not in discarded_rois ]
-
-    # print("{} kept ROIs, {} discarded ROIs.".format(len(kept_rois), len(discarded_rois)))
-
-    # roi_labels = np.zeros((roi_spatial_footprints.shape[-1], 2))
-    # roi_labels[kept_rois, 0] = 1
-    # roi_labels[discarded_rois, 1] = 1
-
-    # scores = loaded_model.evaluate(input_data, roi_labels, verbose=1)
-
-    # print("{}: {:.2f}%".format(loaded_model.metrics_names[1], scores[1]*100))
     
     predictions = loaded_model.predict(input_data, batch_size=32, verbose=1)
-
-    # plot_sample_data(input_data, roi_labels, predictions)
 
     return predictions, input_data
 
@@ -1456,6 +1119,8 @@ def load_dataset(filename="zebrafish_gcamp_dataset.h5", reset=False):
 
         f.close()
 
+    print("Done.")
+
     return images, labels
 
 def save_dataset(images, labels, filename="zebrafish_gcamp_dataset.h5"):
@@ -1471,34 +1136,8 @@ def save_dataset(images, labels, filename="zebrafish_gcamp_dataset.h5"):
     print("Done.")
 
 def create_dataset_subset(images, labels, kept_rois):
-
     final_images = images[kept_rois]
     final_labels = labels[kept_rois]
-    # num_total_rois = len(positive_rois) + len(negative_rois)
-
-    # print(num_total_rois)
-
-    # # make sure ROI and non-ROI training data are the same size
-    # if len(negative_rois) == 0 or len(positive_rois) == 0:
-    #     return
-
-    # num_negative_rois = len(negative_rois)
-    # num_positive_rois = len(positive_rois)
-
-    # num_samples_of_each = np.minimum(num_negative_rois, num_positive_rois)
-
-    # # generate labels for each set of training data
-
-    # positive_roi_labels = np.zeros((num_samples_of_each, 2))
-    # positive_roi_labels[:, 0] = 1
-    # negative_roi_labels = np.zeros((num_samples_of_each, 2))
-    # negative_roi_labels[:, 1] = 1
-
-    # labels = np.concatenate([positive_roi_labels, negative_roi_labels], axis=0)
-
-    # positive_images = images[positive_rois[:num_samples_of_each]]
-    # negative_images = images[negative_rois[:num_samples_of_each]]
-    # final_images = np.concatenate([positive_images, negative_images], axis=0)
 
     return final_images, labels
 
@@ -1508,7 +1147,6 @@ def merge_rois(rois, roi_spatial_footprints, roi_temporal_footprints, bg_spatial
     final_video_path = os.path.join(directory, "final_video_temp.tif")
 
     with tifffile.TiffWriter(final_video_path, bigtiff=False) as tif:
-        print("# videos: {}".format(len(video_paths)))
         for i in range(len(video_paths)):
             video_path = video_paths[i]
             new_video_path = os.path.join(directory, "video_temp.tif")
@@ -1517,8 +1155,6 @@ def merge_rois(rois, roi_spatial_footprints, roi_temporal_footprints, bg_spatial
 
             video = tifffile.memmap(new_video_path)
 
-            print("memmap shape", video.shape)
-
             if len(video.shape) == 3:
                 # add a z dimension
                 video = video[:, np.newaxis, :, :]
@@ -1526,8 +1162,6 @@ def merge_rois(rois, roi_spatial_footprints, roi_temporal_footprints, bg_spatial
             video = video.transpose((0, 1, 3, 2))[:, z, :, :]
 
             dims = video.shape[-2:]
-
-            print("video shape: {}".format(video.shape))
 
             for k in range(video.shape[0]):
                 tif.save(video[k])
@@ -1539,11 +1173,8 @@ def merge_rois(rois, roi_spatial_footprints, roi_temporal_footprints, bg_spatial
 
     final_video = tifffile.memmap(final_video_path).astype(np.uint16)
 
-    print("final video shape: {}".format(final_video.shape))
-
     if len(final_video.shape) == 5:
         final_video_path_2 = os.path.join(directory, "final_video_temp_2.tif")
-        print("final video shape: {}".format(final_video.reshape((final_video.shape[0]*final_video.shape[1], final_video.shape[2], final_video.shape[3], final_video.shape[4])).shape))
         tifffile.imsave(final_video_path_2, final_video.reshape((final_video.shape[0]*final_video.shape[1], final_video.shape[2], final_video.shape[3], final_video.shape[4])))
         if os.path.exists(final_video_path):
             os.remove(final_video_path)
@@ -1556,35 +1187,30 @@ def merge_rois(rois, roi_spatial_footprints, roi_temporal_footprints, bg_spatial
 
     est.YrA = est.R
 
-    # print(roi_spatial_footprints, bg_spatial_footprints, roi_temporal_footprints, bg_temporal_footprints, roi_temporal_residuals)
-
     # dataset dependent parameters
-    fnames         = [final_video_path_2]        # filename to be processed
-    fr             = params['imaging_fps'] # imaging rate in frames per second
-    decay_time     = params['decay_time']  # length of a typical transient in seconds
+    fnames     = [final_video_path_2]  # filename to be processed
+    fr         = params['imaging_fps'] # imaging rate in frames per second
+    decay_time = params['decay_time']  # length of a typical transient in seconds
     
     # parameters for source extraction and deconvolution
-    p              = params['autoregressive_order']             # order of the autoregressive system
-    gnb            = params['num_bg_components']                # number of global background components
-    merge_thresh   = params['merge_threshold']                  # merging threshold, max correlation allowed
+    p            = params['autoregressive_order'] # order of the autoregressive system
+    gnb          = params['num_bg_components']    # number of global background components
+    merge_thresh = params['merge_threshold']      # merging threshold, max correlation allowed
     if params['use_patches']:
-        rf             = params['cnmf_patch_size']
-        stride         = params['cnmf_patch_stride']
+        rf     = params['cnmf_patch_size']   # half-size of the patches in pixels. e.g., if rf=25, patches are 50x50
+        stride = params['cnmf_patch_stride'] # amount of overlap between the patches in pixels
     else:
-        rf             = None                                       # half-size of the patches in pixels. e.g., if rf=25, patches are 50x50
-        stride         = None                                       # amount of overlap between the patches in pixels
-    K              = params['num_components']                   # number of components per patch
-    gSig           = [params['half_size'], params['half_size']] # expected half size of neurons
-    init_method    = params['init_method']                               # initialization method (if analyzing dendritic data using 'sparse_nmf')
-    # rolling_sum    = True
-    # rolling_length = 50
-    is_dendrites   = False                                      # flag for analyzing dendritic data
-    alpha_snmf     = None                                       # sparsity penalty for dendritic data analysis through sparse NMF
+        rf     = None
+        stride = None
+    K            = params['num_components']                   # number of components per patch
+    gSig         = [params['half_size'], params['half_size']] # expected half size of neurons
+    init_method  = params['init_method']                      # initialization method (if analyzing dendritic data using 'sparse_nmf')
+    is_dendrites = False                                      # flag for analyzing dendritic data
+    alpha_snmf   = None                                       # sparsity penalty for dendritic data analysis through sparse NMF
 
     # parameters for component evaluation
     min_SNR        = params['min_snr']          # signal to noise ratio for accepting a component
     rval_thr       = params['min_spatial_corr'] # space correlation threshold for accepting a component
-    # cnn_thr        = params['cnn_threshold']    # threshold for CNN based classifier
     max_merge_area = params['max_merge_area']
 
     params_dict = {'fnames': fnames,
@@ -1600,13 +1226,6 @@ def merge_rois(rois, roi_spatial_footprints, roi_temporal_footprints, bg_spatial
                    'init_method': init_method,
                    'dims': dims,
                    'max_merge_area': max_merge_area}
-
-    # cnm = cnmf.CNMF(n_processes=1, k=K, gSig=gSig, merge_thresh= merge_thresh, 
-    #                 p = p,  dview=dview, rf=rf, stride=stride_cnmf, memory_fact=1,
-    #                 method_init=init_method, alpha_snmf=alpha_snmf, rolling_sum=rolling_sum,
-    #                 only_init_patch = False, gnb = gnb, border_pix = border_pix, ssub=1, ssub_B=1, tsub=1)
-
-    # cnm = cnm.fit(images)
 
     opts = cnmf_params.CNMFParams(params_dict=params_dict)
 
