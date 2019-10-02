@@ -1193,35 +1193,8 @@ class GUIController():
 
     def merge_selected_rois(self):
         if len(self.selected_rois) > 1:
-            all_removed_rois      = np.array(self.controller.all_removed_rois[self.group_num][self.z])
-            locked_rois           = np.array(self.controller.locked_rois[self.group_num][self.z])
-            manually_removed_rois = np.array(self.controller.manually_removed_rois[self.group_num][self.z])
-            filtered_out_rois     = np.array(self.controller.filtered_out_rois[self.group_num][self.z])
-
-            # update removed ROIs
-            for i in sorted(self.selected_rois):
-                all_removed_rois[all_removed_rois > i]           -= 1
-                locked_rois[locked_rois > i]                     -= 1
-                manually_removed_rois[manually_removed_rois > i] -= 1
-                filtered_out_rois[filtered_out_rois > i]         -= 1
-
-                if i in all_removed_rois:
-                    index = np.where(all_removed_rois == i)[0][0]
-                    all_removed_rois = np.delete(all_removed_rois, index)
-                if i in locked_rois:
-                    index = np.where(locked_rois == i)[0][0]
-                    locked_rois = np.delete(locked_rois, index)
-                if i in manually_removed_rois:
-                    index = np.where(manually_removed_rois == i)[0][0]
-                    manually_removed_rois = np.delete(manually_removed_rois, index)
-                if i in filtered_out_rois:
-                    index = np.where(filtered_out_rois == i)[0][0]
-                    filtered_out_rois = np.delete(filtered_out_rois, index)
-
-            self.controller.all_removed_rois[self.group_num][self.z]      = list(all_removed_rois)
-            self.controller.locked_rois[self.group_num][self.z]           = list(locked_rois)
-            self.controller.manually_removed_rois[self.group_num][self.z] = list(manually_removed_rois)
-            self.controller.filtered_out_rois[self.group_num][self.z]     = list(filtered_out_rois)
+            print(self.controller.roi_temporal_footprints[self.group_num][self.z].shape)
+            all_rois_pre = np.arange(self.controller.roi_temporal_footprints[self.group_num][self.z].shape[0])
 
             video_paths = self.controller.video_paths_in_group(self.video_paths(), self.group_num)
 
@@ -1229,6 +1202,56 @@ class GUIController():
 
             self.controller.roi_spatial_footprints[self.group_num][self.z]  = roi_spatial_footprints
             self.controller.roi_temporal_footprints[self.group_num][self.z] = roi_temporal_footprints
+
+            all_removed_rois      = self.controller.all_removed_rois[self.group_num][self.z]
+            locked_rois           = self.controller.locked_rois[self.group_num][self.z]
+            manually_removed_rois = self.controller.manually_removed_rois[self.group_num][self.z]
+            filtered_out_rois     = self.controller.filtered_out_rois[self.group_num][self.z]
+
+            mapping = {}
+
+            for i in sorted(self.selected_rois, reverse=True):
+                all_rois_pre = np.delete(all_rois_pre, i)
+
+                if i in all_removed_rois:
+                    index = all_removed_rois.index(i)
+
+                    del all_removed_rois[index]
+
+                if i in locked_rois:
+                    index = locked_rois.index(i)
+                    
+                    del locked_rois[index]
+
+                if i in manually_removed_rois:
+                    index = manually_removed_rois.index(i)
+                    
+                    del manually_removed_rois[index]
+
+                if i in filtered_out_rois:
+                    index = filtered_out_rois.index(i)
+                    
+                    del filtered_out_rois[index]
+
+            for i in range(len(all_rois_pre)):
+                mapping[all_rois_pre[i]] = i
+
+            for i in range(len(all_removed_rois)):
+                all_removed_rois[i] = mapping[all_removed_rois[i]]
+
+            for i in range(len(locked_rois)):
+                locked_rois[i] = mapping[locked_rois[i]]
+
+            for i in range(len(manually_removed_rois)):
+                manually_removed_rois[i] = mapping[manually_removed_rois[i]]
+
+            for i in range(len(filtered_out_rois)):
+                filtered_out_rois[i] = mapping[filtered_out_rois[i]]
+
+            self.controller.all_removed_rois[self.group_num][self.z]      = all_removed_rois
+            self.controller.locked_rois[self.group_num][self.z]           = locked_rois
+            self.controller.manually_removed_rois[self.group_num][self.z] = manually_removed_rois
+            self.controller.filtered_out_rois[self.group_num][self.z]     = filtered_out_rois
 
             self.update_roi_contours_and_overlays()
             self.update_merged_roi_overlays()

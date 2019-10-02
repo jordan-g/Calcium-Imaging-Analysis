@@ -59,6 +59,8 @@ def motion_correct_multiple_videos(video_paths, video_groups, max_shift, patch_s
     mc_borders = {}
 
     if use_multiprocessing:
+        print("Using multiprocessing.")
+
         backend = 'multiprocessing'
 
         # Create the cluster
@@ -123,7 +125,11 @@ def motion_correct_multiple_videos(video_paths, video_groups, max_shift, patch_s
         
         mc_video = mc_video.transpose((0, 1, 3, 2))
 
+        print(len(paths))
+
         for i in range(len(paths)):
+            print("Saving motion-corrected video for {}.".format(paths[i]))
+
             video_path    = paths[i]
             directory     = os.path.dirname(video_path)
             filename      = os.path.basename(video_path)
