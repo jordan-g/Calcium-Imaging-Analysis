@@ -294,7 +294,7 @@ class GUIController():
         self.param_window.video_loaded(video_path)
 
         self.selected_rois = []
-        self.preview_window.clear_text_and_outline_items()
+        self.preview_window.clear_outline_items()
 
         self.preview_window.reset_zoom()
 
@@ -521,10 +521,12 @@ class GUIController():
             self.update_roi_heatmap()
 
             self.selected_rois = []
-            self.preview_window.clear_text_and_outline_items()
+            self.preview_window.clear_outline_items()
 
             self.update_selected_rois_plot()
             self.update_tail_plot()
+            
+            self.preview_window.create_text_items()
 
             # show ROI filtering parameters
             self.show_roi_filtering_params()
@@ -797,7 +799,7 @@ class GUIController():
         self.update_roi_heatmap()
 
         self.selected_rois = []
-        self.preview_window.clear_text_and_outline_items()
+        self.preview_window.clear_outline_items()
 
         self.update_selected_rois_plot()
         self.update_tail_plot()
@@ -912,7 +914,7 @@ class GUIController():
             self.update_roi_heatmap()
 
             self.selected_rois = []
-            self.preview_window.clear_text_and_outline_items()
+            self.preview_window.clear_outline_items()
 
             self.update_selected_rois_plot()
             self.update_tail_plot()
@@ -971,7 +973,7 @@ class GUIController():
         self.update_roi_heatmap()
 
         self.selected_rois = []
-        self.preview_window.clear_text_and_outline_items()
+        self.preview_window.clear_outline_items()
 
         self.update_selected_rois_plot()
         self.update_tail_plot()
@@ -1016,7 +1018,7 @@ class GUIController():
                     # no ROI is selected
 
                     self.selected_rois = []
-                    self.preview_window.clear_text_and_outline_items()
+                    self.preview_window.clear_outline_items()
 
                     self.param_window.no_rois_selected()
 
@@ -1087,7 +1089,7 @@ class GUIController():
         self.update_roi_heatmap()
 
         self.selected_rois = []
-        self.preview_window.clear_text_and_outline_items()
+        self.preview_window.clear_outline_items()
 
         self.update_selected_rois_plot()
 
@@ -1102,7 +1104,7 @@ class GUIController():
         self.update_roi_heatmap()
 
         self.selected_rois = []
-        self.preview_window.clear_text_and_outline_items()
+        self.preview_window.clear_outline_items()
 
         self.update_selected_rois_plot()
 
@@ -1118,7 +1120,7 @@ class GUIController():
         self.update_roi_heatmap()
 
         self.selected_rois = []
-        self.preview_window.clear_text_and_outline_items()
+        self.preview_window.clear_outline_items()
 
         self.update_selected_rois_plot()
 
@@ -1133,7 +1135,7 @@ class GUIController():
         self.update_roi_heatmap()
 
         self.selected_rois = []
-        self.preview_window.clear_text_and_outline_items()
+        self.preview_window.clear_outline_items()
 
         self.update_selected_rois_plot()
 
@@ -1149,7 +1151,7 @@ class GUIController():
         self.update_roi_heatmap()
 
         self.selected_rois = []
-        self.preview_window.clear_text_and_outline_items()
+        self.preview_window.clear_outline_items()
 
         self.update_selected_rois_plot()
 
@@ -1258,7 +1260,7 @@ class GUIController():
             self.update_roi_heatmap()
 
             self.selected_rois = []
-            self.preview_window.clear_text_and_outline_items()
+            self.preview_window.clear_outline_items()
 
             self.update_selected_rois_plot()
 
@@ -1343,7 +1345,7 @@ class GUIController():
         self.update_roi_heatmap()
 
         self.selected_rois = []
-        self.preview_window.clear_text_and_outline_items()
+        self.preview_window.clear_outline_items()
 
         self.update_selected_rois_plot()
 

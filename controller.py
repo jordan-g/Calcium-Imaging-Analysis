@@ -348,26 +348,26 @@ class Controller():
 
                     masks = [ [] for z in range(num_z) ]
 
-            self.roi_spatial_footprints[group_num] = roi_spatial_footprints
-            self.bg_spatial_footprints[group_num]  = bg_spatial_footprints
-            self.filtered_out_rois[group_num]      = filtered_out_rois
-            self.manually_removed_rois[group_num]  = manually_removed_rois
-            self.all_removed_rois[group_num]       = all_removed_rois
-            self.locked_rois[group_num]            = locked_rois
-            self.mask_points[group_num]            = masks
-            self.roi_temporal_footprints[group_num]  = roi_temporal_footprints
+            self.roi_spatial_footprints[group_num]  = roi_spatial_footprints
+            self.bg_spatial_footprints[group_num]   = bg_spatial_footprints
+            self.filtered_out_rois[group_num]       = filtered_out_rois
+            self.manually_removed_rois[group_num]   = manually_removed_rois
+            self.all_removed_rois[group_num]        = all_removed_rois
+            self.locked_rois[group_num]             = locked_rois
+            self.mask_points[group_num]             = masks
+            self.roi_temporal_footprints[group_num] = roi_temporal_footprints
             self.roi_temporal_residuals[group_num]  = roi_temporal_residuals
             self.bg_temporal_footprints[group_num]  = bg_temporal_footprints
 
-            group_indices = [ i for i in range(len(self.video_paths)) if self.video_groups[i] == group_num ]
-            group_lengths = [ self.video_lengths[i] for i in group_indices ]
+            # group_indices = [ i for i in range(len(self.video_paths)) if self.video_groups[i] == group_num ]
+            # group_lengths = [ self.video_lengths[i] for i in group_indices ]
 
-            if self.use_mc_video and len(self.mc_video_paths) > 0:
-                group_paths = [ self.mc_video_paths[i] for i in group_indices ]
-            else:
-                group_paths = [ self.video_paths[i] for i in group_indices ]
+            # if self.use_mc_video and len(self.mc_video_paths) > 0:
+            #     group_paths = [ self.mc_video_paths[i] for i in group_indices ]
+            # else:
+            #     group_paths = [ self.video_paths[i] for i in group_indices ]
 
-            index = group_paths.index(video_path)
+            # index = group_paths.index(video_path)
 
             # if group_num not in self.roi_temporal_footprints.keys():
             #     self.roi_temporal_footprints[group_num] = [ np.zeros((self.roi_spatial_footprints[group_num][z].shape[1], np.sum(group_lengths))) for z in range(len(roi_spatial_footprints)) ]

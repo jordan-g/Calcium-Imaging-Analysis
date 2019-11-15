@@ -304,6 +304,8 @@ class PreviewWindow(QMainWindow):
         print("Setting show ROIs to {}.".format(show_rois))
         self.controller.set_show_rois(show_rois)
 
+        self.create_text_items()
+
     def show_plot(self):
         self.pg_widget.show()
         self.bottom_widget.show()
@@ -369,14 +371,22 @@ class PreviewWindow(QMainWindow):
 
     def clear_text_and_outline_items(self):
         # remove all text and outline items from left and right plots
-        for text_item in self.text_items:
-            self.left_image_viewbox.removeItem(text_item)
-            self.right_image_viewbox.removeItem(text_item)
-            self.text_items = []
+        self.clear_outline_items()
+        self.clear_text_items()
+
+    def clear_outline_items(self):
+        # remove all outline items from left and right plots
         for outline_item in self.outline_items:
             self.left_image_viewbox.removeItem(outline_item)
             self.right_image_viewbox.removeItem(outline_item)
             self.outline_items = []
+
+    def clear_text_items(self):
+        # remove all text items from left and right plots
+        for text_item in self.text_items:
+            self.left_image_viewbox.removeItem(text_item)
+            self.right_image_viewbox.removeItem(text_item)
+            self.text_items = []
 
     def clear_mask_items(self):
         for mask_item in self.mask_items:
@@ -389,10 +399,10 @@ class PreviewWindow(QMainWindow):
             self.mask_points = []
 
     def no_rois_selected(self):
-        self.clear_text_and_outline_items()
+        self.clear_outline_items()
 
     def single_roi_selected(self, roi):
-        self.clear_text_and_outline_items()
+        self.clear_outline_items()
 
         if roi not in self.controller.removed_rois():
             image = self.kept_rois_image.copy()
@@ -405,10 +415,10 @@ class PreviewWindow(QMainWindow):
                 color = cmap(i % n_colors)[:3]
                 color = [255*color[0], 255*color[1], 255*color[2]]
 
-                text_item = pg.TextItem("{}".format(i), color=color)
-                text_item.setPos(QPoint(int(y), int(x)))
-                self.text_items.append(text_item)
-                self.left_image_viewbox.addItem(text_item)
+                # text_item = pg.TextItem("{}".format(i), color=color)
+                # text_item.setPos(QPoint(int(y), int(x)))
+                # self.text_items.append(text_item)
+                # self.left_image_viewbox.addItem(text_item)
                 for j in range(len(self.controller.roi_contours[i])):
                     outline_item = pg.PlotDataItem(np.concatenate([self.controller.roi_contours[i][j][:, 0, 1], np.array([self.controller.roi_contours[i][j][0, 0, 1]])]), np.concatenate([self.controller.roi_contours[i][j][:, 0, 0], np.array([self.controller.roi_contours[i][j][0, 0, 0]])]), pen=pg.mkPen(color, width=3))
                     self.outline_items.append(outline_item)
@@ -425,10 +435,10 @@ class PreviewWindow(QMainWindow):
                 color = cmap(i % n_colors)[:3]
                 color = [255*color[0], 255*color[1], 255*color[2]]
 
-                text_item = pg.TextItem("{}".format(i), color=color)
-                text_item.setPos(QPoint(int(y), int(x)))
-                self.text_items.append(text_item)
-                self.right_image_viewbox.addItem(text_item)
+                # text_item = pg.TextItem("{}".format(i), color=color)
+                # text_item.setPos(QPoint(int(y), int(x)))
+                # self.text_items.append(text_item)
+                # self.right_image_viewbox.addItem(text_item)
                 for j in range(len(self.controller.roi_contours[i])):
                     outline_item = pg.PlotDataItem(np.concatenate([self.controller.roi_contours[i][j][:, 0, 1], np.array([self.controller.roi_contours[i][j][0, 0, 1]])]), np.concatenate([self.controller.roi_contours[i][j][:, 0, 0], np.array([self.controller.roi_contours[i][j][0, 0, 0]])]), pen=pg.mkPen(color, width=3))
                     self.outline_items.append(outline_item)
@@ -450,7 +460,7 @@ class PreviewWindow(QMainWindow):
         ctrl_held = event.modifiers() == Qt.ControlModifier
 
         # remove all text and outline items from left and right plots
-        self.clear_text_and_outline_items()
+        self.clear_outline_items()
 
         if event.button() == 1:
             # left click means selecting/deselecting ROIs or masks
@@ -485,10 +495,10 @@ class PreviewWindow(QMainWindow):
                             color = cmap(i % n_colors)[:3]
                             color = [255*color[0], 255*color[1], 255*color[2]]
 
-                            text_item = pg.TextItem("{}".format(i), color=color)
-                            text_item.setPos(QPoint(int(y), int(x)))
-                            self.text_items.append(text_item)
-                            self.left_image_viewbox.addItem(text_item)
+                            # text_item = pg.TextItem("{}".format(i), color=color)
+                            # text_item.setPos(QPoint(int(y), int(x)))
+                            # self.text_items.append(text_item)
+                            # self.left_image_viewbox.addItem(text_item)
                             for j in range(len(self.controller.roi_contours[i])):
                                 outline_item = pg.PlotDataItem(np.concatenate([self.controller.roi_contours[i][j][:, 0, 1], np.array([self.controller.roi_contours[i][j][0, 0, 1]])]), np.concatenate([self.controller.roi_contours[i][j][:, 0, 0], np.array([self.controller.roi_contours[i][j][0, 0, 0]])]), pen=pg.mkPen(color, width=3))
                                 self.outline_items.append(outline_item)
@@ -505,10 +515,10 @@ class PreviewWindow(QMainWindow):
                             color = cmap(i % n_colors)[:3]
                             color = [255*color[0], 255*color[1], 255*color[2]]
 
-                            text_item = pg.TextItem("{}".format(i), color=color)
-                            text_item.setPos(QPoint(int(y), int(x)))
-                            self.text_items.append(text_item)
-                            self.right_image_viewbox.addItem(text_item)
+                            # text_item = pg.TextItem("{}".format(i), color=color)
+                            # text_item.setPos(QPoint(int(y), int(x)))
+                            # self.text_items.append(text_item)
+                            # self.right_image_viewbox.addItem(text_item)
                             for j in range(len(self.controller.roi_contours[i])):
                                 outline_item = pg.PlotDataItem(np.concatenate([self.controller.roi_contours[i][j][:, 0, 1], np.array([self.controller.roi_contours[i][j][0, 0, 1]])]), np.concatenate([self.controller.roi_contours[i][j][:, 0, 0], np.array([self.controller.roi_contours[i][j][0, 0, 0]])]), pen=pg.mkPen(color, width=3))
                                 self.outline_items.append(outline_item)
@@ -604,6 +614,27 @@ class PreviewWindow(QMainWindow):
 
         self.controller.set_play_video(play_video_bool)
 
+    def create_text_items(self):
+        self.clear_text_items()
+
+        if self.controller.show_rois:
+            if self.controller.roi_spatial_footprints() is not None:
+                for i in range(self.controller.roi_spatial_footprints().shape[-1]):
+                    x = np.amax([ np.amax(self.controller.roi_contours[i][j][:, 0, 0])-5 for j in range(len(self.controller.roi_contours[i])) ])
+                    y = np.amax([ np.amax(self.controller.roi_contours[i][j][:, 0, 1])-5 for j in range(len(self.controller.roi_contours[i])) ])
+                    
+                    color = cmap(i % n_colors)[:3]
+                    color = [255*color[0], 255*color[1], 255*color[2]]
+
+                    text_item = pg.TextItem("{}".format(i), color=color)
+                    text_item.setPos(QPoint(int(y), int(x)))
+                    self.text_items.append(text_item)
+
+                    if i not in self.controller.removed_rois():
+                        self.left_image_viewbox.addItem(text_item)
+                    else:
+                        self.right_image_viewbox.addItem(text_item)
+
     def play_video(self):
         self.timer.stop()
         
@@ -620,6 +651,8 @@ class PreviewWindow(QMainWindow):
 
         self.kept_traces_viewbox.setXRange(0, self.controller.adjusted_video.shape[0])
 
+        self.create_text_items()
+
     def show_mean_image(self):
         self.timer.stop()
 
@@ -627,6 +660,8 @@ class PreviewWindow(QMainWindow):
 
         self.update_left_image_plot(self.controller.adjusted_mean_image, roi_spatial_footprints=self.controller.roi_spatial_footprints(), video_dimensions=self.controller.video.shape, removed_rois=self.controller.removed_rois(), selected_rois=self.controller.selected_rois, show_rois=self.controller.show_rois)
         self.update_right_image_plot(self.controller.adjusted_mean_image, roi_spatial_footprints=self.controller.roi_spatial_footprints(), video_dimensions=self.controller.video.shape, removed_rois=self.controller.removed_rois(), selected_rois=self.controller.selected_rois, show_rois=self.controller.show_rois)
+
+        self.create_text_items()
 
     def set_fps(self, fps):
         # restart the timer with the new fps
