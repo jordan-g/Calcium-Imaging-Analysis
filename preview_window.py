@@ -557,6 +557,7 @@ class PreviewWindow(QMainWindow):
                     selected_roi = utilities.get_roi_containing_point(self.controller.roi_spatial_footprints(), (int(y), int(x)), self.controller.adjusted_mean_image.shape)
 
                     if selected_roi is not None:
+                        self.controller.selected_rois = []
                         if selected_roi not in self.controller.selected_rois:
                             self.controller.selected_rois.append(selected_roi)
 
@@ -567,6 +568,7 @@ class PreviewWindow(QMainWindow):
                     selected_roi = utilities.get_roi_containing_point(self.controller.roi_spatial_footprints(), (int(y), int(x)), self.controller.adjusted_mean_image.shape)
 
                     if selected_roi is not None:
+                        self.controller.selected_rois = []
                         if selected_roi not in self.controller.selected_rois:
                             self.controller.selected_rois.append(selected_roi)
 

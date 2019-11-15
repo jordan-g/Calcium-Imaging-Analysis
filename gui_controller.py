@@ -941,6 +941,8 @@ class GUIController():
 
         if not self.video_playing:
             self.show_mean_image()
+        else:
+            self.preview_window.create_text_items()
 
     def set_play_video(self, video_playing):
         print("Setting play video from {} to {}.".format(self.video_playing, video_playing))
@@ -1095,6 +1097,8 @@ class GUIController():
 
         if not self.video_playing:
             self.show_mean_image()
+        else:
+            self.preview_window.create_text_items()
 
     def discard_selected_rois(self):
         for roi in self.selected_rois:
@@ -1110,6 +1114,8 @@ class GUIController():
 
         if not self.video_playing:
             self.show_mean_image()
+        else:
+            self.preview_window.create_text_items()
 
     def discard_all_rois(self):
         self.controller.manually_removed_rois[self.group_num][self.z] = np.arange(self.controller.roi_spatial_footprints[self.group_num][self.z].shape[1]).tolist()
@@ -1126,6 +1132,8 @@ class GUIController():
 
         if not self.video_playing:
             self.show_mean_image()
+        else:
+            self.preview_window.create_text_items()
 
     def keep_selected_rois(self):
         for roi in self.selected_rois:
@@ -1141,6 +1149,8 @@ class GUIController():
 
         if not self.video_playing:
             self.show_mean_image()
+        else:
+            self.preview_window.create_text_items()
 
     def keep_all_rois(self):
         self.controller.manually_removed_rois[self.group_num][self.z] = []
@@ -1157,6 +1167,8 @@ class GUIController():
 
         if not self.video_playing:
             self.show_mean_image()
+        else:
+            self.preview_window.create_text_items()
 
     def save_selected_roi_traces(self):
         save_path = QFileDialog.getSaveFileName(self.param_window, 'Enter CSV filename.', '', 'CSV (*.csv)')[0]
@@ -1351,6 +1363,8 @@ class GUIController():
 
         if not self.video_playing:
             self.show_mean_image()
+        else:
+            self.preview_window.create_text_items()
 
         self.cnn_training_window.update_with_predictions(predictions)
 
