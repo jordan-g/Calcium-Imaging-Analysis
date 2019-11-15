@@ -355,6 +355,9 @@ class Controller():
             self.all_removed_rois[group_num]       = all_removed_rois
             self.locked_rois[group_num]            = locked_rois
             self.mask_points[group_num]            = masks
+            self.roi_temporal_footprints[group_num]  = roi_temporal_footprints
+            self.roi_temporal_residuals[group_num]  = roi_temporal_residuals
+            self.bg_temporal_footprints[group_num]  = bg_temporal_footprints
 
             group_indices = [ i for i in range(len(self.video_paths)) if self.video_groups[i] == group_num ]
             group_lengths = [ self.video_lengths[i] for i in group_indices ]
@@ -366,21 +369,31 @@ class Controller():
 
             index = group_paths.index(video_path)
 
-            if group_num not in self.roi_temporal_footprints.keys():
-                self.roi_temporal_footprints[group_num] = [ np.zeros((self.roi_spatial_footprints[group_num][z].shape[1], np.sum(group_lengths))) for z in range(len(roi_spatial_footprints)) ]
-                self.roi_temporal_residuals[group_num]  = [ np.zeros((self.roi_spatial_footprints[group_num][z].shape[1], np.sum(group_lengths))) for z in range(len(roi_spatial_footprints)) ]
-                self.bg_temporal_footprints[group_num]  = [ np.zeros((self.bg_spatial_footprints[group_num][z].shape[1], np.sum(group_lengths))) for z in range(len(roi_spatial_footprints)) ]
+            # if group_num not in self.roi_temporal_footprints.keys():
+            #     self.roi_temporal_footprints[group_num] = [ np.zeros((self.roi_spatial_footprints[group_num][z].shape[1], np.sum(group_lengths))) for z in range(len(roi_spatial_footprints)) ]
+            #     self.roi_temporal_residuals[group_num]  = [ np.zeros((self.roi_spatial_footprints[group_num][z].shape[1], np.sum(group_lengths))) for z in range(len(roi_spatial_footprints)) ]
+            #     self.bg_temporal_footprints[group_num]  = [ np.zeros((self.bg_spatial_footprints[group_num][z].shape[1], np.sum(group_lengths))) for z in range(len(roi_spatial_footprints)) ]
 
-            if index == 0:
-                for z in range(len(roi_spatial_footprints)):
-                    self.roi_temporal_footprints[group_num][z][:, :group_lengths[0]] = roi_temporal_footprints[z]
-                    self.roi_temporal_residuals[group_num][z][:, :group_lengths[0]]  = roi_temporal_residuals[z]
-                    self.bg_temporal_footprints[group_num][z][:, :group_lengths[0]]  = bg_temporal_footprints[z]
-            else:
-                for z in range(len(roi_spatial_footprints)):
-                    self.roi_temporal_footprints[group_num][z][:, np.sum(group_lengths[:index]):np.sum(group_lengths[:index+1])] = roi_temporal_footprints[z]
-                    self.roi_temporal_residuals[group_num][z][:, np.sum(group_lengths[:index]):np.sum(group_lengths[:index+1])]  = roi_temporal_residuals[z]
-                    self.bg_temporal_footprints[group_num][z][:, np.sum(group_lengths[:index]):np.sum(group_lengths[:index+1])]  = bg_temporal_footprints[z]
+            # print(self.roi_temporal_footprints.keys())
+            # print(group_lengths)
+            # print(self.roi_spatial_footprints[group_num][z].shape)
+            # print(roi_temporal_residuals[z].shape)
+
+            # if index == 0:
+            #     for z in range(len(roi_spatial_footprints)):
+            #         # print(z, roi_spatial_footprints[z].shape)
+            #         # print(z, bg_spatial_footprints[z].shape)
+            #         # print(z, roi_temporal_footprints[z].shape)
+            #         # print(z, roi_temporal_residuals[z].shape)
+            #         # print(z, bg_temporal_footprints[z].shape)
+            #         self.roi_temporal_footprints[group_num][z][:, :group_lengths[0]] = roi_temporal_footprints[z]
+            #         self.roi_temporal_residuals[group_num][z][:, :group_lengths[0]]  = roi_temporal_residuals[z]
+            #         self.bg_temporal_footprints[group_num][z][:, :group_lengths[0]]  = bg_temporal_footprints[z]
+            # else:
+            #     for z in range(len(roi_spatial_footprints)):
+            #         self.roi_temporal_footprints[group_num][z][:, np.sum(group_lengths[:index]):np.sum(group_lengths[:index+1])] = roi_temporal_footprints[z]
+            #         self.roi_temporal_residuals[group_num][z][:, np.sum(group_lengths[:index]):np.sum(group_lengths[:index+1])]  = roi_temporal_residuals[z]
+            #         self.bg_temporal_footprints[group_num][z][:, np.sum(group_lengths[:index]):np.sum(group_lengths[:index+1])]  = bg_temporal_footprints[z]
 
         self.find_new_rois = False
 
