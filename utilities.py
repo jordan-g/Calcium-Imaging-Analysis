@@ -301,7 +301,7 @@ def motion_correct(video_path, max_shift, patch_stride, patch_overlap, use_multi
 
     return mc_video, new_video_path, mc_borders
 
-def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, progress_signal=None, thread=None, use_multiprocessing=True, method="cnmf", mask_points=[]):
+def find_rois_multiple_videos(video_paths, video_lengths, video_groups, params, mc_borders={}, progress_signal=None, thread=None, use_multiprocessing=True, method="cnmf", mask_points=[], ignored_frames=[]):
     start_time = time.time()
 
     group_nums = np.unique(video_groups)
@@ -325,7 +325,16 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
 
     for n in range(len(group_nums)):
         group_num = group_nums[n]
-        paths = [ video_paths[i] for i in range(len(video_paths)) if video_groups[i] == group_num ]
+        paths   = [ video_paths[i] for i in range(len(video_paths)) if video_groups[i] == group_num ]
+        lengths = [ video_lengths[i] for i in range(len(video_lengths)) if video_groups[i] == group_num ]
+
+        group_ignored_frames = []
+        for i in range(len(paths)):
+            path = paths[i]
+            index = video_paths.index(path)
+            group_ignored_frames += [ int(f + np.sum(lengths[:i])) for f in ignored_frames[index] ]
+
+        print("Ignoring frames {}.".format(group_ignored_frames))
 
         directory = os.path.dirname(paths[0])
 
@@ -395,7 +404,7 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
             borders = None
 
         if method == "cnmf":
-            roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = find_rois_cnmf(final_video_path_2, params, mc_borders=borders, use_multiprocessing=use_multiprocessing, c=c, dview=dview, n_processes=n_processes)
+            roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = find_rois_cnmf(final_video_path_2, params, mc_borders=borders, use_multiprocessing=use_multiprocessing, c=c, dview=dview, n_processes=n_processes, ignored_frames=group_ignored_frames)
         else:
             roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = find_rois_suite2p(final_video_path_2, params, mc_borders=borders, use_multiprocessing=use_multiprocessing)
 
@@ -427,7 +436,7 @@ def find_rois_multiple_videos(video_paths, video_groups, params, mc_borders={}, 
 
     return new_roi_spatial_footprints, new_roi_temporal_footprints, new_roi_temporal_residuals, new_bg_spatial_footprints, new_bg_temporal_footprints
 
-def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True, c=None, dview=None, n_processes=1):
+def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True, c=None, dview=None, n_processes=1, ignored_frames=[]):
     full_video_path = video_path
 
     directory = os.path.dirname(full_video_path)
@@ -438,6 +447,8 @@ def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True
     shutil.copyfile(video_path, new_video_path)
 
     memmap_video = tifffile.memmap(video_path)
+    
+    kept_frames = [ i for i in range(memmap_video.shape[0]) if i not in ignored_frames ]
 
     if len(memmap_video.shape) == 5:
         num_z = memmap_video.shape[2]
@@ -456,9 +467,11 @@ def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True
         z_video_path = os.path.join(directory, fname)
 
         if len(memmap_video.shape) == 5:
-            tifffile.imsave(z_video_path, memmap_video[:, :, z, :, :].reshape((-1, memmap_video.shape[3], memmap_video.shape[4])))
+            z_video = memmap_video[kept_frames, :, z, :, :]
+            tifffile.imsave(z_video_path, z_video.reshape((-1, memmap_video.shape[3], memmap_video.shape[4])))
         else:
-            tifffile.imsave(z_video_path, memmap_video[:, z, :, :])
+            z_video = memmap_video[kept_frames, z, :, :]
+            tifffile.imsave(z_video_path, z_video)
 
         # dataset dependent parameters
         fnames     = [z_video_path]        # filename to be processed
@@ -520,23 +533,78 @@ def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True
         Yr, dims, T = cm.load_memmap(cnm.mmap_file)
         images = np.reshape(Yr.T, [T] + list(dims), order='F')
 
+        # print(Yr.shape)
+
         cnm2 = cnm.refit(images, dview=dview)
 
+        fname_2 = os.path.splitext(filename)[0] + "_masked_z_{}_2.tif".format(z)
+
+        z_video_path_2 = os.path.join(directory, fname_2)
+
+        # print(memmap_video[:, z, :, :].shape)
+
+        z_video_2 = memmap_video[:, z, :, :]
+        tifffile.imsave(z_video_path_2, z_video_2)
+
+        # z_video_2 = memmap_video[:, z, :, :].transpose((1, 2, 0)).reshape((memmap_video.shape[2]*memmap_video.shape[3], memmap_video.shape[0]))
+        # tifffile.imsave(z_video_path_2, z_video_2)
+
+        # fname_new_2 = cm.save_memmap([z_video_path_2], base_name='memmap_z_{}_2'.format(z), order='C') # exclude borders
+
+        # Yr_2, dims, T = cm.load_memmap(fname_new_2)
+
+        fname_new_2 = cm.save_memmap([z_video_path_2], base_name='memmap_z_{}_2'.format(z), order='C') # exclude borders
+
+        # now load the file
+        Yr_2, dims, T = cm.load_memmap(fname_new_2)
+
+        print(Yr_2.shape)
+
         try:
-            roi_spatial_footprints[z]  = cnm2.A
-            roi_temporal_footprints[z] = cnm2.C
-            roi_temporal_residuals[z]  = cnm2.YrA
-            bg_spatial_footprints[z]   = cnm2.b
-            bg_temporal_footprints[z]  = cnm2.f
+            Cin = np.zeros((cnm2.A.shape[1], memmap_video.shape[0]))
+            fin = np.zeros((cnm2.b.shape[1], memmap_video.shape[0]))
         except:
-            roi_spatial_footprints[z]  = cnm2.estimates.A
-            roi_temporal_footprints[z] = cnm2.estimates.C
-            roi_temporal_residuals[z]  = cnm2.estimates.YrA
-            bg_spatial_footprints[z]   = cnm2.estimates.b
-            bg_temporal_footprints[z]  = cnm2.estimates.f
+            Cin = np.zeros((cnm2.estimates.A.shape[1], memmap_video.shape[0]))
+            fin = np.zeros((cnm2.estimates.b.shape[1], memmap_video.shape[0])) 
+
+        if len(ignored_frames) > 0:
+            try:
+                C, A, b, f, S, bl, c1, sn, g, YrA, lam = update_temporal_components(Yr_2, cnm2.A, cnm2.b, Cin, fin, dview=dview, p=0, method='cvx')
+
+                roi_spatial_footprints[z]  = cnm2.A
+                roi_temporal_footprints[z] = C
+                roi_temporal_residuals[z]  = YrA
+                bg_spatial_footprints[z]   = cnm2.b
+                bg_temporal_footprints[z]  = f
+            except:
+                C, A, b, f, S, bl, c1, sn, g, YrA, lam = update_temporal_components(Yr_2, cnm2.estimates.A, cnm2.estimates.b, Cin, fin, dview=dview, p=0, method='cvx')
+
+                roi_spatial_footprints[z]  = cnm2.estimates.A
+                roi_temporal_footprints[z] = C
+                roi_temporal_residuals[z]  = YrA
+                bg_spatial_footprints[z]   = cnm2.estimates.b
+                bg_temporal_footprints[z]  = f
+
+                print(roi_temporal_footprints[z].shape)
+        else:
+            try:
+                roi_spatial_footprints[z]  = cnm2.A
+                roi_temporal_footprints[z] = cnm2.C
+                roi_temporal_residuals[z]  = cnm2.YrA
+                bg_spatial_footprints[z]   = cnm2.b
+                bg_temporal_footprints[z]  = cnm2.f
+            except:
+                roi_spatial_footprints[z]  = cnm2.estimates.A
+                roi_temporal_footprints[z] = cnm2.estimates.C
+                roi_temporal_residuals[z]  = cnm2.estimates.YrA
+                bg_spatial_footprints[z]   = cnm2.estimates.b
+                bg_temporal_footprints[z]  = cnm2.estimates.f
 
         if os.path.exists(z_video_path):
             os.remove(z_video_path)
+
+        if os.path.exists(z_video_path_2):
+            os.remove(z_video_path_2)
 
     del memmap_video
 

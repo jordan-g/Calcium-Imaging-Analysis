@@ -113,6 +113,9 @@ class ParamWindow(QMainWindow):
 
         self.show()
 
+    def update_ignored_frames_textbox(self, string):
+        self.roi_finding_widget.ignored_frames_textbox.setText(string)
+
     def set_default_statusbar_message(self, message):
         self.default_statusbar_message = message
         self.statusBar().showMessage(self.default_statusbar_message)
@@ -1062,6 +1065,17 @@ class ROIFindingWidget(ParamWidget):
         self.show_zscore_checkbox.setChecked(True)
         self.show_zscore_checkbox.clicked.connect(self.toggle_show_zscore)
         self.button_layout.addWidget(self.show_zscore_checkbox)
+
+        self.ignored_frames_label = HoverLabel("Ignored frames: ", self.parent_widget, self.parent_widget.statusBar())
+        self.ignored_frames_label.setHoverMessage("Input comma-separated frames to ignore when finding ROIs.")
+        self.button_layout.addWidget(self.ignored_frames_label)
+
+        self.ignored_frames_textbox = QLineEdit()
+        self.ignored_frames_textbox.setFixedWidth(60)
+        self.ignored_frames_textbox.setFixedHeight(20)
+        self.ignored_frames_textbox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.ignored_frames_textbox.editingFinished.connect(self.controller.update_ignored_frames)
+        self.button_layout.addWidget(self.ignored_frames_textbox)
 
         self.button_layout.addStretch()
 

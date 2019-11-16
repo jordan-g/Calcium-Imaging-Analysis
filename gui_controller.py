@@ -306,6 +306,9 @@ class GUIController():
         self.update_selected_rois_plot()
         self.update_tail_plot()
 
+        string = ",".join([ str(f) for f in self.controller.ignored_frames[self.video_num] ])
+        self.param_window.update_ignored_frames_textbox(string)
+
     def update_mean_images(self):
         self.mean_images = np.mean(self.video, axis=0)
 
@@ -764,7 +767,7 @@ class GUIController():
         # # notify the param window
         # self.param_window.roi_finding_started()
 
-        roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = utilities.find_rois_multiple_videos(video_paths, self.controller.video_groups, self.controller.params, mc_borders=self.controller.mc_borders, progress_signal=None, thread=None, use_multiprocessing=self.controller.use_multiprocessing, method=self.controller.roi_finding_mode, mask_points=self.controller.mask_points)
+        roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = utilities.find_rois_multiple_videos(video_paths, self.controller.video_lengths, self.controller.video_groups, self.controller.params, mc_borders=self.controller.mc_borders, progress_signal=None, thread=None, use_multiprocessing=self.controller.use_multiprocessing, method=self.controller.roi_finding_mode, mask_points=self.controller.mask_points, ignored_frames=self.controller.ignored_frames)
 
         self.roi_finding_ended(roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints)
 
@@ -877,6 +880,18 @@ class GUIController():
 
             # show the adjusted mean image
             self.preview_window.show_frame(self.adjusted_mean_image)
+
+    def update_ignored_frames(self):
+        ignored_frames_string = self.param_window.roi_finding_widget.ignored_frames_textbox.text()
+
+        ignored_frames = []
+        if len(ignored_frames_string) > 0:
+            try:
+                ignored_frames = [ int(float(i)) for i in ignored_frames_string.replace(" ", "").split(",") ]
+            except:
+                pass
+
+        self.controller.ignored_frames[self.video_num] = ignored_frames
 
     def update_param(self, param, value):
         print("Setting parameter '{}' to {}.".format(param, value))
@@ -1440,8 +1455,9 @@ class ROIFindingThread(QThread):
 
         self.running = False
     
-    def set_parameters(self, video_paths, groups, params, mc_borders, use_multiprocessing, method="cnmf", mask_points=[]):
+    def set_parameters(self, video_paths, video_lengths, groups, params, mc_borders, use_multiprocessing, method="cnmf", mask_points=[]):
         self.video_paths         = video_paths
+        self.video_lengths       = video_lengths
         self.groups              = groups
         self.gui_params          = params
         self.mc_borders          = mc_borders
@@ -1452,7 +1468,7 @@ class ROIFindingThread(QThread):
     def run(self):
         self.running = True
 
-        roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = utilities.find_rois_multiple_videos(self.video_paths, self.groups, self.gui_params, mc_borders=self.mc_borders, progress_signal=self.progress, thread=self, use_multiprocessing=self.use_multiprocessing, method=self.method, mask_points=self.mask_points)
+        roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = utilities.find_rois_multiple_videos(self.video_paths, self.video_lengths, self.groups, self.gui_params, mc_borders=self.mc_borders, progress_signal=self.progress, thread=self, use_multiprocessing=self.use_multiprocessing, method=self.method, mask_points=self.mask_points)
 
         self.finished.emit(roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints)
 

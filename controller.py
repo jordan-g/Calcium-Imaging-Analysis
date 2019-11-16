@@ -61,9 +61,10 @@ class Controller():
             self.params = DEFAULT_PARAMS
 
         # initialize other variables
-        self.video_paths   = [] # paths of all videos to process
-        self.video_lengths = [] # lengths (# of frames) of all videos
-        self.video_groups  = [] # groups that videos belong to
+        self.video_paths    = [] # paths of all videos to process
+        self.video_lengths  = [] # lengths (# of frames) of all videos
+        self.video_groups   = [] # groups that videos belong to
+        self.ignored_frames = [] # frames to ignore for each video when finding ROIs
 
         # initialize all variables
         self.reset_variables()
@@ -104,11 +105,12 @@ class Controller():
         else:
             group_num = 0
 
-        # store video lengths and group numbers
+        # store video lengths, group numbers and ignored frames
         for video_path in video_paths:
             video = tifffile.memmap(video_path)
             self.video_lengths.append(video.shape[0])
             self.video_groups.append(group_num)
+            self.ignored_frames.append([])
 
             if len(video.shape) > 3:
                 num_z = video.shape[1]
@@ -359,42 +361,6 @@ class Controller():
             self.roi_temporal_residuals[group_num]  = roi_temporal_residuals
             self.bg_temporal_footprints[group_num]  = bg_temporal_footprints
 
-            # group_indices = [ i for i in range(len(self.video_paths)) if self.video_groups[i] == group_num ]
-            # group_lengths = [ self.video_lengths[i] for i in group_indices ]
-
-            # if self.use_mc_video and len(self.mc_video_paths) > 0:
-            #     group_paths = [ self.mc_video_paths[i] for i in group_indices ]
-            # else:
-            #     group_paths = [ self.video_paths[i] for i in group_indices ]
-
-            # index = group_paths.index(video_path)
-
-            # if group_num not in self.roi_temporal_footprints.keys():
-            #     self.roi_temporal_footprints[group_num] = [ np.zeros((self.roi_spatial_footprints[group_num][z].shape[1], np.sum(group_lengths))) for z in range(len(roi_spatial_footprints)) ]
-            #     self.roi_temporal_residuals[group_num]  = [ np.zeros((self.roi_spatial_footprints[group_num][z].shape[1], np.sum(group_lengths))) for z in range(len(roi_spatial_footprints)) ]
-            #     self.bg_temporal_footprints[group_num]  = [ np.zeros((self.bg_spatial_footprints[group_num][z].shape[1], np.sum(group_lengths))) for z in range(len(roi_spatial_footprints)) ]
-
-            # print(self.roi_temporal_footprints.keys())
-            # print(group_lengths)
-            # print(self.roi_spatial_footprints[group_num][z].shape)
-            # print(roi_temporal_residuals[z].shape)
-
-            # if index == 0:
-            #     for z in range(len(roi_spatial_footprints)):
-            #         # print(z, roi_spatial_footprints[z].shape)
-            #         # print(z, bg_spatial_footprints[z].shape)
-            #         # print(z, roi_temporal_footprints[z].shape)
-            #         # print(z, roi_temporal_residuals[z].shape)
-            #         # print(z, bg_temporal_footprints[z].shape)
-            #         self.roi_temporal_footprints[group_num][z][:, :group_lengths[0]] = roi_temporal_footprints[z]
-            #         self.roi_temporal_residuals[group_num][z][:, :group_lengths[0]]  = roi_temporal_residuals[z]
-            #         self.bg_temporal_footprints[group_num][z][:, :group_lengths[0]]  = bg_temporal_footprints[z]
-            # else:
-            #     for z in range(len(roi_spatial_footprints)):
-            #         self.roi_temporal_footprints[group_num][z][:, np.sum(group_lengths[:index]):np.sum(group_lengths[:index+1])] = roi_temporal_footprints[z]
-            #         self.roi_temporal_residuals[group_num][z][:, np.sum(group_lengths[:index]):np.sum(group_lengths[:index+1])]  = roi_temporal_residuals[z]
-            #         self.bg_temporal_footprints[group_num][z][:, np.sum(group_lengths[:index]):np.sum(group_lengths[:index+1])]  = bg_temporal_footprints[z]
-
         self.find_new_rois = False
 
     def remove_videos_at_indices(self, indices):
@@ -412,6 +378,7 @@ class Controller():
             del self.video_paths[index]
             del self.video_lengths[index]
             del self.video_groups[index]
+            del self.ignored_frames[index]
 
             if len(self.mc_video_paths) > 0:
                 del self.mc_video_paths[index]
@@ -500,7 +467,7 @@ class Controller():
         else:
             video_paths = self.video_paths
 
-        roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = utilities.find_rois_multiple_videos(video_paths, self.video_groups, self.params, mc_borders=self.mc_borders, use_multiprocessing=self.use_multiprocessing, method=self.roi_finding_mode)
+        roi_spatial_footprints, roi_temporal_footprints, roi_temporal_residuals, bg_spatial_footprints, bg_temporal_footprints = utilities.find_rois_multiple_videos(video_paths, self.video_lengths, self.video_groups, self.params, mc_borders=self.mc_borders, use_multiprocessing=self.use_multiprocessing, method=self.roi_finding_mode, ignored_frames=self.ignored_frames)
 
         self.roi_spatial_footprints  = roi_spatial_footprints
         self.roi_temporal_footprints = roi_temporal_footprints
