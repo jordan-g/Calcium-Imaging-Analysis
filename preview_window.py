@@ -380,10 +380,10 @@ class PreviewWindow(QMainWindow):
             outline_item = self.outline_items[i]
             if outline_item in self.left_image_viewbox.addedItems:
                 self.left_image_viewbox.removeItem(outline_item)
+                del outline_item
             elif outline_item in self.right_image_viewbox.addedItems:
                 self.right_image_viewbox.removeItem(outline_item)
-
-            del outline_item
+                del outline_item
 
     def clear_text_items(self):
         # remove all text items from left and right plots
@@ -391,20 +391,23 @@ class PreviewWindow(QMainWindow):
             text_item = self.text_items[i]
             if text_item in self.left_image_viewbox.addedItems:
                 self.left_image_viewbox.removeItem(text_item)
-            if text_item in self.right_image_viewbox.addedItems:
+                del text_item
+            elif text_item in self.right_image_viewbox.addedItems:
                 self.right_image_viewbox.removeItem(text_item)
-
-            del text_item
+                del text_item
 
     def clear_mask_items(self):
-        for mask_item in self.mask_items:
-            self.left_image_viewbox.removeItem(mask_item)
-        self.mask_items = []
+        for i in range(len(self.mask_items)-1, -1, -1):
+            mask_item = self.mask_items[i]
+            if mask_item in self.left_image_viewbox.addedItems:
+                self.left_image_viewbox.removeItem(mask_item)
+                del mask_item
 
         if self.temp_mask_item is not None:
-            self.left_image_viewbox.removeItem(self.temp_mask_item)
-            self.temp_mask_item = None
-            self.mask_points = []
+            if self.temp_mask_item in self.left_image_viewbox.addedItems:
+                self.left_image_viewbox.removeItem(self.temp_mask_item)
+                self.temp_mask_item = None
+                self.mask_points = []
 
     def no_rois_selected(self):
         self.clear_outline_items()
