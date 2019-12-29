@@ -376,22 +376,30 @@ class PreviewWindow(QMainWindow):
 
     def clear_outline_items(self):
         # remove all outline items from left and right plots
-        for outline_item in self.outline_items:
-            self.left_image_viewbox.removeItem(outline_item)
-            self.right_image_viewbox.removeItem(outline_item)
-            self.outline_items = []
+        for i in range(len(self.outline_items)-1, -1, -1):
+            outline_item = self.outline_items[i]
+            if outline_item in self.left_image_viewbox.addedItems:
+                self.left_image_viewbox.removeItem(outline_item)
+            elif outline_item in self.right_image_viewbox.addedItems:
+                self.right_image_viewbox.removeItem(outline_item)
+
+            del outline_item
 
     def clear_text_items(self):
         # remove all text items from left and right plots
-        for text_item in self.text_items:
-            self.left_image_viewbox.removeItem(text_item)
-            self.right_image_viewbox.removeItem(text_item)
-            self.text_items = []
+        for i in range(len(self.text_items)-1, -1, -1):
+            text_item = self.text_items[i]
+            if text_item in self.left_image_viewbox.addedItems:
+                self.left_image_viewbox.removeItem(text_item)
+            if text_item in self.right_image_viewbox.addedItems:
+                self.right_image_viewbox.removeItem(text_item)
+
+            del text_item
 
     def clear_mask_items(self):
         for mask_item in self.mask_items:
             self.left_image_viewbox.removeItem(mask_item)
-            self.mask_items = []
+        self.mask_items = []
 
         if self.temp_mask_item is not None:
             self.left_image_viewbox.removeItem(self.temp_mask_item)
@@ -459,7 +467,7 @@ class PreviewWindow(QMainWindow):
         # check whether the user is holding Ctrl
         ctrl_held = event.modifiers() == Qt.ControlModifier
 
-        # remove all text and outline items from left and right plots
+        # remove all outline items from left and right plots
         self.clear_outline_items()
 
         if event.button() == 1:
@@ -557,7 +565,7 @@ class PreviewWindow(QMainWindow):
                     selected_roi = utilities.get_roi_containing_point(self.controller.roi_spatial_footprints(), (int(y), int(x)), self.controller.adjusted_mean_image.shape)
 
                     if selected_roi is not None:
-                        self.controller.selected_rois = []
+                        # self.controller.selected_rois = []
                         if selected_roi not in self.controller.selected_rois:
                             self.controller.selected_rois.append(selected_roi)
 
@@ -568,7 +576,7 @@ class PreviewWindow(QMainWindow):
                     selected_roi = utilities.get_roi_containing_point(self.controller.roi_spatial_footprints(), (int(y), int(x)), self.controller.adjusted_mean_image.shape)
 
                     if selected_roi is not None:
-                        self.controller.selected_rois = []
+                        # self.controller.selected_rois = []
                         if selected_roi not in self.controller.selected_rois:
                             self.controller.selected_rois.append(selected_roi)
 
