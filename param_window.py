@@ -1146,7 +1146,7 @@ class CNMFROIFindingWidget(ParamWidget):
         self.add_param_slider(label_name="Patch Size", name="cnmf_patch_size", minimum=1, maximum=100, value=self.controller.params()['cnmf_patch_size'], moved=self.update_param, num=6, multiplier=1, pressed=self.update_param, released=self.update_param, description="Size of each patch (pixels).", int_values=True)
         self.add_param_slider(label_name="Patch Stride", name="cnmf_patch_stride", minimum=1, maximum=100, value=self.controller.params()['cnmf_patch_stride'], moved=self.update_param, num=7, multiplier=1, pressed=self.update_param, released=self.update_param, description="Stride for each patch (pixels).", int_values=True)
         self.add_param_slider(label_name="Max Merge Area", name="max_merge_area", minimum=1, maximum=500, value=self.controller.params()['max_merge_area'], moved=self.update_param, num=8, multiplier=1, pressed=self.update_param, released=self.update_param, description="Maximum area of merged ROI above which ROIs will not be merged (pixels).", int_values=True)
-        self.add_param_chooser(label_name="Initialization Method", name="init_method", options=["Greedy ROI", "Sparse NMF", "PCA/ICA"], callback=self.set_init_method, num=9, description="Method to use to initialize ROI locations.")
+        self.add_param_chooser(label_name="Initialization Method", name="init_method", options=["Greedy ROI", "Sparse NMF", "PCA/ICA", "Graph NMF"], callback=self.set_init_method, num=9, description="Method to use to initialize ROI locations.")
         self.main_layout.addStretch()
 
     def toggle_use_patches(self, boolean, checkbox, related_params=[]):
@@ -1157,7 +1157,7 @@ class CNMFROIFindingWidget(ParamWidget):
                 self.param_widgets[related_param].setEnabled(checkbox.isChecked())
 
     def set_init_method(self, i):
-        methods = ['greedy_roi', 'sparse_nmf', 'pca_ica']
+        methods = ['greedy_roi', 'sparse_nmf', 'pca_ica', 'graph_nmf']
 
         self.controller.params()['init_method'] = methods[i]
 

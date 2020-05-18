@@ -511,6 +511,8 @@ def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True
         d1, d2 = dims
         images = np.reshape(Yr.T, [T] + list(dims), order='F')
 
+        print("Using {} method for ROI initialization.".format(init_method))
+
         params_dict = {'fnames': fnames,
                        'fr': fr,
                        'decay_time': decay_time,
@@ -522,6 +524,7 @@ def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True
                        'p': p,
                        'nb': gnb,
                        'init_method': init_method,
+                       'method_init': init_method,
                        'dims': memmap_video.shape[-2:],
                        'max_merge_area': max_merge_area}
 
