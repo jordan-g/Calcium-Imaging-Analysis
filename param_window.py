@@ -1141,16 +1141,42 @@ class CNMFROIFindingWidget(ParamWidget):
         self.add_param_slider(label_name="Background Components", name="num_bg_components", minimum=1, maximum=100, value=self.controller.params()['num_bg_components'], moved=self.update_param, num=1, multiplier=1, pressed=self.update_param, released=self.update_param, description="Number of background components.", int_values=True)
         self.add_param_slider(label_name="Merge Threshold", name="merge_threshold", minimum=1, maximum=200, value=self.controller.params()['merge_threshold']*200, moved=self.update_param, num=2, multiplier=200, pressed=self.update_param, released=self.update_param, description="Merging threshold (maximum correlation allowed before merging two components).", int_values=False)
         self.add_param_slider(label_name="Components", name="num_components", minimum=1, maximum=5000, value=self.controller.params()['num_components'], moved=self.update_param, num=3, multiplier=1, pressed=self.update_param, released=self.update_param, description="Number of components expected (if using patches, in each patch; otherwise, in the entire FOV).", int_values=True)
-        self.add_param_slider(label_name="Neuron Half-Size", name="half_size", minimum=1, maximum=50, value=self.controller.params()['half_size'], moved=self.update_param, num=4, multiplier=1, pressed=self.update_param, released=self.update_param, description="Expected half-size of neurons (pixels).", int_values=True)
+        self.add_param_slider(label_name="HALS Iterations", name="hals_iter", minimum=1, maximum=100, value=self.controller.params()['hals_iter'], moved=self.update_param, num=4, multiplier=1, pressed=self.update_param, released=self.update_param, description="Number of HALS iterations following initialization (default: 5).", int_values=True)
         self.add_param_checkbox(label_name="Use Patches", name="use_patches", clicked=self.toggle_use_patches, description="Whether to use patches when performing CNMF.", num=5, related_params=['cnmf_patch_size', 'cnmf_patch_stride'])
         self.add_param_slider(label_name="Patch Size", name="cnmf_patch_size", minimum=1, maximum=100, value=self.controller.params()['cnmf_patch_size'], moved=self.update_param, num=6, multiplier=1, pressed=self.update_param, released=self.update_param, description="Size of each patch (pixels).", int_values=True)
         self.add_param_slider(label_name="Patch Stride", name="cnmf_patch_stride", minimum=1, maximum=100, value=self.controller.params()['cnmf_patch_stride'], moved=self.update_param, num=7, multiplier=1, pressed=self.update_param, released=self.update_param, description="Stride for each patch (pixels).", int_values=True)
         self.add_param_slider(label_name="Max Merge Area", name="max_merge_area", minimum=1, maximum=500, value=self.controller.params()['max_merge_area'], moved=self.update_param, num=8, multiplier=1, pressed=self.update_param, released=self.update_param, description="Maximum area of merged ROI above which ROIs will not be merged (pixels).", int_values=True)
         self.add_param_chooser(label_name="Initialization Method", name="init_method", options=["Greedy ROI", "Sparse NMF", "PCA/ICA", "Graph NMF"], callback=self.set_init_method, num=9, description="Method to use to initialize ROI locations.")
+
+        self.greedy_roi_param_widget = GreedyROIParamWidget(self.parent_widget, self.controller)
+        self.sparse_nmf_param_widget = SparseNMFParamWidget(self.parent_widget, self.controller)
+        self.pca_ica_param_widget    = PCAICAParamWidget(self.parent_widget, self.controller)
+        self.graph_nmf_param_widget  = GraphNMFParamWidget(self.parent_widget, self.controller)
+        self.main_layout.addWidget(self.greedy_roi_param_widget)
+        self.main_layout.addWidget(self.sparse_nmf_param_widget)
+        self.main_layout.addWidget(self.pca_ica_param_widget)
+        self.main_layout.addWidget(self.graph_nmf_param_widget)
+
+        self.init_param_widgets = [self.greedy_roi_param_widget, self.sparse_nmf_param_widget, self.pca_ica_param_widget, self.graph_nmf_param_widget]
+
+        self.show_selected_init_method_params()
+
         self.main_layout.addStretch()
+
+    def tab_selected(self):
+        index = self.tab_widget.currentIndex()
+        if index == 0:
+            self.set_init_method("greedy_roi")
 
     def toggle_use_patches(self, boolean, checkbox, related_params=[]):
         self.controller.params()['use_patches'] = boolean
+
+        if len(related_params) > 0:
+            for related_param in related_params:
+                self.param_widgets[related_param].setEnabled(checkbox.isChecked())
+
+    def toggle_use_hals(self, boolean, checkbox, related_params=[]):
+        self.controller.params()['use_hals'] = boolean
 
         if len(related_params) > 0:
             for related_param in related_params:
@@ -1160,6 +1186,85 @@ class CNMFROIFindingWidget(ParamWidget):
         methods = ['greedy_roi', 'sparse_nmf', 'pca_ica', 'graph_nmf']
 
         self.controller.params()['init_method'] = methods[i]
+
+        self.show_selected_init_method_params()
+
+    def show_selected_init_method_params(self):
+        i = self.param_choosers['init_method'].currentIndex()
+        print(i)
+        for j in range(len(self.init_param_widgets)):
+            if i == j:
+                self.init_param_widgets[j].show()
+            else:
+                self.init_param_widgets[j].hide()
+
+class GreedyROIParamWidget(ParamWidget):
+    def __init__(self, parent_widget, controller):
+        ParamWidget.__init__(self, parent_widget, controller, "Greedy ROI Initialization Parameters")
+
+        self.controller = controller
+
+        self.add_param_checkbox(label_name="Rolling Max", name="rolling_max", clicked=self.toggle_rolling_max, description="Detect new components based on a rolling sum of pixel activity (default: True).", num=0, related_params=['rolling_length'])
+        self.add_param_slider(label_name="Rolling Length", name="rolling_length", minimum=1, maximum=200, value=self.controller.params()['rolling_length'], moved=self.update_param, num=1, multiplier=1, pressed=self.update_param, released=self.update_param, description="Length of rolling window (default: 100).", int_values=True)
+        self.add_param_slider(label_name="Num Iterations", name="n_iter", minimum=1, maximum=100, value=self.controller.params()['n_iter'], moved=self.update_param, num=2, multiplier=1, pressed=self.update_param, released=self.update_param, description="Number of iterations when refining estimates (default: 5).", int_values=True)
+        self.add_param_slider(label_name="Neuron Half-Size", name="half_size", minimum=1, maximum=50, value=self.controller.params()['half_size'], moved=self.update_param, num=3, multiplier=1, pressed=self.update_param, released=self.update_param, description="Expected half-size of neurons (pixels).", int_values=True)
+        
+        self.main_layout.addStretch()
+
+    def toggle_rolling_max(self, boolean, checkbox, related_params=[]):
+        self.controller.params()['rolling_max'] = boolean
+
+        if len(related_params) > 0:
+            for related_param in related_params:
+                self.param_widgets[related_param].setEnabled(checkbox.isChecked())
+
+class SparseNMFParamWidget(ParamWidget):
+    def __init__(self, parent_widget, controller):
+        ParamWidget.__init__(self, parent_widget, controller, "Sparse NMF Initialization Parameters")
+
+        self.controller = controller
+
+        self.add_param_slider(label_name="Alpha", name="alpha_snmf", minimum=1, maximum=1000, value=self.controller.params()['alpha_snmf'], moved=self.update_param, num=0, multiplier=1, pressed=self.update_param, released=self.update_param, description="Weight of the sparsity regularization (default: 100).", int_values=True)
+        self.add_param_slider(label_name="Sigma Smooth", name="sigma_smooth_snmf", minimum=1, maximum=1000, value=self.controller.params()['sigma_smooth_snmf']*100, moved=self.update_param, num=1, multiplier=100, pressed=self.update_param, released=self.update_param, description="Smoothing along z,x, and y (default: 0.5).", int_values=False)
+        self.add_param_slider(label_name="Max Iterations", name="max_iter_snmf", minimum=1, maximum=1000, value=self.controller.params()['max_iter_snmf'], moved=self.update_param, num=2, multiplier=1, pressed=self.update_param, released=self.update_param, description="Maximum SNMF iterations (default: 500).", int_values=True)
+        self.add_param_slider(label_name="Percent Baseline", name="perc_baseline_snmf", minimum=1, maximum=100, value=self.controller.params()['perc_baseline_snmf'], moved=self.update_param, num=3, multiplier=1, pressed=self.update_param, released=self.update_param, description="Percentile to remove from movie before NMF (default: 20).", int_values=True)
+        
+        self.main_layout.addStretch()
+
+class PCAICAParamWidget(ParamWidget):
+    def __init__(self, parent_widget, controller):
+        ParamWidget.__init__(self, parent_widget, controller, "PCA/ICA Initialization Parameters")
+
+        self.controller = controller
+
+        self.add_param_slider(label_name="Sigma Smooth", name="sigma_smooth_snmf", minimum=1, maximum=1000, value=self.controller.params()['sigma_smooth_snmf']*100, moved=self.update_param, num=1, multiplier=100, pressed=self.update_param, released=self.update_param, description="Smoothing along z,x, and y (default: 0.5).", int_values=False)
+        self.add_param_slider(label_name="Max Iterations", name="max_iter_snmf", minimum=1, maximum=1000, value=self.controller.params()['max_iter_snmf'], moved=self.update_param, num=2, multiplier=1, pressed=self.update_param, released=self.update_param, description="Maximum SNMF iterations (default: 500).", int_values=True)
+        self.add_param_slider(label_name="Percent Baseline", name="perc_baseline_snmf", minimum=1, maximum=100, value=self.controller.params()['perc_baseline_snmf'], moved=self.update_param, num=3, multiplier=1, pressed=self.update_param, released=self.update_param, description="Percentile to remove from movie before NMF (default: 20).", int_values=True)
+        
+        self.main_layout.addStretch()
+
+class GraphNMFParamWidget(ParamWidget):
+    def __init__(self, parent_widget, controller):
+        ParamWidget.__init__(self, parent_widget, controller, "Graph NMF Initialization Parameters")
+
+        self.controller = controller
+
+        self.add_param_slider(label_name="Lambda", name="lambda_gnmf", minimum=1, maximum=100, value=self.controller.params()['alpha_snmf']*10, moved=self.update_param, num=0, multiplier=10, pressed=self.update_param, released=self.update_param, description="Regularization weight for graph NMF (default: 1).", int_values=False)
+        self.add_param_slider(label_name="Sigma Smooth", name="sigma_smooth_snmf", minimum=1, maximum=1000, value=self.controller.params()['sigma_smooth_snmf']*100, moved=self.update_param, num=1, multiplier=100, pressed=self.update_param, released=self.update_param, description="Smoothing along z,x, and y (default: 0.5).", int_values=False)
+        self.add_param_slider(label_name="Max Iterations", name="max_iter_snmf", minimum=1, maximum=1000, value=self.controller.params()['max_iter_snmf'], moved=self.update_param, num=2, multiplier=1, pressed=self.update_param, released=self.update_param, description="Maximum SNMF iterations (default: 500).", int_values=True)
+        self.add_param_slider(label_name="Percent Baseline", name="perc_baseline_snmf", minimum=1, maximum=100, value=self.controller.params()['perc_baseline_snmf'], moved=self.update_param, num=3, multiplier=1, pressed=self.update_param, released=self.update_param, description="Percentile to remove from movie before NMF (default: 20).", int_values=True)
+        self.add_param_checkbox(label_name="SC Normalize", name="sc_normalize", clicked=self.toggle_sc_normalize, description="Standardize entries prior to computing affinity matrix (default: True).", num=4, related_params=[])
+        self.add_param_checkbox(label_name="SC Use NN", name="sc_use_nn", clicked=self.toggle_sc_use_nn, description="Sparsify affinity matrix by using only nearest neighbors (default: True).", num=5, related_params=[])
+        self.add_param_slider(label_name="SC Threshold", name="sc_threshold", minimum=0, maximum=1000, value=self.controller.params()['sc_threshold']*100, moved=self.update_param, num=6, multiplier=100, pressed=self.update_param, released=self.update_param, description="Threshold for affinity matrix (default: 0).", int_values=False)
+        self.add_param_slider(label_name="SC Sigma", name="sc_sigma", minimum=1, maximum=1000, value=self.controller.params()['sc_sigma']*100, moved=self.update_param, num=7, multiplier=100, pressed=self.update_param, released=self.update_param, description="Standard deviation for SC kernel (default: 1).", int_values=False)
+
+        self.main_layout.addStretch()
+
+    def toggle_sc_normalize(self, boolean, checkbox, related_params=[]):
+        self.controller.params()['sc_normalize'] = boolean
+
+    def toggle_sc_use_nn(self, boolean, checkbox, related_params=[]):
+        self.controller.params()['sc_use_nn'] = boolean
 
 class Suite2pROIFindingWidget(ParamWidget):
     def __init__(self, parent_widget, controller):

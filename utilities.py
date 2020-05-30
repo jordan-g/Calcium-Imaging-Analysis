@@ -479,25 +479,37 @@ def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True
         decay_time = params['decay_time']  # length of a typical transient in seconds
         
         # parameters for source extraction and deconvolution
-        p              = params['autoregressive_order']             # order of the autoregressive system
-        gnb            = params['num_bg_components']                # number of global background components
-        merge_thresh   = params['merge_threshold']                  # merging threshold, max correlation allowed
+        p              = params['autoregressive_order'] # order of the autoregressive system
+        gnb            = params['num_bg_components']    # number of global background components
+        merge_thresh   = params['merge_threshold']      # merging threshold, max correlation allowed
         if params['use_patches']:
-            rf     = params['cnmf_patch_size']
-            stride = params['cnmf_patch_stride']
+            rf     = params['cnmf_patch_size']   # half-size of the patches in pixels. e.g., if rf=25, patches are 50x50
+            stride = params['cnmf_patch_stride'] # amount of overlap between the patches in pixels
         else:
-            rf     = None # half-size of the patches in pixels. e.g., if rf=25, patches are 50x50
-            stride = None # amount of overlap between the patches in pixels
-        K              = params['num_components']                   # number of components per patch
-        gSig           = [params['half_size'], params['half_size']] # expected half size of neurons
-        init_method    = params['init_method']                      # initialization method (if analyzing dendritic data using 'sparse_nmf')
-        is_dendrites   = False                                      # flag for analyzing dendritic data
-        alpha_snmf     = None                                       # sparsity penalty for dendritic data analysis through sparse NMF
+            rf     = None
+            stride = None
+        K              = params['num_components'] # number of components per patch
+        is_dendrites   = False                    # flag for analyzing dendritic data
+        alpha_snmf     = None                     # sparsity penalty for dendritic data analysis through sparse NMF
+        init_method    = params['init_method']    # initialization method (if analyzing dendritic data using 'sparse_nmf')
 
         # parameters for component evaluation
         min_SNR        = params['min_snr']          # signal to noise ratio for accepting a component
         rval_thr       = params['min_spatial_corr'] # space correlation threshold for accepting a component
-        max_merge_area = params['max_merge_area']
+        max_merge_area = params['max_merge_area']   # max area of components for merging
+
+        half_size  = [params['half_size'], params['half_size']] # standard deviation of Gaussian kernel along each axis
+        n_iter     = params['n_iter']                           # number of iterations when refining estimates
+
+        alpha_snmf         = params['alpha_snmf']
+        sigma_smooth_snmf  = params['sigma_smooth_snmf']
+        max_iter_snmf      = params['max_iter_snmf']
+        perc_baseline_snmf = params['perc_baseline_snmf']
+        SC_normalize       = params['sc_normalize']
+        SC_use_NN          = params['sc_use_nn']
+        SC_thr             = params['sc_threshold']
+        SC_sigma           = params['sc_sigma']
+        hals_iter          = params['hals_iter']
 
         if mc_borders is not None:
             border_pix = mc_borders[z]
@@ -519,14 +531,25 @@ def find_rois_cnmf(video_path, params, mc_borders=None, use_multiprocessing=True
                        'rf': rf,
                        'stride': stride,
                        'K': K,
-                       'gSig': gSig,
+                       'gSig': half_size,
+                       'nIter': n_iter,
                        'merge_thr': merge_thresh,
                        'p': p,
                        'nb': gnb,
                        'init_method': init_method,
                        'method_init': init_method,
                        'dims': memmap_video.shape[-2:],
-                       'max_merge_area': max_merge_area}
+                       'max_merge_area': max_merge_area,
+                       'alpha_snmf': alpha_snmf,
+                       'sigma_smooth_snmf': sigma_smooth_snmf,
+                       'max_iter_snmf': max_iter_snmf,
+                       'perc_baseline_snmf': perc_baseline_snmf,
+                       'SC_normalize': SC_normalize,
+                       'SC_use_NN': SC_use_NN,
+                       'SC_thr': SC_thr,
+                       'SC_sigma': SC_sigma,
+                       'maxIter': hals_iter,
+                       }
 
         opts = cnmf_params.CNMFParams(params_dict=params_dict)
 

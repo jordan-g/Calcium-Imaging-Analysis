@@ -40,7 +40,19 @@ DEFAULT_PARAMS = {'use_patches'          : True,
                   'neuropil_radius_ratio': 3,
                   'inner_neuropil_radius': 2,
                   'min_neuropil_pixels'  : 350,
-                  'invert_masks'         : False
+                  'invert_masks'         : False,
+                  'rolling_max'          : True,
+                  'rolling_length'       : 100,
+                  'alpha_snmf'           : 100,
+                  'sigma_smooth_snmf'    : 0.5,
+                  'max_iter_snmf'        : 500,
+                  'n_iter'               : 5,
+                  'hals_iter'            : 5,
+                  'perc_baseline_snmf'   : 20,
+                  'sc_normalize'         : True,
+                  'sc_use_nn'            : True,
+                  'sc_threshold'         : 0,
+                  'sc_sigma'             : 1,
                   }
 
 # set filename for saving current parameters
